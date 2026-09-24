@@ -1,0 +1,46 @@
+package domain
+
+import sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+
+type Node struct {
+	ID                string
+	GPUType           string
+	TotalGPUs         int64
+	AvailableGPUs     int64
+	TotalCPUs         int64
+	AvailableCPUs     int64
+	TotalMemoryGB     int64
+	AvailableMemoryGB int64
+}
+
+type Assignment struct {
+	JobID   string
+	NodeID  string
+	Attempt int64
+}
+
+func (n Node) CanRun(job sqlitedb.Job) bool {
+	return (job.GpuType == "" || job.GpuType == n.GPUType) &&
+		job.Gpus <= n.AvailableGPUs &&
+		job.Cpus <= n.AvailableCPUs &&
+		job.MemoryGb <= n.AvailableMemoryGB
+}
+
+func (n Node) CanPossiblyRun(job sqlitedb.Job) bool {
+	return (job.GpuType == "" || job.GpuType == n.GPUType) &&
+		job.Gpus <= n.TotalGPUs &&
+		job.Cpus <= n.TotalCPUs &&
+		job.MemoryGb <= n.TotalMemoryGB
+}
+
+func (n *Node) Reserve(job sqlitedb.Job) {
+	n.AvailableGPUs -= job.Gpus
+	n.AvailableCPUs -= job.Cpus
+	n.AvailableMemoryGB -= job.MemoryGb
+}
+
+func (n *Node) Release(job sqlitedb.Job) {
+	n.AvailableGPUs += job.Gpus
+	n.AvailableCPUs += job.Cpus
+	n.AvailableMemoryGB += job.MemoryGb
+}

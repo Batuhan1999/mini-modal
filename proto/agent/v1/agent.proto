@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package minimodal.agent.v1;
+
+option go_package = "mini-modal/gen/agent/v1;agentv1";
+
+message Assignment {
+  string job_id = 1;
+  string node_id = 2;
+  int64 attempt = 3;
+}
+
+message ClaimRequest {
+  string node_id = 1;
+}
+
+message ClaimResponse {
+  Assignment assignment = 1;
+}
+
+message CompleteRequest {
+  string job_id = 1;
+  int64 attempt = 2;
+}
+
+message CompleteResponse {}
+
+message FailRequest {
+  string job_id = 1;
+  int64 attempt = 2;
+}
+
+message FailResponse {}
+
+service AgentService {
+  rpc Claim(ClaimRequest) returns (ClaimResponse);
+  rpc Complete(CompleteRequest) returns (CompleteResponse);
+  rpc Fail(FailRequest) returns (FailResponse);
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc RenewAssignment(RenewAssignmentRequest) returns (RenewAssignmentResponse);
+}
+
+message RegisterNodeRequest {
+  string node_id = 1;
+  string gpu_type = 2;
+  int32 total_gpus = 3;
+  int32 total_cpus = 4;
+  int32 total_memory_gb = 5;
+}
+
+message RegisterNodeResponse {}
+
+message RenewAssignmentRequest {
+  Assignment assignment = 1;
+}
+message RenewAssignmentResponse {}
+
+message HeartbeatRequest {
+  string node_id = 1;
+}
+
+message HeartbeatResponse {}
