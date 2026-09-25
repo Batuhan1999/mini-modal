@@ -52,7 +52,7 @@
         <article class="metric">
           <p>Active</p>
           <strong id="metric-active">0</strong>
-          <span>Assigned or running</span>
+          <span>Assigned, running, or stopping</span>
         </article>
         <article class="metric">
           <p>Waiting</p>
@@ -95,6 +95,8 @@
                   <option value="pending">Pending</option>
                   <option value="assigned">Assigned</option>
                   <option value="running">Running</option>
+                  <option value="cancelling">Cancelling</option>
+                  <option value="cancelled">Cancelled</option>
                   <option value="succeeded">Succeeded</option>
                   <option value="failed">Failed</option>
                   <option value="unschedulable">Unschedulable</option>
@@ -157,14 +159,15 @@
                   <th scope="col">Request</th>
                   <th scope="col">Attempt</th>
                   <th scope="col">Lease</th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody id="jobs-body" aria-live="polite">
                 <tr class="loading-row" aria-hidden="true">
-                  <td colspan="7"><span class="skeleton"></span></td>
+                  <td colspan="8"><span class="skeleton"></span></td>
                 </tr>
                 <tr class="loading-row" aria-hidden="true">
-                  <td colspan="7"><span class="skeleton skeleton-short"></span></td>
+                  <td colspan="8"><span class="skeleton skeleton-short"></span></td>
                 </tr>
               </tbody>
             </table>
@@ -267,7 +270,11 @@
               <h2 id="detail-job-id">Loading job</h2>
               <p class="detail-command" id="detail-command">Waiting for command</p>
             </div>
-            <span class="status" id="detail-status">Unknown</span>
+            <div class="detail-header-actions">
+              <span class="status" id="detail-status">Unknown</span>
+              <button class="danger-button" id="detail-cancel" type="button" hidden>Cancel job</button>
+              <p class="detail-action-result" id="detail-action-result" aria-live="polite"></p>
+            </div>
           </header>
 
           <div class="detail-layout">

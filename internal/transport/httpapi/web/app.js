@@ -41,6 +41,8 @@ const elements = {
   detailJobID: document.querySelector("#detail-job-id"),
   detailCommand: document.querySelector("#detail-command"),
   detailStatus: document.querySelector("#detail-status"),
+  detailCancel: document.querySelector("#detail-cancel"),
+  detailActionResult: document.querySelector("#detail-action-result"),
   detailLogAttempt: document.querySelector("#detail-log-attempt"),
   detailLogTerminal: document.querySelector("#detail-log-terminal"),
   detailFields: document.querySelector("#detail-fields"),
@@ -61,12 +63,18 @@ const state = {
   detailJobID: jobIDFromPath(),
   detailJob: null,
   detailLogs: createLogState(),
+  cancellingJobIDs: new Set(),
 };
 
 if (state.detailJobID) {
   elements.dashboardView.hidden = true;
   elements.detailView.hidden = false;
   elements.detailRetry.addEventListener("click", () => void refreshDetail());
+  elements.detailCancel.addEventListener("click", () => {
+    if (state.detailJob) {
+      void cancelJob(state.detailJob, elements.detailCancel);
+    }
+  });
 } else {
   elements.jobID.value = nextJobID();
   elements.jobSearch.addEventListener("input", renderJobs);
@@ -140,7 +148,7 @@ async function refreshDetail() {
     }
     state.detailJob = job;
     renderJobDetail(job);
-    const active = ["assigned", "running"].includes(job.status);
+    const active = ["assigned", "running", "cancelling"].includes(job.status);
     if (!state.detailLogs.loaded || attemptChanged || statusChanged || active) {
       await loadDetailLogs(job, state.detailLogs.loaded);
     }
@@ -199,7 +207,7 @@ function renderMetrics() {
   const healthyNodes = state.nodes.filter((node) => node.healthy).length;
 
   elements.metricTotal.textContent = formatNumber(state.jobs.length);
-  elements.metricActive.textContent = formatNumber(count(["assigned", "running"]));
+  elements.metricActive.textContent = formatNumber(count(["assigned", "running", "cancelling"]));
   elements.metricWaiting.textContent = formatNumber(count(["pending", "unschedulable"]));
   elements.metricNodes.textContent = `${healthyNodes} / ${state.nodes.length}`;
 }
@@ -330,13 +338,22 @@ function renderJobs(changedJobs = new Set()) {
       leaseCell.classList.add(lease.className);
     }
 
-    row.append(idCell, statusCell, updatedCell, placementCell, requestCell, attemptCell, leaseCell);
+    const actionCell = tableCell("Actions");
+    actionCell.classList.add("job-action");
+    const cancelButton = buildCancelButton(job);
+    if (cancelButton) {
+      actionCell.append(cancelButton);
+    } else {
+      actionCell.textContent = "—";
+    }
+
+    row.append(idCell, statusCell, updatedCell, placementCell, requestCell, attemptCell, leaseCell, actionCell);
     rows.push(row);
 
     if (expanded) {
       const logRow = createElement("tr", "job-log-row");
       const logCell = tableCell("Logs");
-      logCell.colSpan = 7;
+      logCell.colSpan = 8;
       logCell.append(buildInlineLogPanel(job, panelID));
       logRow.append(logCell);
       rows.push(logRow);
@@ -400,7 +417,7 @@ async function syncExpandedJobLogs() {
 
     const logState = ensureInlineLogState(job);
     const statusChanged = logState.status !== job.status;
-    const active = ["assigned", "running"].includes(job.status);
+    const active = ["assigned", "running", "cancelling"].includes(job.status);
     if (!logState.loaded || statusChanged || active) {
       requests.push(loadInlineJobLogs(job, true));
     }
@@ -448,6 +465,7 @@ function renderJobDetail(job) {
   elements.detailCommand.textContent = formatCommand(job);
   elements.detailStatus.className = `status status-${job.status}`;
   elements.detailStatus.textContent = job.status;
+  renderDetailCancelAction(job);
   elements.detailLogAttempt.textContent = job.attempt > 0 ? `Attempt ${job.attempt}` : "No attempt";
   document.title = `${job.id} · Mini Modal`;
   renderDetailFields(job);
@@ -634,12 +652,98 @@ function createLogState(attempt = 0) {
   return { attempt, status: "", logs: [], loaded: false, loading: false, error: "" };
 }
 
+function canCancelJob(job) {
+  return ["pending", "assigned", "running", "unschedulable"].includes(job.status);
+}
+
+function buildCancelButton(job) {
+  if (!canCancelJob(job) && job.status !== "cancelling") {
+    return null;
+  }
+
+  const cancelling = job.status === "cancelling" || state.cancellingJobIDs.has(job.id);
+  const button = createElement("button", "danger-button compact", cancelling ? "Cancelling" : "Cancel");
+  button.type = "button";
+  button.disabled = cancelling;
+  button.setAttribute("aria-label", `${cancelling ? "Cancelling" : "Cancel"} job ${job.id}`);
+  if (!cancelling) {
+    button.addEventListener("click", () => void cancelJob(job, button));
+  }
+  return button;
+}
+
+function renderDetailCancelAction(job) {
+  const cancelling = job.status === "cancelling" || state.cancellingJobIDs.has(job.id);
+  const visible = canCancelJob(job) || cancelling;
+  elements.detailCancel.hidden = !visible;
+  elements.detailCancel.disabled = cancelling;
+  elements.detailCancel.textContent = cancelling ? "Cancelling" : "Cancel job";
+}
+
+async function cancelJob(job, button) {
+  if (!canCancelJob(job)) {
+    return;
+  }
+  if (!window.confirm(`Cancel job "${job.id}"?`)) {
+    return;
+  }
+
+  state.cancellingJobIDs.add(job.id);
+  setBusy(button, true, "Cancelling");
+  if (state.detailJobID) {
+    setFormResult(elements.detailActionResult, "Sending cancellation request…", "pending");
+  } else {
+    renderJobs();
+  }
+
+  try {
+    const updated = await fetchJSON(`/v1/jobs/${encodeURIComponent(job.id)}/cancel`, {
+      method: "POST",
+    });
+    if (state.detailJobID === job.id) {
+      state.detailJob = updated;
+      setFormResult(
+        elements.detailActionResult,
+        updated.status === "cancelled" ? "Job cancelled." : "Cancellation requested.",
+        "success",
+      );
+      renderJobDetail(updated);
+    } else {
+      state.jobs = state.jobs.map((candidate) => candidate.id === updated.id ? updated : candidate);
+      state.previousJobStates.set(updated.id, updated.status);
+      addActivity(
+        updated.status === "cancelled"
+          ? `${updated.id}: cancelled`
+          : `${updated.id}: cancellation requested`,
+      );
+      renderJobs(new Set([updated.id]));
+    }
+    await refreshCurrentView();
+  } catch (error) {
+    if (state.detailJobID) {
+      setFormResult(elements.detailActionResult, error.message, "error");
+    } else {
+      addActivity(`Could not cancel ${job.id}: ${error.message}`);
+    }
+  } finally {
+    state.cancellingJobIDs.delete(job.id);
+    if (state.detailJobID && state.detailJob) {
+      renderJobDetail(state.detailJob);
+    } else {
+      renderJobs();
+    }
+  }
+}
+
 function logStreamLabel(job) {
   switch (job.status) {
   case "assigned":
     return "Waiting for agent";
   case "running":
     return "Live, refreshing every second";
+  case "cancelling":
+    return "Cancellation requested, awaiting agent";
+  case "cancelled":
   case "succeeded":
   case "failed":
     return "Final output";
@@ -981,7 +1085,7 @@ function tableCell(label, value = "") {
 }
 
 function formatLease(job) {
-  if (!["assigned", "running"].includes(job.status) || !job.lease_expires_at) {
+  if (!["assigned", "running", "cancelling"].includes(job.status) || !job.lease_expires_at) {
     return { label: "None", className: "" };
   }
   const remaining = job.lease_expires_at - Date.now();

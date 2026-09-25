@@ -398,6 +398,7 @@ button:focus-visible,
 summary:focus-visible,
 .job-link:focus-visible,
 .job-expand:focus-visible,
+.danger-button:focus-visible,
 .inline-detail-link:focus-visible,
 .back-link:focus-visible {
   outline: 2px solid var(--accent);
@@ -431,6 +432,30 @@ summary:focus-visible,
 
 .secondary-button:hover {
   background: var(--surface-raised);
+}
+
+.danger-button {
+  min-height: 34px;
+  padding: 0 12px;
+  color: var(--danger);
+  background: rgb(227 127 118 / 7%);
+  border: 1px solid rgb(227 127 118 / 42%);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.danger-button:hover:not(:disabled) {
+  color: #ffaaa2;
+  background: rgb(227 127 118 / 13%);
+  border-color: rgb(227 127 118 / 72%);
+}
+
+.danger-button.compact {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 9px;
 }
 
 button:disabled {
@@ -746,12 +771,14 @@ tbody tr[data-expanded="true"]:hover td {
 }
 
 .status-pending,
-.status-assigned {
+.status-assigned,
+.status-cancelling {
   color: var(--warning);
 }
 
 .status-pending::before,
-.status-assigned::before {
+.status-assigned::before,
+.status-cancelling::before {
   background: var(--warning);
 }
 
@@ -763,6 +790,19 @@ tbody tr[data-expanded="true"]:hover td {
 .status-failed::before,
 .status-unschedulable::before {
   background: var(--danger);
+}
+
+.status-cancelled {
+  color: var(--muted);
+}
+
+.status-cancelled::before {
+  background: var(--faint);
+}
+
+.job-action {
+  width: 1%;
+  color: var(--faint);
 }
 
 .lease-expiring {
@@ -1186,10 +1226,35 @@ tbody tr[data-expanded="true"]:hover td {
   letter-spacing: -0.06em;
 }
 
-.detail-header > .status {
+.detail-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 10px;
+}
+
+.detail-header-actions > .status {
   font-family: var(--mono);
   font-size: 12px;
+}
+
+.detail-action-result {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: right;
+}
+
+.detail-action-result[data-state="success"] {
+  color: var(--accent);
+}
+
+.detail-action-result[data-state="error"] {
+  color: var(--danger);
 }
 
 .detail-command {
@@ -1567,8 +1632,13 @@ footer b {
     gap: 14px;
   }
 
-  .detail-header > .status {
+  .detail-header-actions {
+    justify-content: flex-start;
     margin: 0;
+  }
+
+  .detail-action-result {
+    text-align: left;
   }
 
   .detail-command {
