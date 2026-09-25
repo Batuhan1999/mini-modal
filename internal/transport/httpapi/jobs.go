@@ -139,6 +139,25 @@ func (s *Server) listJobLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
+func (s *Server) listJobEvents(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("id"))
+	if _, err := s.service.Job(r.Context(), jobID); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	events, err := s.service.JobEvents(r.Context(), jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if events == nil {
+		events = make([]sqlitedb.JobEvent, 0)
+	}
+
+	writeJSON(w, http.StatusOK, events)
+}
+
 func ensureSingleJSONValue(decoder *json.Decoder) error {
 	var extra any
 	err := decoder.Decode(&extra)

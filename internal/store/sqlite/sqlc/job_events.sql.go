@@ -47,6 +47,43 @@ func (q *Queries) CreateJobEvent(ctx context.Context, arg CreateJobEventParams) 
 	return i, err
 }
 
+const listAllJobEvents = `-- name: ListAllJobEvents :many
+SELECT id, job_id, attempt, event, node_id, message, created_at FROM job_events
+WHERE job_id = ?
+ORDER BY created_at, rowid
+`
+
+func (q *Queries) ListAllJobEvents(ctx context.Context, jobID string) ([]JobEvent, error) {
+	rows, err := q.db.QueryContext(ctx, listAllJobEvents, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []JobEvent
+	for rows.Next() {
+		var i JobEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.JobID,
+			&i.Attempt,
+			&i.Event,
+			&i.NodeID,
+			&i.Message,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listJobEvents = `-- name: ListJobEvents :many
 SELECT id, job_id, attempt, event, node_id, message, created_at FROM job_events
 WHERE job_id = ?

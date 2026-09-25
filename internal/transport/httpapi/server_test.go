@@ -75,6 +75,20 @@ func TestJobEndpoints(t *testing.T) {
 		t.Fatalf("listed jobs = %+v, want only job-1", listed)
 	}
 
+	eventsRequest := httptest.NewRequest(http.MethodGet, "/v1/jobs/job-1/events", nil)
+	eventsResponse := httptest.NewRecorder()
+	server.ServeHTTP(eventsResponse, eventsRequest)
+	if eventsResponse.Code != http.StatusOK {
+		t.Fatalf("events status = %d, want %d; body = %s", eventsResponse.Code, http.StatusOK, eventsResponse.Body.String())
+	}
+	var events []sqlitedb.JobEvent
+	if err := json.NewDecoder(eventsResponse.Body).Decode(&events); err != nil {
+		t.Fatalf("decode events response: %v", err)
+	}
+	if len(events) != 2 || events[0].Event != "submitted" || events[1].Event != "assigned" {
+		t.Fatalf("events = %+v, want submitted then assigned", events)
+	}
+
 	if err := server.service.CreateJobLog(context.Background(), domain.LogStream{
 		JobID:     "job-1",
 		Attempt:   submitted.Attempt,
@@ -116,6 +130,18 @@ func TestJobEndpoints(t *testing.T) {
 func TestGetJobReturnsNotFound(t *testing.T) {
 	server := newTestServer(t)
 	request := httptest.NewRequest(http.MethodGet, "/v1/jobs/missing", nil)
+	response := httptest.NewRecorder()
+
+	server.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusNotFound, response.Body.String())
+	}
+}
+
+func TestGetMissingJobEventsReturnsNotFound(t *testing.T) {
+	server := newTestServer(t)
+	request := httptest.NewRequest(http.MethodGet, "/v1/jobs/missing/events", nil)
 	response := httptest.NewRecorder()
 
 	server.ServeHTTP(response, request)

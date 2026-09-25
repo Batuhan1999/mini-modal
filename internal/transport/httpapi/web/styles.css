@@ -1368,6 +1368,99 @@ tbody tr[data-expanded="true"]:hover td {
   white-space: pre-wrap;
 }
 
+.detail-events-header {
+  border-top: 1px solid var(--line-strong);
+}
+
+.detail-event-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 4px 20px 18px;
+  list-style: none;
+}
+
+.detail-event {
+  position: relative;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 12px;
+  padding: 13px 0;
+}
+
+.detail-event:not(:last-child)::after {
+  position: absolute;
+  top: 25px;
+  bottom: -1px;
+  left: 4px;
+  width: 1px;
+  content: "";
+  background: var(--line-strong);
+}
+
+.detail-event-marker {
+  position: relative;
+  z-index: 1;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  background: var(--surface);
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+}
+
+.detail-event[data-latest="true"] .detail-event-marker,
+.detail-event-completed .detail-event-marker {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.detail-event-failed .detail-event-marker,
+.detail-event-cancellation_requested .detail-event-marker,
+.detail-event-lease_expired .detail-event-marker {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.detail-event-cancelled .detail-event-marker {
+  background: var(--faint);
+  border-color: var(--faint);
+}
+
+.detail-event-content {
+  min-width: 0;
+}
+
+.detail-event-name,
+.detail-event-meta {
+  display: block;
+  font-family: var(--mono);
+}
+
+.detail-event-name {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.detail-event-message {
+  margin: 3px 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.detail-event-meta {
+  color: var(--faint);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.detail-event-empty {
+  padding: 18px 0 4px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
 footer {
   min-height: 48px;
   display: flex;

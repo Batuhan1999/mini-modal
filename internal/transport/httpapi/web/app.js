@@ -46,6 +46,8 @@ const elements = {
   detailLogAttempt: document.querySelector("#detail-log-attempt"),
   detailLogTerminal: document.querySelector("#detail-log-terminal"),
   detailFields: document.querySelector("#detail-fields"),
+  detailEvents: document.querySelector("#detail-events"),
+  detailEventsCount: document.querySelector("#detail-events-count"),
 };
 
 const state = {
@@ -63,6 +65,7 @@ const state = {
   detailJobID: jobIDFromPath(),
   detailJob: null,
   detailLogs: createLogState(),
+  detailEvents: [],
   cancellingJobIDs: new Set(),
 };
 
@@ -140,13 +143,17 @@ async function refreshDetail() {
 
   state.refreshing = true;
   try {
-    const job = await fetchJSON(`/v1/jobs/${encodeURIComponent(state.detailJobID)}`);
+    const [job, events] = await Promise.all([
+      fetchJSON(`/v1/jobs/${encodeURIComponent(state.detailJobID)}`),
+      fetchJSON(`/v1/jobs/${encodeURIComponent(state.detailJobID)}/events`),
+    ]);
     const attemptChanged = state.detailJob?.attempt !== job.attempt;
     const statusChanged = state.detailJob?.status !== job.status;
     if (attemptChanged) {
       state.detailLogs = createLogState(job.attempt);
     }
     state.detailJob = job;
+    state.detailEvents = events;
     renderJobDetail(job);
     const active = ["assigned", "running", "cancelling"].includes(job.status);
     if (!state.detailLogs.loaded || attemptChanged || statusChanged || active) {
@@ -469,6 +476,7 @@ function renderJobDetail(job) {
   elements.detailLogAttempt.textContent = job.attempt > 0 ? `Attempt ${job.attempt}` : "No attempt";
   document.title = `${job.id} · Mini Modal`;
   renderDetailFields(job);
+  renderDetailEvents(state.detailEvents);
   renderDetailLogs(job);
 }
 
@@ -513,6 +521,51 @@ function renderDetailFields(job) {
     return section;
   });
   elements.detailFields.replaceChildren(...sections);
+}
+
+function renderDetailEvents(events) {
+  elements.detailEventsCount.textContent = `${events.length} ${events.length === 1 ? "event" : "events"}`;
+  if (events.length === 0) {
+    elements.detailEvents.replaceChildren(
+      createElement("li", "detail-event-empty", "No lifecycle events recorded."),
+    );
+    return;
+  }
+
+  const items = events.map((event, index) => {
+    const item = createElement("li", `detail-event detail-event-${event.event}`);
+    if (index === events.length - 1) {
+      item.dataset.latest = "true";
+    }
+
+    const marker = createElement("span", "detail-event-marker");
+    marker.setAttribute("aria-hidden", "true");
+
+    const content = createElement("div", "detail-event-content");
+    content.append(
+      createElement("strong", "detail-event-name", formatEventName(event.event)),
+      createElement("p", "detail-event-message", event.message),
+    );
+
+    const context = [];
+    context.push(event.attempt > 0 ? `Attempt ${event.attempt}` : "Before first attempt");
+    if (event.node_id) {
+      context.push(event.node_id);
+    }
+    context.push(formatTimestamp(event.created_at));
+    content.append(createElement("span", "detail-event-meta", context.join(" · ")));
+    item.append(marker, content);
+    return item;
+  });
+
+  elements.detailEvents.replaceChildren(...items);
+}
+
+function formatEventName(event) {
+  return event
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function renderDetailLogs(job) {

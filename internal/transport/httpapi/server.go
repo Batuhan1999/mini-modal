@@ -41,6 +41,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v1/jobs/{id}", s.getJob)
 	s.mux.HandleFunc("POST /v1/jobs/{id}/cancel", s.cancelJob)
 	s.mux.HandleFunc("GET /v1/jobs/{id}/logs", s.listJobLogs)
+	s.mux.HandleFunc("GET /v1/jobs/{id}/events", s.listJobEvents)
 	s.mux.HandleFunc("GET /v1/nodes", s.listNodes)
 	s.mux.HandleFunc("GET /v1/dev/nodes", s.getDevNodes)
 	s.mux.HandleFunc("PUT /v1/dev/nodes", s.startDevNodes)

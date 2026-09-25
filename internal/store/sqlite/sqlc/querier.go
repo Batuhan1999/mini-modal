@@ -22,6 +22,7 @@ type Querier interface {
 	GetJob(ctx context.Context, id string) (Job, error)
 	GetNode(ctx context.Context, id string) (Node, error)
 	ListActiveJobs(ctx context.Context) ([]Job, error)
+	ListAllJobEvents(ctx context.Context, jobID string) ([]JobEvent, error)
 	ListJobEvents(ctx context.Context, arg ListJobEventsParams) ([]JobEvent, error)
 	ListJobLogs(ctx context.Context, arg ListJobLogsParams) ([]JobLog, error)
 	ListJobs(ctx context.Context) ([]Job, error)

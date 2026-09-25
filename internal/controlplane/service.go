@@ -503,6 +503,19 @@ func (s *Service) JobLogs(ctx context.Context, jobID string, attempt int64) ([]s
 	return logs, nil
 }
 
+func (s *Service) JobEvents(ctx context.Context, jobID string) ([]sqlitedb.JobEvent, error) {
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" {
+		return nil, fmt.Errorf("job ID is required")
+	}
+
+	events, err := s.queries.ListAllJobEvents(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("list events for job %q: %w", jobID, err)
+	}
+	return events, nil
+}
+
 func (s *Service) Nodes(ctx context.Context) ([]domain.Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

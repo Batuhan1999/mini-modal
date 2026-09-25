@@ -7,3 +7,8 @@ SELECT * FROM job_events
 WHERE job_id = ?
 AND attempt = ?
 ORDER BY created_at, rowid;
+
+-- name: ListAllJobEvents :many
+SELECT * FROM job_events
+WHERE job_id = ?
+ORDER BY created_at, rowid;
