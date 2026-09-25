@@ -13,6 +13,7 @@ import (
 
 	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/domain"
+	jobmodel "mini-modal/internal/job"
 	"mini-modal/internal/scheduler"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 
@@ -55,11 +56,11 @@ func (s *Service) Cancel(ctx context.Context, assignment domain.Assignment) erro
 	if stored.Attempt != assignment.Attempt {
 		return fmt.Errorf("job %q is not at attempt %d", assignment.JobID, assignment.Attempt)
 	}
-	status, err := ParseJobStatus(stored.Status)
+	status, err := jobmodel.ParseStatus(stored.Status)
 	if err != nil {
 		return err
 	}
-	if _, err := NextJobStatus(status, JobEventAcknowledgeCancellation); err != nil {
+	if _, err := status.Next(jobmodel.EventAcknowledgeCancellation); err != nil {
 		return fmt.Errorf("acknowledge cancellation for job %q: %w", assignment.JobID, err)
 	}
 
@@ -116,11 +117,11 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 		return fmt.Errorf("get job %q: %w", jobID, err)
 	}
 
-	status, err := ParseJobStatus(job.Status)
+	status, err := jobmodel.ParseStatus(job.Status)
 	if err != nil {
 		return err
 	}
-	next, err := NextJobStatus(status, JobEventRequestCancellation)
+	next, err := status.Next(jobmodel.EventRequestCancellation)
 	if err != nil {
 		return fmt.Errorf("cancel job %q: %w", jobID, err)
 	}
@@ -129,7 +130,7 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 	}
 
 	switch next {
-	case JobCancelled:
+	case jobmodel.Cancelled:
 		updated, err := s.queries.CancelNotRunningJob(ctx, jobID)
 		if err != nil {
 			return fmt.Errorf("cancel job %q: %w", jobID, err)
@@ -139,7 +140,7 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 		}
 		return s.scheduleLocked(ctx)
 
-	case JobCancelling:
+	case jobmodel.Cancelling:
 		updated, err := s.queries.StartCancelJob(ctx, jobID)
 		if err != nil {
 			return fmt.Errorf("cancel running job %q: %w", jobID, err)
@@ -183,8 +184,12 @@ func (s *Service) Heartbeat(nodeID string) error {
 	return s.runtime.Heartbeat(nodeID, time.Now())
 }
 
-func (s *Service) Submit(ctx context.Context, params sqlitedb.CreateJobParams) (sqlitedb.Job, error) {
-	if err := validateJob(params); err != nil {
+func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job, error) {
+	if err := spec.Validate(); err != nil {
+		return sqlitedb.Job{}, err
+	}
+	params, err := createJobParams(spec)
+	if err != nil {
 		return sqlitedb.Job{}, err
 	}
 
@@ -237,33 +242,35 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 			err,
 		)
 	}
-	status, err := ParseJobStatus(job.Status)
+	status, err := jobmodel.ParseStatus(job.Status)
 	if err != nil {
 		return domain.Assignment{}, false, fmt.Errorf("read claimed job %q status: %w", job.ID, err)
 	}
+	if status != jobmodel.Running {
+		return domain.Assignment{}, false, fmt.Errorf("claimed job %q has status %q", job.ID, status)
+	}
 
 	return domain.Assignment{
-		JobID:        job.ID,
-		NodeID:       job.NodeID,
-		Attempt:      job.Attempt,
-		Command:      job.Command,
-		Args:         args,
-		Image:        job.Image,
-		CPUs:         job.Cpus,
-		MemoryGB:     job.MemoryGb,
-		ShouldCancel: status.ShouldStopExecution(),
+		JobID:    job.ID,
+		NodeID:   job.NodeID,
+		Attempt:  job.Attempt,
+		Command:  job.Command,
+		Args:     args,
+		Image:    job.Image,
+		CPUs:     job.Cpus,
+		MemoryGB: job.MemoryGb,
 	}, true, nil
 }
 
 func (s *Service) Complete(ctx context.Context, assignment domain.Assignment) error {
-	return s.finish(ctx, assignment, JobEventComplete)
+	return s.finish(ctx, assignment, jobmodel.EventComplete)
 }
 
 func (s *Service) Fail(ctx context.Context, assignment domain.Assignment) error {
-	return s.finish(ctx, assignment, JobEventFail)
+	return s.finish(ctx, assignment, jobmodel.EventFail)
 }
 
-func (s *Service) finish(ctx context.Context, assignment domain.Assignment, event JobEvent) error {
+func (s *Service) finish(ctx context.Context, assignment domain.Assignment, event jobmodel.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -277,11 +284,11 @@ func (s *Service) finish(ctx context.Context, assignment domain.Assignment, even
 	if stored.Attempt != assignment.Attempt {
 		return fmt.Errorf("job %q is not at attempt %d", assignment.JobID, assignment.Attempt)
 	}
-	current, err := ParseJobStatus(stored.Status)
+	current, err := jobmodel.ParseStatus(stored.Status)
 	if err != nil {
 		return err
 	}
-	next, err := NextJobStatus(current, event)
+	next, err := current.Next(event)
 	if err != nil {
 		return fmt.Errorf("finish job %q: %w", assignment.JobID, err)
 	}
@@ -291,12 +298,12 @@ func (s *Service) finish(ctx context.Context, assignment domain.Assignment, even
 		queryErr error
 	)
 	switch next {
-	case JobSucceeded:
+	case jobmodel.Succeeded:
 		job, queryErr = s.queries.CompleteJob(ctx, sqlitedb.CompleteJobParams{
 			JobID:             assignment.JobID,
 			AssignmentAttempt: assignment.Attempt,
 		})
-	case JobFailed:
+	case jobmodel.Failed:
 		job, queryErr = s.queries.FailJob(ctx, sqlitedb.FailJobParams{
 			JobID:             assignment.JobID,
 			AssignmentAttempt: assignment.Attempt,
@@ -335,7 +342,7 @@ func (s *Service) RenewAssignment(ctx context.Context, assignment domain.Assignm
 		return false, fmt.Errorf("job %q lease has expired", assignment.JobID)
 	}
 
-	status, err := ParseJobStatus(job.Status)
+	status, err := jobmodel.ParseStatus(job.Status)
 	if err != nil {
 		return false, err
 	}
@@ -343,7 +350,7 @@ func (s *Service) RenewAssignment(ctx context.Context, assignment domain.Assignm
 		return true, nil
 	}
 
-	if status != JobRunning {
+	if status != jobmodel.Running {
 		return false, fmt.Errorf("job %q is not running", assignment.JobID)
 	}
 
@@ -476,7 +483,7 @@ func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]dom
 		}
 	}
 	for _, job := range activeJobs {
-		status, err := ParseJobStatus(job.Status)
+		status, err := jobmodel.ParseStatus(job.Status)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read active job %q status: %w", job.ID, err)
 		}
@@ -515,36 +522,27 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 	return len(expired) + len(cancelled), nil
 }
 
-func validateJob(job sqlitedb.CreateJobParams) error {
-	if strings.TrimSpace(job.ID) == "" {
-		return fmt.Errorf("job ID is required")
+func createJobParams(spec jobmodel.Spec) (sqlitedb.CreateJobParams, error) {
+	args := spec.Args
+	if args == nil {
+		args = make([]string, 0)
 	}
-	if job.Cpus <= 0 {
-		return fmt.Errorf("job %q must request at least one CPU", job.ID)
+	encodedArgs, err := json.Marshal(args)
+	if err != nil {
+		return sqlitedb.CreateJobParams{}, fmt.Errorf("encode arguments for job %q: %w", spec.ID, err)
 	}
-	if job.MemoryGb <= 0 {
-		return fmt.Errorf("job %q must request positive memory", job.ID)
-	}
-	if job.Gpus < 0 {
-		return fmt.Errorf("job %q cannot request negative GPUs", job.ID)
-	}
-	if job.DurationSeconds < 0 {
-		return fmt.Errorf("job %q cannot have a negative duration", job.ID)
-	}
-	if strings.TrimSpace(job.Command) == "" {
-		return fmt.Errorf("job %q requires a command", job.ID)
-	}
-
-	var args []string
-	if err := json.Unmarshal([]byte(job.Args), &args); err != nil {
-		return fmt.Errorf("job %q has invalid arguments: %w", job.ID, err)
-	}
-
-	if strings.TrimSpace(job.Image) == "" {
-		return fmt.Errorf("job %q has invalid image", job.ID)
-	}
-
-	return nil
+	return sqlitedb.CreateJobParams{
+		ID:              spec.ID,
+		Priority:        spec.Priority,
+		GpuType:         spec.GPUType,
+		Gpus:            spec.GPUs,
+		Cpus:            spec.CPUs,
+		MemoryGb:        spec.MemoryGB,
+		DurationSeconds: spec.DurationSeconds,
+		Command:         spec.Command,
+		Args:            string(encodedArgs),
+		Image:           spec.Image,
+	}, nil
 }
 
 func validateLogStream(logStream domain.LogStream) error {

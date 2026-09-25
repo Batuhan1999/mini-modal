@@ -13,7 +13,6 @@ message Assignment {
   string image = 6;
   int64 cpus = 7;
   int64 memory_gb = 8;
-  bool should_cancel = 9;
 }
 
 message ClaimRequest {

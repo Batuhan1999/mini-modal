@@ -7,6 +7,7 @@ import (
 	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/controlplane"
 	"mini-modal/internal/domain"
+	jobmodel "mini-modal/internal/job"
 	"mini-modal/internal/store/sqlite"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 
@@ -28,14 +29,13 @@ func TestClaimReturnsNoAssignmentWhenNoWorkIsAvailable(t *testing.T) {
 
 func TestClaimAndComplete(t *testing.T) {
 	server, service := newTestServer(t)
-	job := sqlitedb.CreateJobParams{
+	job := jobmodel.Spec{
 		ID:       "job-1",
 		Priority: 1,
-		Cpus:     1,
-		MemoryGb: 1,
+		CPUs:     1,
+		MemoryGB: 1,
 		Image:    "alpine:3.20",
 		Command:  "echo",
-		Args:     "[]",
 	}
 	if _, err := service.Submit(context.Background(), job); err != nil {
 		t.Fatalf("submit job: %v", err)
@@ -58,7 +58,7 @@ func TestClaimAndComplete(t *testing.T) {
 	if assignment.GetAttempt() <= 0 {
 		t.Fatalf("assignment attempt = %d, want a positive attempt", assignment.GetAttempt())
 	}
-	if assignment.GetImage() != job.Image || assignment.GetCpus() != job.Cpus || assignment.GetMemoryGb() != job.MemoryGb {
+	if assignment.GetImage() != job.Image || assignment.GetCpus() != job.CPUs || assignment.GetMemoryGb() != job.MemoryGB {
 		t.Fatalf("assignment runtime configuration = %+v", assignment)
 	}
 
@@ -73,17 +73,17 @@ func TestClaimAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get completed job: %v", err)
 	}
-	if controlplane.JobStatus(record.Status) != controlplane.JobSucceeded {
-		t.Fatalf("job status = %q, want %q", record.Status, controlplane.JobSucceeded)
+	if jobmodel.Status(record.Status) != jobmodel.Succeeded {
+		t.Fatalf("job status = %q, want %q", record.Status, jobmodel.Succeeded)
 	}
 }
 
 func TestRenewAndAcknowledgeCancellation(t *testing.T) {
 	ctx := context.Background()
 	server, service := newTestServer(t)
-	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
-		ID: "job-1", Cpus: 1, MemoryGb: 1,
-		Image: "alpine:3.20", Command: "sleep", Args: `["30"]`,
+	if _, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "sleep", Args: []string{"30"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -118,8 +118,8 @@ func TestRenewAndAcknowledgeCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if controlplane.JobStatus(record.Status) != controlplane.JobCancelled {
-		t.Fatalf("status = %q, want %q", record.Status, controlplane.JobCancelled)
+	if jobmodel.Status(record.Status) != jobmodel.Cancelled {
+		t.Fatalf("status = %q, want %q", record.Status, jobmodel.Cancelled)
 	}
 }
 

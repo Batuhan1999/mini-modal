@@ -8,11 +8,40 @@ import (
 	"strconv"
 	"strings"
 
+	jobmodel "mini-modal/internal/job"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 )
 
+type submitJobRequest struct {
+	ID              string   `json:"id"`
+	Priority        int64    `json:"priority"`
+	GPUType         string   `json:"gpu_type"`
+	GPUs            int64    `json:"gpus"`
+	CPUs            int64    `json:"cpus"`
+	MemoryGB        int64    `json:"memory_gb"`
+	DurationSeconds int64    `json:"duration_seconds"`
+	Image           string   `json:"image"`
+	Command         string   `json:"command"`
+	Args            []string `json:"args"`
+}
+
+func (r submitJobRequest) spec() jobmodel.Spec {
+	return jobmodel.Spec{
+		ID:              r.ID,
+		Priority:        r.Priority,
+		GPUType:         r.GPUType,
+		GPUs:            r.GPUs,
+		CPUs:            r.CPUs,
+		MemoryGB:        r.MemoryGB,
+		DurationSeconds: r.DurationSeconds,
+		Image:           r.Image,
+		Command:         r.Command,
+		Args:            r.Args,
+	}
+}
+
 func (s *Server) submitJob(w http.ResponseWriter, r *http.Request) {
-	var request sqlitedb.CreateJobParams
+	var request submitJobRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	decoder.DisallowUnknownFields()
 
@@ -25,7 +54,7 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	record, err := s.service.Submit(r.Context(), request)
+	record, err := s.service.Submit(r.Context(), request.spec())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

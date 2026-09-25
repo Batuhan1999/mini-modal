@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"mini-modal/internal/domain"
+	jobmodel "mini-modal/internal/job"
 	"mini-modal/internal/store/sqlite"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 )
@@ -16,15 +17,15 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 		{ID: "node-a", GPUType: "A100", TotalGPUs: 2, TotalCPUs: 16, TotalMemoryGB: 64},
 	})
 
-	job, err := service.Submit(ctx, sqlitedb.CreateJobParams{
-		ID: "job-1", GpuType: "A100", Gpus: 2, Cpus: 4, MemoryGb: 8,
-		Image: "alpine:3.20", Command: "echo", Args: "[]",
+	job, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", GPUType: "A100", GPUs: 2, CPUs: 4, MemoryGB: 8,
+		Image: "alpine:3.20", Command: "echo",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if JobStatus(job.Status) != JobAssigned {
-		t.Fatalf("got status %q after scheduling, want %q", job.Status, JobAssigned)
+	if jobmodel.Status(job.Status) != jobmodel.Assigned {
+		t.Fatalf("got status %q after scheduling, want %q", job.Status, jobmodel.Assigned)
 	}
 
 	nodes, err := service.Nodes(ctx)
@@ -53,8 +54,8 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if JobStatus(running.Status) != JobRunning {
-		t.Fatalf("got status %q after claim, want %q", running.Status, JobRunning)
+	if jobmodel.Status(running.Status) != jobmodel.Running {
+		t.Fatalf("got status %q after claim, want %q", running.Status, jobmodel.Running)
 	}
 	if _, found, err := service.Claim(ctx, "node-a"); err != nil {
 		t.Fatal(err)
@@ -76,24 +77,24 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if JobStatus(completed.Status) != JobSucceeded {
-		t.Fatalf("got status %q, want %q", completed.Status, JobSucceeded)
+	if jobmodel.Status(completed.Status) != jobmodel.Succeeded {
+		t.Fatalf("got status %q, want %q", completed.Status, jobmodel.Succeeded)
 	}
 }
 
 func TestServiceRejectsInvalidJobs(t *testing.T) {
 	tests := []struct {
 		name string
-		job  sqlitedb.CreateJobParams
+		job  jobmodel.Spec
 	}{
-		{name: "missing ID", job: sqlitedb.CreateJobParams{Cpus: 1, MemoryGb: 1}},
-		{name: "blank ID", job: sqlitedb.CreateJobParams{ID: "   ", Cpus: 1, MemoryGb: 1}},
-		{name: "zero CPUs", job: sqlitedb.CreateJobParams{ID: "job-1", MemoryGb: 1}},
-		{name: "zero memory", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1}},
-		{name: "negative GPUs", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1, MemoryGb: 1, Gpus: -1}},
-		{name: "negative duration", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1, MemoryGb: 1, DurationSeconds: -1}},
-		{name: "missing image", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1, MemoryGb: 1, Command: "echo", Args: "[]"}},
-		{name: "blank image", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1, MemoryGb: 1, Command: "echo", Args: "[]", Image: "   "}},
+		{name: "missing ID", job: jobmodel.Spec{CPUs: 1, MemoryGB: 1}},
+		{name: "blank ID", job: jobmodel.Spec{ID: "   ", CPUs: 1, MemoryGB: 1}},
+		{name: "zero CPUs", job: jobmodel.Spec{ID: "job-1", MemoryGB: 1}},
+		{name: "zero memory", job: jobmodel.Spec{ID: "job-1", CPUs: 1}},
+		{name: "negative GPUs", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, GPUs: -1}},
+		{name: "negative duration", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, DurationSeconds: -1}},
+		{name: "missing image", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, Command: "echo"}},
+		{name: "blank image", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, Command: "echo", Image: "   "}},
 	}
 
 	for _, test := range tests {
@@ -131,8 +132,8 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	if err := service.RegisterNode(ctx, node); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
-		ID: "job-1", Cpus: 1, MemoryGb: 1, Image: "alpine:3.20", Command: "echo", Args: "[]",
+	if _, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -160,8 +161,8 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if JobStatus(running.Status) != JobRunning {
-		t.Fatalf("status after restart = %q, want %q", running.Status, JobRunning)
+	if jobmodel.Status(running.Status) != jobmodel.Running {
+		t.Fatalf("status after restart = %q, want %q", running.Status, jobmodel.Running)
 	}
 	if running.Attempt != firstAssignment.Attempt {
 		t.Fatalf("attempt after restart = %d, want %d", running.Attempt, firstAssignment.Attempt)
@@ -187,9 +188,9 @@ func TestServiceCancelsRunningAssignment(t *testing.T) {
 	service := newTestService(t, []domain.Node{{
 		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
 	}})
-	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
-		ID: "job-1", Cpus: 1, MemoryGb: 1,
-		Image: "alpine:3.20", Command: "sleep", Args: `["30"]`,
+	if _, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "sleep", Args: []string{"30"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +222,7 @@ func TestServiceCancelsRunningAssignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if JobStatus(record.Status) != JobCancelled || record.NodeID != "" || record.LeaseExpiresAt != 0 {
+	if jobmodel.Status(record.Status) != jobmodel.Cancelled || record.NodeID != "" || record.LeaseExpiresAt != 0 {
 		t.Fatalf("cancelled job = %+v", record)
 	}
 }
@@ -229,9 +230,9 @@ func TestServiceCancelsRunningAssignment(t *testing.T) {
 func TestServiceCancelsPendingJobImmediately(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t, nil)
-	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
-		ID: "job-1", Cpus: 1, MemoryGb: 1,
-		Image: "alpine:3.20", Command: "echo", Args: "[]",
+	if _, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "echo",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -242,8 +243,8 @@ func TestServiceCancelsPendingJobImmediately(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if JobStatus(record.Status) != JobCancelled {
-		t.Fatalf("status = %q, want %q", record.Status, JobCancelled)
+	if jobmodel.Status(record.Status) != jobmodel.Cancelled {
+		t.Fatalf("status = %q, want %q", record.Status, jobmodel.Cancelled)
 	}
 }
 

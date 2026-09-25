@@ -9,6 +9,7 @@ import (
 	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/controlplane"
 	"mini-modal/internal/domain"
+	jobmodel "mini-modal/internal/job"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -83,7 +84,7 @@ func (s *Server) StreamLogs(stream grpc.ClientStreamingServer[agentv1.StreamLogs
 					chunk.GetAttempt(),
 				)
 			}
-			jobStatus, err := controlplane.ParseJobStatus(record.Status)
+			jobStatus, err := jobmodel.ParseStatus(record.Status)
 			if err != nil {
 				return status.Errorf(codes.Internal, "job %q has invalid status: %v", chunkJobID, err)
 			}

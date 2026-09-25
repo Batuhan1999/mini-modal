@@ -13,6 +13,7 @@ import (
 	"mini-modal/internal/controlplane"
 	"mini-modal/internal/devcluster"
 	"mini-modal/internal/domain"
+	jobmodel "mini-modal/internal/job"
 	"mini-modal/internal/store/sqlite"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 )
@@ -32,7 +33,7 @@ func TestJobEndpoints(t *testing.T) {
 			"duration_seconds":1,
 			"image":"alpine:3.20",
 			"command":"echo",
-			"args":"[]"
+			"args":[]
 		}`),
 	)
 	submitResponse := httptest.NewRecorder()
@@ -46,7 +47,7 @@ func TestJobEndpoints(t *testing.T) {
 	if err := json.NewDecoder(submitResponse.Body).Decode(&submitted); err != nil {
 		t.Fatalf("decode submit response: %v", err)
 	}
-	if submitted.ID != "job-1" || controlplane.JobStatus(submitted.Status) != controlplane.JobAssigned || submitted.Image != "alpine:3.20" {
+	if submitted.ID != "job-1" || jobmodel.Status(submitted.Status) != jobmodel.Assigned || submitted.Image != "alpine:3.20" {
 		t.Fatalf("submitted job = %+v, want ID job-1 with assigned status", submitted)
 	}
 
@@ -127,9 +128,9 @@ func TestGetJobReturnsNotFound(t *testing.T) {
 func TestCancelJobEndpoint(t *testing.T) {
 	server := newTestServer(t)
 	ctx := context.Background()
-	if _, err := server.service.Submit(ctx, sqlitedb.CreateJobParams{
-		ID: "job-cancel", Cpus: 1, MemoryGb: 1,
-		Image: "alpine:3.20", Command: "sleep", Args: `["30"]`,
+	if _, err := server.service.Submit(ctx, jobmodel.Spec{
+		ID: "job-cancel", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "sleep", Args: []string{"30"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -145,8 +146,8 @@ func TestCancelJobEndpoint(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&record); err != nil {
 		t.Fatal(err)
 	}
-	if controlplane.JobStatus(record.Status) != controlplane.JobCancelled {
-		t.Fatalf("status = %q, want %q", record.Status, controlplane.JobCancelled)
+	if jobmodel.Status(record.Status) != jobmodel.Cancelled {
+		t.Fatalf("status = %q, want %q", record.Status, jobmodel.Cancelled)
 	}
 }
 

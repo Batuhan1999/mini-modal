@@ -821,11 +821,12 @@ async function sendJob(job, button, busyLabel, idleLabel) {
     if (!Array.isArray(args) || args.some((argument) => typeof argument !== "string")) {
       throw new Error("Arguments must be a JSON array of strings");
     }
+    const payload = { ...job, args };
 
     const created = await fetchJSON("/v1/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(job),
+      body: JSON.stringify(payload),
     });
     setFormResult(elements.jobFormResult, `${created.id} accepted with state ${created.status}.`, "success");
     addActivity(`${created.id} submitted at priority ${created.priority}`);
