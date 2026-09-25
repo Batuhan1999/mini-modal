@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"time"
@@ -72,7 +73,17 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 	renewCtx, stopRenewing := context.WithCancel(ctx)
 	defer stopRenewing()
 
-	executionCtx, cancelExecution := context.WithCancel(ctx)
+	var executionCtx context.Context
+	var cancelExecution context.CancelFunc
+
+	if assignment.DurationSeconds > 0 {
+		executionCtx, cancelExecution = context.WithTimeout(
+			ctx,
+			time.Duration(assignment.DurationSeconds)*time.Second,
+		)
+	} else {
+		executionCtx, cancelExecution = context.WithCancel(ctx)
+	}
 	defer cancelExecution()
 	chunks := make(chan domain.LogStream, 128)
 	uploadResult := make(chan error, 1)
@@ -133,8 +144,13 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 		wasCancelled = true
 	default:
 	}
+	timedOut := !wasCancelled &&
+		errors.Is(executionCtx.Err(), context.DeadlineExceeded)
+
 	if wasCancelled {
 		_, _ = io.WriteString(systemOut, "Execution stopped after cancellation\n")
+	} else if timedOut {
+		_, _ = io.WriteString(systemOut, "Execution timed out\n")
 	}
 
 	close(chunks)
@@ -148,6 +164,19 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 	}
 	if wasCancelled {
 		a.reportResult(ctx, assignment, "cancelled", a.controlPlane.Cancel)
+		return
+	}
+	if timedOut {
+		failureMessage := "execution timed out"
+
+		a.reportResult(
+			ctx,
+			assignment,
+			"timeout",
+			func(ctx context.Context, assignment domain.Assignment) error {
+				return a.controlPlane.Fail(ctx, assignment, failureMessage)
+			},
+		)
 		return
 	}
 

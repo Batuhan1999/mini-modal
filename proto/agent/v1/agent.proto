@@ -13,6 +13,7 @@ message Assignment {
   string image = 6;
   int64 cpus = 7;
   int64 memory_gb = 8;
+  int64 duration_seconds = 9;
 }
 
 message ClaimRequest {

@@ -74,17 +74,18 @@ func (LogSource) EnumDescriptor() ([]byte, []int) {
 }
 
 type Assignment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	Attempt       int64                  `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	Command       string                 `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
-	Args          []string               `protobuf:"bytes,5,rep,name=args,proto3" json:"args,omitempty"`
-	Image         string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
-	Cpus          int64                  `protobuf:"varint,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
-	MemoryGb      int64                  `protobuf:"varint,8,opt,name=memory_gb,json=memoryGb,proto3" json:"memory_gb,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	JobId           string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	NodeId          string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Attempt         int64                  `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Command         string                 `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
+	Args            []string               `protobuf:"bytes,5,rep,name=args,proto3" json:"args,omitempty"`
+	Image           string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
+	Cpus            int64                  `protobuf:"varint,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
+	MemoryGb        int64                  `protobuf:"varint,8,opt,name=memory_gb,json=memoryGb,proto3" json:"memory_gb,omitempty"`
+	DurationSeconds int64                  `protobuf:"varint,9,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Assignment) Reset() {
@@ -169,6 +170,13 @@ func (x *Assignment) GetCpus() int64 {
 func (x *Assignment) GetMemoryGb() int64 {
 	if x != nil {
 		return x.MemoryGb
+	}
+	return 0
+}
+
+func (x *Assignment) GetDurationSeconds() int64 {
+	if x != nil {
+		return x.DurationSeconds
 	}
 	return 0
 }
@@ -945,7 +953,7 @@ var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\xcb\x01\n" +
+	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\xf6\x01\n" +
 	"\n" +
 	"Assignment\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
@@ -955,7 +963,8 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x04args\x18\x05 \x03(\tR\x04args\x12\x14\n" +
 	"\x05image\x18\x06 \x01(\tR\x05image\x12\x12\n" +
 	"\x04cpus\x18\a \x01(\x03R\x04cpus\x12\x1b\n" +
-	"\tmemory_gb\x18\b \x01(\x03R\bmemoryGb\"'\n" +
+	"\tmemory_gb\x18\b \x01(\x03R\bmemoryGb\x12)\n" +
+	"\x10duration_seconds\x18\t \x01(\x03R\x0fdurationSeconds\"'\n" +
 	"\fClaimRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"O\n" +
 	"\rClaimResponse\x12>\n" +

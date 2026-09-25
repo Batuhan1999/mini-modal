@@ -141,14 +141,15 @@ func (s *Server) Claim(ctx context.Context, req *agentv1.ClaimRequest) (*agentv1
 
 	return &agentv1.ClaimResponse{
 		Assignment: &agentv1.Assignment{
-			JobId:    assignment.JobID,
-			NodeId:   assignment.NodeID,
-			Attempt:  assignment.Attempt,
-			Command:  assignment.Command,
-			Args:     assignment.Args,
-			Image:    assignment.Image,
-			Cpus:     assignment.CPUs,
-			MemoryGb: assignment.MemoryGB,
+			JobId:           assignment.JobID,
+			NodeId:          assignment.NodeID,
+			Attempt:         assignment.Attempt,
+			Command:         assignment.Command,
+			Args:            assignment.Args,
+			Image:           assignment.Image,
+			Cpus:            assignment.CPUs,
+			MemoryGb:        assignment.MemoryGB,
+			DurationSeconds: assignment.DurationSeconds,
 		},
 	}, nil
 }

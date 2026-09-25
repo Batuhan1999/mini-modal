@@ -126,8 +126,16 @@
                 <input name="memory_gb" type="number" value="4" min="1" max="8192" required>
               </label>
               <label>
-                <span>Duration s</span>
+                <span>Timeout s</span>
                 <input name="duration_seconds" type="number" value="8" min="0" max="86400" required>
+              </label>
+              <label>
+                <span>Max attempts</span>
+                <input name="max_attempts" type="number" value="3" min="1" max="100" required>
+              </label>
+              <label>
+                <span>Retry backoff s</span>
+                <input name="retry_backoff_seconds" type="number" value="1" min="0" max="86400" required>
               </label>
               <label class="job-field-image">
                 <span>Container image</span>

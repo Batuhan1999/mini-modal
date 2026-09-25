@@ -338,14 +338,15 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 		}
 
 		return domain.Assignment{
-			JobID:    job.ID,
-			NodeID:   job.NodeID,
-			Attempt:  job.Attempt,
-			Command:  job.Command,
-			Args:     args,
-			Image:    job.Image,
-			CPUs:     job.Cpus,
-			MemoryGB: job.MemoryGb,
+			JobID:           job.ID,
+			NodeID:          job.NodeID,
+			Attempt:         job.Attempt,
+			Command:         job.Command,
+			Args:            args,
+			Image:           job.Image,
+			CPUs:            job.Cpus,
+			MemoryGB:        job.MemoryGb,
+			DurationSeconds: job.DurationSeconds,
 		}, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
