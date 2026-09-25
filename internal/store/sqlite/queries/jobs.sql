@@ -38,7 +38,8 @@ ORDER BY id;
 UPDATE jobs
 SET status = 'assigned',
     node_id = sqlc.arg(target_node_id),
-    attempt = attempt + 1
+    attempt = attempt + 1,
+    lease_expires_at = sqlc.arg(lease_expires_at)
 WHERE id = sqlc.arg(job_id)
   AND status = 'pending'
 RETURNING *;
@@ -51,7 +52,8 @@ WHERE id = ?
 
 -- name: ClaimJob :one
 UPDATE jobs
-SET status = 'running'
+SET status = 'running',
+    lease_expires_at = sqlc.arg(lease_expires_at)
 WHERE id = (
     SELECT candidate.id
     FROM jobs AS candidate
@@ -65,7 +67,8 @@ RETURNING *;
 
 -- name: CompleteJob :one
 UPDATE jobs
-SET status = 'succeeded'
+SET status = 'succeeded',
+    lease_expires_at = 0
 WHERE id = sqlc.arg(job_id)
   AND attempt = sqlc.arg(assignment_attempt)
   AND status = 'running'
@@ -73,7 +76,8 @@ RETURNING *;
 
 -- name: FailJob :one
 UPDATE jobs
-SET status = 'failed'
+SET status = 'failed',
+    lease_expires_at = 0
 WHERE id = sqlc.arg(job_id)
   AND attempt = sqlc.arg(assignment_attempt)
   AND status = 'running'
@@ -82,18 +86,30 @@ RETURNING *;
 -- name: RequeueAssignment :one
 UPDATE jobs
 SET status = 'pending',
-    node_id = ''
+    node_id = '',
+    lease_expires_at = 0
 WHERE id = sqlc.arg(job_id)
   AND node_id = sqlc.arg(assignment_node_id)
   AND attempt = sqlc.arg(assignment_attempt)
   AND status IN ('assigned', 'running')
 RETURNING *;
 
--- name: RequeueInFlightJobs :execrows
+-- name: RenewAssignment :execrows
+UPDATE jobs
+SET lease_expires_at = sqlc.arg(lease_expires_at)
+WHERE id = sqlc.arg(job_id)
+  AND node_id = sqlc.arg(assignment_node_id)
+  AND attempt = sqlc.arg(assignment_attempt)
+  AND status = 'running';
+
+-- name: RequeueExpiredAssignments :many
 UPDATE jobs
 SET status = 'pending',
-    node_id = ''
-WHERE status IN ('assigned', 'running');
+    node_id = '',
+    lease_expires_at = 0
+WHERE status IN ('assigned', 'running')
+  AND lease_expires_at <= sqlc.arg(expired_before)
+RETURNING *;
 
 -- name: RequeueUnschedulableJobs :execrows
 UPDATE jobs

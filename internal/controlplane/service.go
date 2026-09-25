@@ -24,6 +24,8 @@ const (
 	JobUnschedulable = "unschedulable"
 )
 
+const assignmentLeaseDuration = 15 * time.Second
+
 type Service struct {
 	mu      sync.Mutex
 	runtime *RuntimeState
@@ -40,16 +42,7 @@ func NewService(runtime *RuntimeState, queries sqlitedb.Querier) *Service {
 }
 
 func (s *Service) Initialize(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	requeued, err := s.queries.RequeueInFlightJobs(ctx)
-	if err != nil {
-		return fmt.Errorf("requeue jobs after restart: %w", err)
-	}
-	if requeued > 0 {
-		log.Printf("requeued %d jobs after restart", requeued)
-	}
+	_ = ctx
 	return nil
 }
 
@@ -142,7 +135,10 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 		return domain.Assignment{}, false, nil
 	}
 
-	job, err := s.queries.ClaimJob(ctx, nodeID)
+	job, err := s.queries.ClaimJob(ctx, sqlitedb.ClaimJobParams{
+		LeaseExpiresAt: time.Now().Add(assignmentLeaseDuration).UnixMilli(),
+		ClaimNodeID:    nodeID,
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Assignment{}, false, nil
 	}
@@ -150,11 +146,7 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 		return domain.Assignment{}, false, fmt.Errorf("claim job for node %q: %w", nodeID, err)
 	}
 
-	assignment := domain.Assignment{JobID: job.ID, NodeID: job.NodeID, Attempt: job.Attempt}
-	if err := s.runtime.RenewLease(assignment, time.Now()); err != nil {
-		return domain.Assignment{}, false, err
-	}
-	return assignment, true, nil
+	return domain.Assignment{JobID: job.ID, NodeID: job.NodeID, Attempt: job.Attempt}, true, nil
 }
 
 func (s *Service) Complete(ctx context.Context, assignment domain.Assignment) error {
@@ -194,8 +186,6 @@ func (s *Service) finish(ctx context.Context, assignment domain.Assignment, stat
 		return fmt.Errorf("finish job %q: %w", assignment.JobID, err)
 	}
 
-	activeAssignment := domain.Assignment{JobID: job.ID, NodeID: job.NodeID, Attempt: job.Attempt}
-	s.runtime.ClearLease(activeAssignment)
 	if err := s.scheduleLocked(ctx); err != nil {
 		log.Printf("job %q finished but scheduling failed: %v", job.ID, err)
 	}
@@ -206,17 +196,19 @@ func (s *Service) RenewAssignment(ctx context.Context, assignment domain.Assignm
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	job, err := s.queries.GetJob(ctx, assignment.JobID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("job %q not found", assignment.JobID)
-	}
+	updated, err := s.queries.RenewAssignment(ctx, sqlitedb.RenewAssignmentParams{
+		LeaseExpiresAt:    time.Now().Add(assignmentLeaseDuration).UnixMilli(),
+		JobID:             assignment.JobID,
+		AssignmentNodeID:  assignment.NodeID,
+		AssignmentAttempt: assignment.Attempt,
+	})
 	if err != nil {
-		return fmt.Errorf("get job %q: %w", assignment.JobID, err)
+		return fmt.Errorf("renew assignment for job %q: %w", assignment.JobID, err)
 	}
-	if job.Status != JobRunning || job.NodeID != assignment.NodeID || job.Attempt != assignment.Attempt {
+	if updated == 0 {
 		return fmt.Errorf("assignment for job %q is stale", assignment.JobID)
 	}
-	return s.runtime.RenewLease(assignment, time.Now())
+	return nil
 }
 
 func (s *Service) Job(ctx context.Context, jobID string) (sqlitedb.Job, error) {
@@ -246,6 +238,10 @@ func (s *Service) Nodes(ctx context.Context) ([]domain.Node, error) {
 	return nodes, err
 }
 
+func (s *Service) NodeHealthy(nodeID string) bool {
+	return s.runtime.NodeHealthy(nodeID, time.Now())
+}
+
 func (s *Service) scheduleLocked(ctx context.Context) error {
 	jobs, err := s.queries.ListPendingJobs(ctx)
 	if err != nil {
@@ -263,9 +259,10 @@ func (s *Service) scheduleLocked(ctx context.Context) error {
 	assignments, _, possiblyUnschedulable := s.policy.Schedule(jobs, healthyNodes)
 
 	for _, assignment := range assignments {
-		job, err := s.queries.AssignJob(ctx, sqlitedb.AssignJobParams{
-			TargetNodeID: assignment.NodeID,
-			JobID:        assignment.JobID,
+		_, err := s.queries.AssignJob(ctx, sqlitedb.AssignJobParams{
+			TargetNodeID:   assignment.NodeID,
+			LeaseExpiresAt: now.Add(assignmentLeaseDuration).UnixMilli(),
+			JobID:          assignment.JobID,
 		})
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
@@ -273,9 +270,6 @@ func (s *Service) scheduleLocked(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("assign job %q: %w", assignment.JobID, err)
 		}
-
-		activeAssignment := domain.Assignment{JobID: job.ID, NodeID: job.NodeID, Attempt: job.Attempt}
-		s.runtime.SetLease(activeAssignment, now)
 	}
 
 	for _, job := range possiblyUnschedulable {
@@ -334,30 +328,11 @@ func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]dom
 }
 
 func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (int, error) {
-	expired := s.runtime.ExpiredAssignments(now)
-	requeued := 0
-	var firstErr error
-
-	for _, assignment := range expired {
-		_, err := s.queries.RequeueAssignment(ctx, sqlitedb.RequeueAssignmentParams{
-			JobID:             assignment.JobID,
-			AssignmentNodeID:  assignment.NodeID,
-			AssignmentAttempt: assignment.Attempt,
-		})
-		if errors.Is(err, sql.ErrNoRows) {
-			s.runtime.ClearLease(assignment)
-			continue
-		}
-		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("requeue job %q: %w", assignment.JobID, err)
-			}
-			continue
-		}
-		s.runtime.ClearLease(assignment)
-		requeued++
+	expired, err := s.queries.RequeueExpiredAssignments(ctx, now.UnixMilli())
+	if err != nil {
+		return 0, fmt.Errorf("requeue expired assignments: %w", err)
 	}
-	return requeued, firstErr
+	return len(expired), nil
 }
 
 func validateJob(job sqlitedb.CreateJobParams) error {

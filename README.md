@@ -6,14 +6,27 @@ The curated [learning roadmap](docs/learning-roadmap.md) connects each project
 milestone to official architecture documentation, engineering articles, videos,
 open-source implementations and distributed-systems material.
 
-The current version is intentionally simple: it has an in-memory control plane,
-a public HTTP API, polling node agents and a fake executor. There is no database,
-Docker runtime or real GPU yet.
+The current version has a SQLite-backed control plane, a public HTTP API, gRPC
+communication with polling node agents, durable assignment leases, a fake
+executor, and a browser dashboard with a local development-agent launcher.
+There is no container runtime or real GPU execution yet.
 
 ## Run it
 
 ```bash
-go run ./cmd/minimodal
+go build -o ./tmp/agent ./cmd/agent
+go run ./cmd/controlplane
+```
+
+Open [http://localhost:8080](http://localhost:8080) to use the dashboard. From
+there you can launch local agent processes, submit jobs, and watch scheduling,
+resource reservations, leases, completions, and failures update live. Launched
+agents still register, heartbeat, claim work, and report results over gRPC.
+
+To run a real agent process against the control plane:
+
+```bash
+go run ./cmd/agent -node-id node-a -cpus 8 -memory-gb 16
 ```
 
 For automatic rebuilds and restarts while developing:
@@ -22,8 +35,9 @@ For automatic rebuilds and restarts while developing:
 go tool air
 ```
 
-Air watches the Go source files, rebuilds `cmd/minimodal`, and restarts the
-process after a change. It is a development tool and is not used in production.
+Air watches Go and embedded web source files, rebuilds both executables, and
+restarts `cmd/controlplane` after a change. It is a development tool and is not
+used in production.
 
 The API listens on `http://localhost:8080`:
 
@@ -31,6 +45,10 @@ The API listens on `http://localhost:8080`:
 POST /v1/jobs
 GET  /v1/jobs
 GET  /v1/jobs/{id}
+GET  /v1/nodes
+GET  /v1/dev/nodes
+PUT  /v1/dev/nodes
+DELETE /v1/dev/nodes
 ```
 
 ## Test it
@@ -62,19 +80,23 @@ The project currently:
 - reserves resources without exceeding capacity;
 - distinguishes temporarily pending jobs from unschedulable jobs;
 - exposes job submission and inspection through JSON over HTTP;
-- lets node agents claim assigned work; and
-- runs assignments with a fake executor before reporting completion or failure.
+- lets node agents claim assigned work;
+- stores jobs, nodes, attempts, and assignment leases in SQLite;
+- connects agent processes to the control plane over gRPC;
+- runs assignments with a fake executor before reporting completion or failure;
+- requeues work after an assignment lease expires; and
+- provides a dashboard and a local development-agent process manager.
 
 The current request path is:
 
 ```text
-HTTP API -> control-plane service -> state -> scheduler
-                                      ^
-node agent -> claim -> fake executor -+-> completion or failure
+dashboard / HTTP API -> control-plane service -> SQLite -> scheduler
+                              ^                         |
+                              |                         v
+node agent -> gRPC -> claim -> fake executor -> completion or failure
+                              ^
+locally launched agent -------+
 ```
-
-The control-plane state is still in memory, so jobs disappear when the process
-restarts.
 
 ## Suggested milestones
 

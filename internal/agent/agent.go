@@ -7,6 +7,9 @@ import (
 
 	"mini-modal/internal/domain"
 	"mini-modal/internal/executor"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type ControlPlane interface {
@@ -65,17 +68,52 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 	go a.renewAssignment(renewCtx, assignment)
 
 	executionErr := a.executor.Run(ctx, assignment)
-	stopRenewing()
 
 	if executionErr != nil {
-		if reportErr := a.controlPlane.Fail(ctx, assignment); reportErr != nil {
-			log.Printf("agent %q failed to report job %q failure: %v", a.nodeID, assignment.JobID, reportErr)
-		}
+		a.reportResult(ctx, assignment, "failure", a.controlPlane.Fail)
 		return
 	}
 
-	if err := a.controlPlane.Complete(ctx, assignment); err != nil {
-		log.Printf("agent %q failed to report job %q completion: %v", a.nodeID, assignment.JobID, err)
+	a.reportResult(ctx, assignment, "completion", a.controlPlane.Complete)
+}
+
+func (a *Agent) reportResult(
+	ctx context.Context,
+	assignment domain.Assignment,
+	result string,
+	report func(context.Context, domain.Assignment) error,
+) {
+	for {
+		err := report(ctx, assignment)
+		if err == nil {
+			return
+		}
+		if status.Code(err) == codes.FailedPrecondition {
+			log.Printf(
+				"agent %q discarded stale %s for job %q attempt %d: %v",
+				a.nodeID,
+				result,
+				assignment.JobID,
+				assignment.Attempt,
+				err,
+			)
+			return
+		}
+
+		log.Printf(
+			"agent %q failed to report job %q %s; retrying: %v",
+			a.nodeID,
+			assignment.JobID,
+			result,
+			err,
+		)
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 	}
 }
 

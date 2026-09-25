@@ -38,6 +38,9 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if jobs == nil {
+		jobs = make([]sqlitedb.Job, 0)
+	}
 
 	writeJSON(w, http.StatusOK, jobs)
 }

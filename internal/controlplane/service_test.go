@@ -109,7 +109,7 @@ func TestServiceRejectsInvalidJobs(t *testing.T) {
 	}
 }
 
-func TestServiceRequeuesRunningJobsAfterRestart(t *testing.T) {
+func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	ctx := context.Background()
 	databasePath := filepath.Join(t.TempDir(), "mini-modal.db")
 	node := domain.Node{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}
@@ -150,35 +150,24 @@ func TestServiceRequeuesRunningJobsAfterRestart(t *testing.T) {
 	if err := restarted.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	pending, err := restarted.Job(ctx, "job-1")
+	running, err := restarted.Job(ctx, "job-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pending.Status != JobPending {
-		t.Fatalf("status after restart = %q, want %q", pending.Status, JobPending)
+	if running.Status != JobRunning {
+		t.Fatalf("status after restart = %q, want %q", running.Status, JobRunning)
+	}
+	if running.Attempt != firstAssignment.Attempt {
+		t.Fatalf("attempt after restart = %d, want %d", running.Attempt, firstAssignment.Attempt)
 	}
 
 	if err := restarted.RegisterNode(ctx, node); err != nil {
 		t.Fatal(err)
 	}
-	secondAssignment, found, err := restarted.Claim(ctx, node.ID)
-	if err != nil {
-		t.Fatal(err)
+	if err := restarted.RenewAssignment(ctx, firstAssignment); err != nil {
+		t.Fatalf("renew assignment after restart: %v", err)
 	}
-	if !found {
-		t.Fatal("expected the reassigned job")
-	}
-	if secondAssignment.Attempt != firstAssignment.Attempt+1 {
-		t.Fatalf(
-			"attempt after restart = %d, want %d",
-			secondAssignment.Attempt,
-			firstAssignment.Attempt+1,
-		)
-	}
-	if err := restarted.Complete(ctx, firstAssignment); err == nil {
-		t.Fatal("expected stale completion to be rejected")
-	}
-	if err := restarted.Complete(ctx, secondAssignment); err != nil {
+	if err := restarted.Complete(ctx, firstAssignment); err != nil {
 		t.Fatal(err)
 	}
 }

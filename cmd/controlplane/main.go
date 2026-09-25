@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -14,6 +15,7 @@ import (
 
 	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/controlplane"
+	"mini-modal/internal/devcluster"
 	"mini-modal/internal/store/sqlite"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 	"mini-modal/internal/transport/agentgrpc"
@@ -23,10 +25,19 @@ import (
 )
 
 func main() {
+	databasePath := flag.String("db-path", "data/mini-modal.db", "path to the SQLite database")
+	agentBinary := flag.String("agent-binary", "tmp/agent", "path to the local development agent binary")
+	agentControlPlaneAddress := flag.String(
+		"agent-control-plane-address",
+		"localhost:9090",
+		"gRPC address passed to locally launched development agents",
+	)
+	flag.Parse()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := sqlite.Open(ctx, "data/mini-modal.db")
+	db, err := sqlite.Open(ctx, *databasePath)
 	if err != nil {
 		log.Fatalf("failed to open database: %v", err)
 	}
@@ -37,9 +48,11 @@ func main() {
 	if err := service.Initialize(ctx); err != nil {
 		log.Fatalf("failed to initialize control plane: %v", err)
 	}
+	localAgents := devcluster.New(ctx, *agentBinary, *agentControlPlaneAddress)
+	defer localAgents.Stop()
 	httpServer := &http.Server{
 		Addr:              ":8080",
-		Handler:           httpapi.NewServer(service),
+		Handler:           httpapi.NewServer(service, localAgents),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

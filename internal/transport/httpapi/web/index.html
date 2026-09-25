@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#0b0d0c">
+    <title>Mini Modal Control Plane</title>
+    <link rel="stylesheet" href="/assets/styles.css">
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to dashboard</a>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">MM</span>
+        <div>
+          <p class="eyebrow">Distributed runtime</p>
+          <h1>Mini Modal</h1>
+        </div>
+      </div>
+
+      <div class="connection" id="connection" data-state="connecting" role="status" aria-live="polite">
+        <span class="connection-dot" aria-hidden="true"></span>
+        <span id="connection-label">Connecting</span>
+        <span class="connection-time" id="last-updated">Waiting for control plane</span>
+      </div>
+    </header>
+
+    <main id="main-content" class="shell">
+      <section class="intro" aria-labelledby="overview-title">
+        <div>
+          <p class="section-index">01 / Overview</p>
+          <h2 id="overview-title">Control plane activity</h2>
+        </div>
+        <p class="intro-copy">Live scheduling state from SQLite and agent heartbeats. Data refreshes every second.</p>
+      </section>
+
+      <div class="error-banner" id="error-banner" role="alert" hidden>
+        <strong>Connection interrupted.</strong>
+        <span id="error-message">The last successful snapshot remains visible.</span>
+      </div>
+
+      <section class="metrics" aria-label="Workload overview">
+        <article class="metric">
+          <p>Total jobs</p>
+          <strong id="metric-total">0</strong>
+          <span>Stored workload</span>
+        </article>
+        <article class="metric">
+          <p>Active</p>
+          <strong id="metric-active">0</strong>
+          <span>Assigned or running</span>
+        </article>
+        <article class="metric">
+          <p>Waiting</p>
+          <strong id="metric-waiting">0</strong>
+          <span>Pending or blocked</span>
+        </article>
+        <article class="metric">
+          <p>Healthy nodes</p>
+          <strong id="metric-nodes">0 / 0</strong>
+          <span>Heartbeat within 5s</span>
+        </article>
+      </section>
+
+      <section class="resource-strip" aria-labelledby="resources-title">
+        <div class="resource-heading">
+          <p class="section-index">Fleet capacity</p>
+          <h2 id="resources-title">Resources</h2>
+        </div>
+        <div class="resource" id="resource-cpu"></div>
+        <div class="resource" id="resource-memory"></div>
+        <div class="resource" id="resource-gpu"></div>
+      </section>
+
+      <div class="workspace">
+        <section class="jobs-panel" aria-labelledby="jobs-title">
+          <div class="panel-header">
+            <div>
+              <p class="section-index">02 / Scheduler</p>
+              <h2 id="jobs-title">Jobs <span class="count" id="jobs-count">0</span></h2>
+            </div>
+            <div class="filters">
+              <label class="search-field">
+                <span>Search jobs</span>
+                <input id="job-search" type="search" placeholder="Job or node ID" autocomplete="off">
+              </label>
+              <label class="status-field">
+                <span>Filter status</span>
+                <select id="status-filter">
+                  <option value="all">All states</option>
+                  <option value="pending">Pending</option>
+                  <option value="assigned">Assigned</option>
+                  <option value="running">Running</option>
+                  <option value="succeeded">Succeeded</option>
+                  <option value="failed">Failed</option>
+                  <option value="unschedulable">Unschedulable</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <details class="job-composer">
+            <summary>Submit a job</summary>
+            <form id="job-form" class="job-form">
+              <label>
+                <span>Job ID</span>
+                <input id="job-id" name="id" type="text" required maxlength="80" autocomplete="off">
+              </label>
+              <label>
+                <span>Priority</span>
+                <input name="priority" type="number" value="5" min="0" max="100" required>
+              </label>
+              <label>
+                <span>CPUs</span>
+                <input name="cpus" type="number" value="2" min="1" max="1024" required>
+              </label>
+              <label>
+                <span>Memory GB</span>
+                <input name="memory_gb" type="number" value="4" min="1" max="8192" required>
+              </label>
+              <label>
+                <span>Duration s</span>
+                <input name="duration_seconds" type="number" value="8" min="0" max="86400" required>
+              </label>
+              <button type="submit" class="primary-button" id="submit-job">Submit job</button>
+            </form>
+            <p class="form-result" id="job-form-result" aria-live="polite"></p>
+          </details>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Job</th>
+                  <th scope="col">State</th>
+                  <th scope="col">Placement</th>
+                  <th scope="col">Request</th>
+                  <th scope="col">Attempt</th>
+                  <th scope="col">Lease</th>
+                </tr>
+              </thead>
+              <tbody id="jobs-body" aria-live="polite">
+                <tr class="loading-row" aria-hidden="true">
+                  <td colspan="6"><span class="skeleton"></span></td>
+                </tr>
+                <tr class="loading-row" aria-hidden="true">
+                  <td colspan="6"><span class="skeleton skeleton-short"></span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="empty-state" id="jobs-empty" hidden>
+            <strong>No jobs found</strong>
+            <p id="jobs-empty-copy">Submit a job through the API to see the scheduler place it.</p>
+          </div>
+        </section>
+
+        <div class="side-stack">
+          <section class="dev-cluster-panel" aria-labelledby="dev-cluster-title">
+            <div class="panel-header compact">
+              <div>
+                <p class="section-index">03 / Development</p>
+                <h2 id="dev-cluster-title">Local agents</h2>
+              </div>
+              <span class="dev-cluster-state" id="dev-cluster-state" data-state="stopped">Stopped</span>
+            </div>
+
+            <form id="dev-cluster-form" class="dev-cluster-form">
+              <label>
+                <span>Nodes</span>
+                <input name="node_count" type="number" value="3" min="1" max="32" required>
+              </label>
+              <label>
+                <span>CPU / node</span>
+                <input name="cpus_per_node" type="number" value="8" min="1" max="1024" required>
+              </label>
+              <label>
+                <span>Memory / node</span>
+                <input name="memory_gb_per_node" type="number" value="16" min="1" max="8192" required>
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="primary-button" id="start-dev-cluster">Launch agents</button>
+                <button type="button" class="secondary-button" id="stop-dev-cluster">Stop</button>
+              </div>
+            </form>
+            <p class="form-result" id="dev-cluster-result" aria-live="polite">Launches separate agent processes that register over gRPC.</p>
+          </section>
+
+          <aside class="nodes-panel" aria-labelledby="nodes-title">
+            <div class="panel-header compact">
+              <div>
+                <p class="section-index">04 / Data plane</p>
+                <h2 id="nodes-title">Nodes <span class="count" id="nodes-count">0</span></h2>
+              </div>
+            </div>
+            <div class="node-list" id="node-list" aria-live="polite">
+              <div class="node-loading" aria-hidden="true">
+                <span class="skeleton"></span>
+                <span class="skeleton skeleton-short"></span>
+              </div>
+            </div>
+            <div class="empty-state compact" id="nodes-empty" hidden>
+              <strong>No agents registered</strong>
+              <p>Launch local agents here or start an agent from your terminal.</p>
+            </div>
+          </aside>
+
+          <section class="activity-panel" aria-labelledby="activity-title">
+            <div class="panel-header compact">
+              <div>
+                <p class="section-index">05 / Events</p>
+                <h2 id="activity-title">Activity</h2>
+              </div>
+            </div>
+            <ol class="activity-list" id="activity-list" aria-live="polite">
+              <li class="activity-empty">Waiting for scheduler activity</li>
+            </ol>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <span>Mini Modal control plane</span>
+      <span>HTTP :8080 <b>&middot;</b> gRPC :9090</span>
+    </footer>
+  </body>
+</html>

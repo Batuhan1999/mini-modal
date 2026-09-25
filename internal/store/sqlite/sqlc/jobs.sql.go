@@ -13,19 +13,21 @@ const assignJob = `-- name: AssignJob :one
 UPDATE jobs
 SET status = 'assigned',
     node_id = ?1,
-    attempt = attempt + 1
-WHERE id = ?2
+    attempt = attempt + 1,
+    lease_expires_at = ?2
+WHERE id = ?3
   AND status = 'pending'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 `
 
 type AssignJobParams struct {
-	TargetNodeID string `json:"target_node_id"`
-	JobID        string `json:"job_id"`
+	TargetNodeID   string `json:"target_node_id"`
+	LeaseExpiresAt int64  `json:"lease_expires_at"`
+	JobID          string `json:"job_id"`
 }
 
 func (q *Queries) AssignJob(ctx context.Context, arg AssignJobParams) (Job, error) {
-	row := q.db.QueryRowContext(ctx, assignJob, arg.TargetNodeID, arg.JobID)
+	row := q.db.QueryRowContext(ctx, assignJob, arg.TargetNodeID, arg.LeaseExpiresAt, arg.JobID)
 	var i Job
 	err := row.Scan(
 		&i.ID,
@@ -38,27 +40,34 @@ func (q *Queries) AssignJob(ctx context.Context, arg AssignJobParams) (Job, erro
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
+		&i.LeaseExpiresAt,
 	)
 	return i, err
 }
 
 const claimJob = `-- name: ClaimJob :one
 UPDATE jobs
-SET status = 'running'
+SET status = 'running',
+    lease_expires_at = ?1
 WHERE id = (
     SELECT candidate.id
     FROM jobs AS candidate
-    WHERE candidate.node_id = ?1
+    WHERE candidate.node_id = ?2
       AND candidate.status = 'assigned'
     ORDER BY candidate.priority DESC, candidate.id
     LIMIT 1
 )
   AND status = 'assigned'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 `
 
-func (q *Queries) ClaimJob(ctx context.Context, claimNodeID string) (Job, error) {
-	row := q.db.QueryRowContext(ctx, claimJob, claimNodeID)
+type ClaimJobParams struct {
+	LeaseExpiresAt int64  `json:"lease_expires_at"`
+	ClaimNodeID    string `json:"claim_node_id"`
+}
+
+func (q *Queries) ClaimJob(ctx context.Context, arg ClaimJobParams) (Job, error) {
+	row := q.db.QueryRowContext(ctx, claimJob, arg.LeaseExpiresAt, arg.ClaimNodeID)
 	var i Job
 	err := row.Scan(
 		&i.ID,
@@ -71,17 +80,19 @@ func (q *Queries) ClaimJob(ctx context.Context, claimNodeID string) (Job, error)
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
+		&i.LeaseExpiresAt,
 	)
 	return i, err
 }
 
 const completeJob = `-- name: CompleteJob :one
 UPDATE jobs
-SET status = 'succeeded'
+SET status = 'succeeded',
+    lease_expires_at = 0
 WHERE id = ?1
   AND attempt = ?2
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 `
 
 type CompleteJobParams struct {
@@ -103,6 +114,7 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
+		&i.LeaseExpiresAt,
 	)
 	return i, err
 }
@@ -119,7 +131,7 @@ INSERT INTO jobs (
     status
 ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
 ON CONFLICT (id) DO NOTHING
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 `
 
 type CreateJobParams struct {
@@ -154,17 +166,19 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
+		&i.LeaseExpiresAt,
 	)
 	return i, err
 }
 
 const failJob = `-- name: FailJob :one
 UPDATE jobs
-SET status = 'failed'
+SET status = 'failed',
+    lease_expires_at = 0
 WHERE id = ?1
   AND attempt = ?2
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 `
 
 type FailJobParams struct {
@@ -186,12 +200,13 @@ func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (Job, error) {
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
+		&i.LeaseExpiresAt,
 	)
 	return i, err
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 FROM jobs
 WHERE id = ?
 `
@@ -210,12 +225,13 @@ func (q *Queries) GetJob(ctx context.Context, id string) (Job, error) {
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
+		&i.LeaseExpiresAt,
 	)
 	return i, err
 }
 
 const listActiveJobs = `-- name: ListActiveJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 FROM jobs
 WHERE status IN ('assigned', 'running')
 ORDER BY id
@@ -241,6 +257,7 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
+			&i.LeaseExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -256,7 +273,7 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listJobs = `-- name: ListJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 FROM jobs
 ORDER BY id
 `
@@ -281,6 +298,7 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
+			&i.LeaseExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -296,7 +314,7 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listPendingJobs = `-- name: ListPendingJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 FROM jobs
 WHERE status = 'pending'
 ORDER BY priority DESC, id
@@ -322,6 +340,7 @@ func (q *Queries) ListPendingJobs(ctx context.Context) ([]Job, error) {
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
+			&i.LeaseExpiresAt,
 		); err != nil {
 			return nil, err
 		}
@@ -351,15 +370,45 @@ func (q *Queries) MarkJobUnschedulable(ctx context.Context, id string) (int64, e
 	return result.RowsAffected()
 }
 
+const renewAssignment = `-- name: RenewAssignment :execrows
+UPDATE jobs
+SET lease_expires_at = ?1
+WHERE id = ?2
+  AND node_id = ?3
+  AND attempt = ?4
+  AND status = 'running'
+`
+
+type RenewAssignmentParams struct {
+	LeaseExpiresAt    int64  `json:"lease_expires_at"`
+	JobID             string `json:"job_id"`
+	AssignmentNodeID  string `json:"assignment_node_id"`
+	AssignmentAttempt int64  `json:"assignment_attempt"`
+}
+
+func (q *Queries) RenewAssignment(ctx context.Context, arg RenewAssignmentParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, renewAssignment,
+		arg.LeaseExpiresAt,
+		arg.JobID,
+		arg.AssignmentNodeID,
+		arg.AssignmentAttempt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const requeueAssignment = `-- name: RequeueAssignment :one
 UPDATE jobs
 SET status = 'pending',
-    node_id = ''
+    node_id = '',
+    lease_expires_at = 0
 WHERE id = ?1
   AND node_id = ?2
   AND attempt = ?3
   AND status IN ('assigned', 'running')
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 `
 
 type RequeueAssignmentParams struct {
@@ -382,23 +431,54 @@ func (q *Queries) RequeueAssignment(ctx context.Context, arg RequeueAssignmentPa
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
+		&i.LeaseExpiresAt,
 	)
 	return i, err
 }
 
-const requeueInFlightJobs = `-- name: RequeueInFlightJobs :execrows
+const requeueExpiredAssignments = `-- name: RequeueExpiredAssignments :many
 UPDATE jobs
 SET status = 'pending',
-    node_id = ''
+    node_id = '',
+    lease_expires_at = 0
 WHERE status IN ('assigned', 'running')
+  AND lease_expires_at <= ?1
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
 `
 
-func (q *Queries) RequeueInFlightJobs(ctx context.Context) (int64, error) {
-	result, err := q.db.ExecContext(ctx, requeueInFlightJobs)
+func (q *Queries) RequeueExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error) {
+	rows, err := q.db.QueryContext(ctx, requeueExpiredAssignments, expiredBefore)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected()
+	defer rows.Close()
+	var items []Job
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.Priority,
+			&i.GpuType,
+			&i.Gpus,
+			&i.Cpus,
+			&i.MemoryGb,
+			&i.DurationSeconds,
+			&i.Status,
+			&i.NodeID,
+			&i.Attempt,
+			&i.LeaseExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const requeueUnschedulableJobs = `-- name: RequeueUnschedulableJobs :execrows

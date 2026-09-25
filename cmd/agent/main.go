@@ -4,14 +4,16 @@ import (
 	"context"
 	"flag"
 	"log"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
 	"mini-modal/internal/agent"
 	"mini-modal/internal/domain"
 	"mini-modal/internal/executor"
 	"mini-modal/internal/transport/agentgrpc"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -26,11 +28,26 @@ func main() {
 		"localhost:9090",
 		"address of the control plane gRPC server",
 	)
+	gpuType := flag.String("gpu-type", "", "GPU model exposed by this node")
+	totalGPUs := flag.Int64("gpus", 0, "number of GPUs exposed by this node")
+	totalCPUs := flag.Int64("cpus", 8, "number of CPU cores exposed by this node")
+	totalMemoryGB := flag.Int64("memory-gb", 16, "memory in GB exposed by this node")
 
 	flag.Parse()
+	*nodeID = strings.TrimSpace(*nodeID)
 	if *nodeID == "" {
 		log.Fatal("-node-id is required")
 	}
+	if *totalGPUs < 0 {
+		log.Fatal("-gpus cannot be negative")
+	}
+	if *totalCPUs <= 0 {
+		log.Fatal("-cpus must be greater than zero")
+	}
+	if *totalMemoryGB <= 0 {
+		log.Fatal("-memory-gb must be greater than zero")
+	}
+	log.SetPrefix("agent " + *nodeID + ": ")
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -52,10 +69,10 @@ func main() {
 	client := agentgrpc.NewClient(conn)
 	node := domain.Node{
 		ID:            *nodeID,
-		GPUType:       "A100",
-		TotalGPUs:     4,
-		TotalCPUs:     64,
-		TotalMemoryGB: 256,
+		GPUType:       strings.TrimSpace(*gpuType),
+		TotalGPUs:     *totalGPUs,
+		TotalCPUs:     *totalCPUs,
+		TotalMemoryGB: *totalMemoryGB,
 	}
 	if err := client.RegisterNode(ctx, node); err != nil {
 		log.Fatalf("failed to register node: %v", err)

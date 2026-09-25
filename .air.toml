@@ -2,9 +2,10 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
+pre_cmd = ["go build -o ./tmp/agent ./cmd/agent"]
 cmd = "go build -o ./tmp/controlplane ./cmd/controlplane"
 entrypoint = ["./tmp/controlplane"]
-include_ext = ["go"]
+include_ext = ["go", "html", "css", "js"]
 exclude_dir = ["tmp", "vendor"]
 exclude_regex = ["_test.go"]
 delay = 500

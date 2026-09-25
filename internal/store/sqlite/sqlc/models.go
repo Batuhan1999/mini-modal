@@ -15,6 +15,7 @@ type Job struct {
 	Status          string `json:"status"`
 	NodeID          string `json:"node_id"`
 	Attempt         int64  `json:"attempt"`
+	LeaseExpiresAt  int64  `json:"lease_expires_at"`
 }
 
 type Node struct {

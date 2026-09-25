@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"mini-modal/internal/controlplane"
+	"mini-modal/internal/devcluster"
 	"mini-modal/internal/domain"
 	"mini-modal/internal/store/sqlite"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
@@ -109,6 +110,71 @@ func TestSubmitRejectsMultipleJSONValues(t *testing.T) {
 	}
 }
 
+func TestDashboardAndNodesEndpoints(t *testing.T) {
+	server := newTestServer(t)
+
+	dashboardRequest := httptest.NewRequest(http.MethodGet, "/", nil)
+	dashboardResponse := httptest.NewRecorder()
+	server.ServeHTTP(dashboardResponse, dashboardRequest)
+	if dashboardResponse.Code != http.StatusOK {
+		t.Fatalf("dashboard status = %d, want %d", dashboardResponse.Code, http.StatusOK)
+	}
+	if !strings.Contains(dashboardResponse.Body.String(), "Mini Modal") {
+		t.Fatal("dashboard response does not contain the application title")
+	}
+
+	nodesRequest := httptest.NewRequest(http.MethodGet, "/v1/nodes", nil)
+	nodesResponse := httptest.NewRecorder()
+	server.ServeHTTP(nodesResponse, nodesRequest)
+	if nodesResponse.Code != http.StatusOK {
+		t.Fatalf("nodes status = %d, want %d; body = %s", nodesResponse.Code, http.StatusOK, nodesResponse.Body.String())
+	}
+
+	var nodes []nodeResponse
+	if err := json.NewDecoder(nodesResponse.Body).Decode(&nodes); err != nil {
+		t.Fatalf("decode nodes response: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].ID != "node-a" || !nodes[0].Healthy {
+		t.Fatalf("nodes = %+v, want one healthy node-a", nodes)
+	}
+}
+
+func TestDevNodeEndpoints(t *testing.T) {
+	server := newTestServer(t)
+	startRequest := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/dev/nodes",
+		strings.NewReader(`{
+			"node_count":2,
+			"cpus_per_node":4,
+			"memory_gb_per_node":8
+		}`),
+	)
+	startResponse := httptest.NewRecorder()
+	server.ServeHTTP(startResponse, startRequest)
+	if startResponse.Code != http.StatusOK {
+		t.Fatalf("start dev nodes status = %d, want %d; body = %s", startResponse.Code, http.StatusOK, startResponse.Body.String())
+	}
+
+	getRequest := httptest.NewRequest(http.MethodGet, "/v1/dev/nodes", nil)
+	getResponse := httptest.NewRecorder()
+	server.ServeHTTP(getResponse, getRequest)
+	var status devcluster.Status
+	if err := json.NewDecoder(getResponse.Body).Decode(&status); err != nil {
+		t.Fatalf("decode dev node status: %v", err)
+	}
+	if !status.Running || status.Config.NodeCount != 2 {
+		t.Fatalf("dev node status = %+v, want running with two nodes", status)
+	}
+
+	stopRequest := httptest.NewRequest(http.MethodDelete, "/v1/dev/nodes", nil)
+	stopResponse := httptest.NewRecorder()
+	server.ServeHTTP(stopResponse, stopRequest)
+	if stopResponse.Code != http.StatusOK {
+		t.Fatalf("stop dev nodes status = %d, want %d", stopResponse.Code, http.StatusOK)
+	}
+}
+
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	ctx := context.Background()
@@ -128,5 +194,33 @@ func newTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 
-	return NewServer(service)
+	return NewServer(service, &fakeDevNodeManager{})
+}
+
+type fakeDevNodeManager struct {
+	status devcluster.Status
+}
+
+func (m *fakeDevNodeManager) Start(config devcluster.Config) (devcluster.Status, error) {
+	m.status = devcluster.Status{
+		Running: true,
+		Config:  config,
+		Processes: []devcluster.ProcessStatus{
+			{NodeID: "dev-node-01", PID: 1001, Running: true},
+		},
+	}
+	return m.status, nil
+}
+
+func (m *fakeDevNodeManager) Stop() devcluster.Status {
+	m.status.Running = false
+	m.status.Processes = nil
+	return m.status
+}
+
+func (m *fakeDevNodeManager) Status() devcluster.Status {
+	if m.status.Config.NodeCount == 0 {
+		m.status.Config = devcluster.Config{NodeCount: 3, CPUsPerNode: 8, MemoryGBPerNode: 16}
+	}
+	return m.status
 }
