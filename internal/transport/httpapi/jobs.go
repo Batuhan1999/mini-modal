@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
 
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 )
@@ -53,6 +55,40 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *Server) listJobLogs(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("id"))
+	record, err := s.service.Job(r.Context(), jobID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	attempt := record.Attempt
+	if value := strings.TrimSpace(r.URL.Query().Get("attempt")); value != "" {
+		attempt, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || attempt <= 0 {
+			writeError(w, http.StatusBadRequest, "attempt must be a positive integer")
+			return
+		}
+	}
+
+	if attempt <= 0 {
+		writeJSON(w, http.StatusOK, make([]sqlitedb.JobLog, 0))
+		return
+	}
+
+	logs, err := s.service.JobLogs(r.Context(), jobID, attempt)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if logs == nil {
+		logs = make([]sqlitedb.JobLog, 0)
+	}
+
+	writeJSON(w, http.StatusOK, logs)
 }
 
 func ensureSingleJSONValue(decoder *json.Decoder) error {

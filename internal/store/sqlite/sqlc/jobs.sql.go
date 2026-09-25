@@ -14,10 +14,11 @@ UPDATE jobs
 SET status = 'assigned',
     node_id = ?1,
     attempt = attempt + 1,
-    lease_expires_at = ?2
+    lease_expires_at = ?2,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE id = ?3
   AND status = 'pending'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 `
 
 type AssignJobParams struct {
@@ -43,6 +44,7 @@ func (q *Queries) AssignJob(ctx context.Context, arg AssignJobParams) (Job, erro
 		&i.LeaseExpiresAt,
 		&i.Command,
 		&i.Args,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -50,7 +52,8 @@ func (q *Queries) AssignJob(ctx context.Context, arg AssignJobParams) (Job, erro
 const claimJob = `-- name: ClaimJob :one
 UPDATE jobs
 SET status = 'running',
-    lease_expires_at = ?1
+    lease_expires_at = ?1,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE id = (
     SELECT candidate.id
     FROM jobs AS candidate
@@ -60,7 +63,7 @@ WHERE id = (
     LIMIT 1
 )
   AND status = 'assigned'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 `
 
 type ClaimJobParams struct {
@@ -85,6 +88,7 @@ func (q *Queries) ClaimJob(ctx context.Context, arg ClaimJobParams) (Job, error)
 		&i.LeaseExpiresAt,
 		&i.Command,
 		&i.Args,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -92,11 +96,12 @@ func (q *Queries) ClaimJob(ctx context.Context, arg ClaimJobParams) (Job, error)
 const completeJob = `-- name: CompleteJob :one
 UPDATE jobs
 SET status = 'succeeded',
-    lease_expires_at = 0
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE id = ?1
   AND attempt = ?2
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 `
 
 type CompleteJobParams struct {
@@ -121,6 +126,7 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 		&i.LeaseExpiresAt,
 		&i.Command,
 		&i.Args,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -136,10 +142,11 @@ INSERT INTO jobs (
     duration_seconds,
     command,
     args,
-    status
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    status,
+    updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
 ON CONFLICT (id) DO NOTHING
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 `
 
 type CreateJobParams struct {
@@ -181,6 +188,7 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.LeaseExpiresAt,
 		&i.Command,
 		&i.Args,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -188,11 +196,12 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 const failJob = `-- name: FailJob :one
 UPDATE jobs
 SET status = 'failed',
-    lease_expires_at = 0
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE id = ?1
   AND attempt = ?2
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 `
 
 type FailJobParams struct {
@@ -217,12 +226,13 @@ func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (Job, error) {
 		&i.LeaseExpiresAt,
 		&i.Command,
 		&i.Args,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 FROM jobs
 WHERE id = ?
 `
@@ -244,12 +254,13 @@ func (q *Queries) GetJob(ctx context.Context, id string) (Job, error) {
 		&i.LeaseExpiresAt,
 		&i.Command,
 		&i.Args,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const listActiveJobs = `-- name: ListActiveJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 FROM jobs
 WHERE status IN ('assigned', 'running')
 ORDER BY id
@@ -278,6 +289,7 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 			&i.LeaseExpiresAt,
 			&i.Command,
 			&i.Args,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -293,9 +305,9 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listJobs = `-- name: ListJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 FROM jobs
-ORDER BY id
+ORDER BY updated_at DESC, id
 `
 
 func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
@@ -321,6 +333,7 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 			&i.LeaseExpiresAt,
 			&i.Command,
 			&i.Args,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -336,7 +349,7 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listPendingJobs = `-- name: ListPendingJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 FROM jobs
 WHERE status = 'pending'
 ORDER BY priority DESC, id
@@ -365,6 +378,7 @@ func (q *Queries) ListPendingJobs(ctx context.Context) ([]Job, error) {
 			&i.LeaseExpiresAt,
 			&i.Command,
 			&i.Args,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -381,7 +395,8 @@ func (q *Queries) ListPendingJobs(ctx context.Context) ([]Job, error) {
 
 const markJobUnschedulable = `-- name: MarkJobUnschedulable :execrows
 UPDATE jobs
-SET status = 'unschedulable'
+SET status = 'unschedulable',
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE id = ?
   AND status = 'pending'
 `
@@ -396,7 +411,8 @@ func (q *Queries) MarkJobUnschedulable(ctx context.Context, id string) (int64, e
 
 const renewAssignment = `-- name: RenewAssignment :execrows
 UPDATE jobs
-SET lease_expires_at = ?1
+SET lease_expires_at = ?1,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE id = ?2
   AND node_id = ?3
   AND attempt = ?4
@@ -427,12 +443,13 @@ const requeueAssignment = `-- name: RequeueAssignment :one
 UPDATE jobs
 SET status = 'pending',
     node_id = '',
-    lease_expires_at = 0
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE id = ?1
   AND node_id = ?2
   AND attempt = ?3
   AND status IN ('assigned', 'running')
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 `
 
 type RequeueAssignmentParams struct {
@@ -458,6 +475,7 @@ func (q *Queries) RequeueAssignment(ctx context.Context, arg RequeueAssignmentPa
 		&i.LeaseExpiresAt,
 		&i.Command,
 		&i.Args,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -466,10 +484,11 @@ const requeueExpiredAssignments = `-- name: RequeueExpiredAssignments :many
 UPDATE jobs
 SET status = 'pending',
     node_id = '',
-    lease_expires_at = 0
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE status IN ('assigned', 'running')
   AND lease_expires_at <= ?1
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at
 `
 
 func (q *Queries) RequeueExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error) {
@@ -495,6 +514,7 @@ func (q *Queries) RequeueExpiredAssignments(ctx context.Context, expiredBefore i
 			&i.LeaseExpiresAt,
 			&i.Command,
 			&i.Args,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -511,7 +531,8 @@ func (q *Queries) RequeueExpiredAssignments(ctx context.Context, expiredBefore i
 
 const requeueUnschedulableJobs = `-- name: RequeueUnschedulableJobs :execrows
 UPDATE jobs
-SET status = 'pending'
+SET status = 'pending',
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE status = 'unschedulable'
 `
 

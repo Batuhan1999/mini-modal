@@ -18,6 +18,7 @@ type Job struct {
 	LeaseExpiresAt  int64  `json:"lease_expires_at"`
 	Command         string `json:"command"`
 	Args            string `json:"args"`
+	UpdatedAt       int64  `json:"updated_at"`
 }
 
 type JobLog struct {

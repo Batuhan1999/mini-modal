@@ -31,6 +31,19 @@ const elements = {
   startDevCluster: document.querySelector("#start-dev-cluster"),
   stopDevCluster: document.querySelector("#stop-dev-cluster"),
   activityList: document.querySelector("#activity-list"),
+  dashboardView: document.querySelector("#dashboard-view"),
+  detailView: document.querySelector("#job-detail-view"),
+  detailLoading: document.querySelector("#detail-loading"),
+  detailError: document.querySelector("#detail-error"),
+  detailErrorMessage: document.querySelector("#detail-error-message"),
+  detailRetry: document.querySelector("#detail-retry"),
+  detailContent: document.querySelector("#detail-content"),
+  detailJobID: document.querySelector("#detail-job-id"),
+  detailCommand: document.querySelector("#detail-command"),
+  detailStatus: document.querySelector("#detail-status"),
+  detailLogAttempt: document.querySelector("#detail-log-attempt"),
+  detailLogTerminal: document.querySelector("#detail-log-terminal"),
+  detailFields: document.querySelector("#detail-fields"),
 };
 
 const state = {
@@ -43,39 +56,45 @@ const state = {
   devClusterHydrated: false,
   devClusterRunning: false,
   previousProcessStates: new Map(),
+  expandedJobIDs: new Set(),
+  inlineLogs: new Map(),
+  detailJobID: jobIDFromPath(),
+  detailJob: null,
+  detailLogs: createLogState(),
 };
 
-const statusOrder = new Map([
-  ["running", 0],
-  ["assigned", 1],
-  ["pending", 2],
-  ["unschedulable", 3],
-  ["failed", 4],
-  ["succeeded", 5],
-]);
-
-elements.jobID.value = nextJobID();
-elements.jobSearch.addEventListener("input", renderJobs);
-elements.statusFilter.addEventListener("change", renderJobs);
-elements.jobForm.addEventListener("submit", submitJob);
-elements.randomJob.addEventListener("click", submitRandomJob);
-elements.devClusterForm.addEventListener("submit", startDevCluster);
-elements.stopDevCluster.addEventListener("click", stopDevCluster);
+if (state.detailJobID) {
+  elements.dashboardView.hidden = true;
+  elements.detailView.hidden = false;
+  elements.detailRetry.addEventListener("click", () => void refreshDetail());
+} else {
+  elements.jobID.value = nextJobID();
+  elements.jobSearch.addEventListener("input", renderJobs);
+  elements.statusFilter.addEventListener("change", renderJobs);
+  elements.jobForm.addEventListener("submit", submitJob);
+  elements.randomJob.addEventListener("click", submitRandomJob);
+  elements.devClusterForm.addEventListener("submit", startDevCluster);
+  elements.stopDevCluster.addEventListener("click", stopDevCluster);
+}
 
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) {
-    refresh();
+    refreshCurrentView();
   }
 });
 
-void refresh();
+void refreshCurrentView();
 window.setInterval(() => {
   if (!document.hidden) {
-    refresh();
+    refreshCurrentView();
   }
 }, 1000);
 
-async function refresh() {
+function refreshCurrentView() {
+  return state.detailJobID ? refreshDetail() : refreshDashboard();
+}
+
+async function refreshDashboard() {
   if (state.refreshing) {
     return;
   }
@@ -97,8 +116,37 @@ async function refresh() {
     renderNodes();
     applyDevClusterStatus(devCluster, !state.devClusterHydrated);
     state.devClusterHydrated = true;
+    await syncExpandedJobLogs();
     setConnection(true);
   } catch (error) {
+    setConnection(false, error.message);
+  } finally {
+    state.refreshing = false;
+  }
+}
+
+async function refreshDetail() {
+  if (state.refreshing) {
+    return;
+  }
+
+  state.refreshing = true;
+  try {
+    const job = await fetchJSON(`/v1/jobs/${encodeURIComponent(state.detailJobID)}`);
+    const attemptChanged = state.detailJob?.attempt !== job.attempt;
+    const statusChanged = state.detailJob?.status !== job.status;
+    if (attemptChanged) {
+      state.detailLogs = createLogState(job.attempt);
+    }
+    state.detailJob = job;
+    renderJobDetail(job);
+    const active = ["assigned", "running"].includes(job.status);
+    if (!state.detailLogs.loaded || attemptChanged || statusChanged || active) {
+      await loadDetailLogs(job, state.detailLogs.loaded);
+    }
+    setConnection(true);
+  } catch (error) {
+    renderDetailError(error.message);
     setConnection(false, error.message);
   } finally {
     state.refreshing = false;
@@ -120,7 +168,9 @@ async function fetchJSON(url, options = {}) {
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(body.error || `Request failed with status ${response.status}`);
+      const error = new Error(body.error || `Request failed with status ${response.status}`);
+      error.status = response.status;
+      throw error;
     }
     return body;
   } finally {
@@ -215,8 +265,8 @@ function renderJobs(changedJobs = new Set()) {
       return job.id.toLowerCase().includes(query) || job.node_id.toLowerCase().includes(query);
     })
     .sort((left, right) => {
-      const rank = (statusOrder.get(left.status) ?? 99) - (statusOrder.get(right.status) ?? 99);
-      return rank || right.priority - left.priority || left.id.localeCompare(right.id);
+      return Number(right.updated_at || 0) - Number(left.updated_at || 0)
+        || left.id.localeCompare(right.id);
     });
 
   elements.jobsCount.textContent = String(jobs.length);
@@ -225,20 +275,39 @@ function renderJobs(changedJobs = new Set()) {
     ? "Submit a job through this dashboard or the API to see the scheduler place it."
     : "No jobs match the current filters.";
 
-  const rows = jobs.map((job) => {
+  const rows = [];
+  jobs.forEach((job, index) => {
+    const expanded = state.expandedJobIDs.has(job.id);
+    const panelID = `job-logs-${index}`;
     const row = document.createElement("tr");
+    row.dataset.expanded = String(expanded);
     if (changedJobs.has(job.id)) {
       row.dataset.changed = "true";
     }
 
     const idCell = tableCell("Job");
-    idCell.append(
-      createElement("span", "job-id", job.id),
-      createElement("span", "job-meta", `priority ${job.priority}`),
-    );
+    const titleLine = createElement("div", "job-title-line");
+    const expandButton = createElement("button", "job-expand", expanded ? "Hide logs" : "Logs");
+    expandButton.type = "button";
+    expandButton.setAttribute("aria-expanded", String(expanded));
+    expandButton.setAttribute("aria-controls", panelID);
+    expandButton.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} logs for ${job.id}`);
+    expandButton.addEventListener("click", () => {
+      void toggleJobLogs(job);
+    });
+    const jobLink = createElement("a", "job-link", job.id);
+    jobLink.href = `/jobs/${encodeURIComponent(job.id)}`;
+    titleLine.append(expandButton, jobLink);
+    idCell.append(titleLine, createElement("span", "job-meta", `priority ${job.priority}`));
 
     const statusCell = tableCell("State");
     statusCell.append(createElement("span", `status status-${job.status}`, job.status));
+
+    const updatedCell = tableCell("Updated at", formatUpdatedAt(job.updated_at));
+    updatedCell.classList.add("job-updated");
+    if (job.updated_at) {
+      updatedCell.title = formatTimestamp(job.updated_at);
+    }
 
     const placementCell = tableCell("Placement", job.node_id || "Unassigned");
     if (job.node_id) {
@@ -258,11 +327,381 @@ function renderJobs(changedJobs = new Set()) {
       leaseCell.classList.add(lease.className);
     }
 
-    row.append(idCell, statusCell, placementCell, requestCell, attemptCell, leaseCell);
-    return row;
+    row.append(idCell, statusCell, updatedCell, placementCell, requestCell, attemptCell, leaseCell);
+    rows.push(row);
+
+    if (expanded) {
+      const logRow = createElement("tr", "job-log-row");
+      const logCell = tableCell("Logs");
+      logCell.colSpan = 7;
+      logCell.append(buildInlineLogPanel(job, panelID));
+      logRow.append(logCell);
+      rows.push(logRow);
+    }
   });
 
   elements.jobsBody.replaceChildren(...rows);
+}
+
+async function toggleJobLogs(job) {
+  if (state.expandedJobIDs.has(job.id)) {
+    state.expandedJobIDs.delete(job.id);
+    renderJobs();
+    return;
+  }
+
+  state.expandedJobIDs.add(job.id);
+  renderJobs();
+  await loadInlineJobLogs(job, false);
+}
+
+function buildInlineLogPanel(job, panelID) {
+  const panel = createElement("section", "inline-log-panel");
+  panel.id = panelID;
+  panel.setAttribute("aria-label", `Logs for ${job.id}`);
+
+  const header = createElement("div", "inline-log-header");
+  const identity = document.createElement("div");
+  identity.append(
+    createElement("span", "inline-log-title", `Attempt ${job.attempt || "not started"}`),
+    createElement("span", "inline-log-command", formatCommand(job)),
+  );
+  const detailLink = createElement("a", "inline-detail-link", "View full job");
+  detailLink.href = `/jobs/${encodeURIComponent(job.id)}`;
+  header.append(identity, detailLink);
+
+  panel.append(header, buildLogTerminal(job, ensureInlineLogState(job), () => {
+    void loadInlineJobLogs(job, false);
+  }, true));
+  return panel;
+}
+
+function ensureInlineLogState(job) {
+  let logState = state.inlineLogs.get(job.id);
+  if (!logState || logState.attempt !== job.attempt) {
+    logState = createLogState(job.attempt);
+    state.inlineLogs.set(job.id, logState);
+  }
+  return logState;
+}
+
+async function syncExpandedJobLogs() {
+  const requests = [];
+  for (const jobID of state.expandedJobIDs) {
+    const job = state.jobs.find((candidate) => candidate.id === jobID);
+    if (!job) {
+      state.expandedJobIDs.delete(jobID);
+      state.inlineLogs.delete(jobID);
+      continue;
+    }
+
+    const logState = ensureInlineLogState(job);
+    const statusChanged = logState.status !== job.status;
+    const active = ["assigned", "running"].includes(job.status);
+    if (!logState.loaded || statusChanged || active) {
+      requests.push(loadInlineJobLogs(job, true));
+    }
+    logState.status = job.status;
+  }
+  await Promise.all(requests);
+}
+
+async function loadInlineJobLogs(job, quiet) {
+  const logState = ensureInlineLogState(job);
+  if (logState.loading) {
+    return;
+  }
+  if (job.attempt <= 0) {
+    logState.logs = [];
+    logState.loaded = true;
+    logState.error = "";
+    renderJobs();
+    return;
+  }
+
+  logState.loading = true;
+  if (!quiet || !logState.loaded) {
+    renderJobs();
+  }
+  try {
+    logState.logs = await fetchJobLogs(job);
+    logState.loaded = true;
+    logState.error = "";
+  } catch (error) {
+    logState.error = error.message;
+  } finally {
+    logState.loading = false;
+    if (state.expandedJobIDs.has(job.id)) {
+      renderJobs();
+    }
+  }
+}
+
+function renderJobDetail(job) {
+  elements.detailLoading.hidden = true;
+  elements.detailError.hidden = true;
+  elements.detailContent.hidden = false;
+  elements.detailJobID.textContent = job.id;
+  elements.detailCommand.textContent = formatCommand(job);
+  elements.detailStatus.className = `status status-${job.status}`;
+  elements.detailStatus.textContent = job.status;
+  elements.detailLogAttempt.textContent = job.attempt > 0 ? `Attempt ${job.attempt}` : "No attempt";
+  document.title = `${job.id} · Mini Modal`;
+  renderDetailFields(job);
+  renderDetailLogs(job);
+}
+
+function renderDetailFields(job) {
+  const groups = [
+    ["Identity", [
+      ["Job ID", job.id],
+      ["Status", job.status],
+      ["Priority", String(job.priority)],
+      ["Updated at", formatTimestamp(job.updated_at)],
+    ]],
+    ["Placement", [
+      ["Node ID", job.node_id || "Unassigned"],
+      ["Attempt", job.attempt > 0 ? String(job.attempt) : "None"],
+      ["Lease expires", formatLeaseTimestamp(job.lease_expires_at)],
+      ["Lease remaining", formatLease(job).label],
+    ]],
+    ["Resources", [
+      ["CPUs", String(job.cpus)],
+      ["Memory", `${job.memory_gb} GB`],
+      ["GPUs", String(job.gpus)],
+      ["GPU type", job.gpu_type || "None"],
+    ]],
+    ["Execution", [
+      ["Duration", `${job.duration_seconds} seconds`],
+      ["Command", job.command || "None"],
+      ["Arguments", job.args || "[]"],
+    ]],
+  ];
+
+  const sections = groups.map(([title, fields]) => {
+    const section = createElement("section", "detail-field-group");
+    section.append(createElement("h4", "", title));
+    const list = createElement("dl", "detail-field-list");
+    for (const [label, value] of fields) {
+      const item = document.createElement("div");
+      item.append(createElement("dt", "", label), createElement("dd", "", value));
+      list.append(item);
+    }
+    section.append(list);
+    return section;
+  });
+  elements.detailFields.replaceChildren(...sections);
+}
+
+function renderDetailLogs(job) {
+  elements.detailLogTerminal.replaceChildren(buildLogTerminal(job, state.detailLogs, () => {
+    void loadDetailLogs(job, false);
+  }, false));
+}
+
+async function loadDetailLogs(job, quiet) {
+  const logState = state.detailLogs;
+  if (logState.loading) {
+    return;
+  }
+  if (job.attempt <= 0) {
+    logState.logs = [];
+    logState.loaded = true;
+    logState.error = "";
+    renderDetailLogs(job);
+    return;
+  }
+
+  logState.loading = true;
+  if (!quiet || !logState.loaded) {
+    renderDetailLogs(job);
+  }
+  try {
+    logState.logs = await fetchJobLogs(job);
+    logState.loaded = true;
+    logState.error = "";
+  } catch (error) {
+    logState.error = error.message;
+  } finally {
+    logState.loading = false;
+    if (state.detailJob?.id === job.id && state.detailJob?.attempt === job.attempt) {
+      renderDetailLogs(state.detailJob);
+    }
+  }
+}
+
+async function fetchJobLogs(job) {
+  const logs = await fetchJSON(
+    `/v1/jobs/${encodeURIComponent(job.id)}/logs?attempt=${job.attempt}`,
+  );
+  return Array.isArray(logs)
+    ? [...logs].sort((left, right) => left.sequence - right.sequence)
+    : [];
+}
+
+function buildLogTerminal(job, logState, retry, compact) {
+  const terminal = createElement("div", compact ? "log-terminal compact-log-terminal" : "log-terminal-inner");
+  const toolbar = createElement("div", "log-toolbar");
+  toolbar.append(
+    createElement("span", "", logStreamLabel(job)),
+    createElement("span", "", `${logState.logs.length} ${logState.logs.length === 1 ? "chunk" : "chunks"}`),
+  );
+  terminal.append(toolbar);
+
+  if (logState.loading && !logState.loaded) {
+    const loading = createElement("div", "log-loading");
+    loading.setAttribute("aria-hidden", "true");
+    loading.append(
+      createElement("span", "skeleton"),
+      createElement("span", "skeleton skeleton-short"),
+      createElement("span", "skeleton"),
+    );
+    terminal.append(loading);
+    return terminal;
+  }
+
+  if (logState.error) {
+    const message = createElement("div", "log-message log-error");
+    message.setAttribute("role", "alert");
+    message.append(
+      createElement("strong", "", "Could not load logs"),
+      createElement("p", "", logState.error),
+    );
+    const retryButton = createElement("button", "secondary-button", "Retry");
+    retryButton.type = "button";
+    retryButton.addEventListener("click", retry);
+    message.append(retryButton);
+    terminal.append(message);
+    return terminal;
+  }
+
+  if (logState.logs.length === 0) {
+    const message = createElement("div", "log-message");
+    message.append(
+      createElement("strong", "", "No output yet"),
+      createElement("p", "", "Logs appear when the assigned process writes to stdout or stderr."),
+    );
+    terminal.append(message);
+    return terminal;
+  }
+
+  const output = createElement("div", "log-output");
+  output.setAttribute("role", "log");
+  output.setAttribute("aria-live", "polite");
+  output.setAttribute("aria-label", `Output for ${job.id}`);
+  output.append(...buildLogEntries(logState.logs));
+  terminal.append(output);
+  window.requestAnimationFrame(() => {
+    output.scrollTop = output.scrollHeight;
+  });
+  return terminal;
+}
+
+function buildLogEntries(logs) {
+  return logs.map((chunk) => {
+    const entry = createElement("div", "log-entry");
+    entry.dataset.source = chunk.source;
+
+    const sequence = createElement("span", "log-sequence", String(chunk.sequence).padStart(3, "0"));
+    const source = createElement("span", "log-source", chunk.source);
+    const output = document.createElement("pre");
+    output.className = "log-data";
+    output.textContent = chunk.data;
+    if (chunk.created_at) {
+      entry.title = formatLogTime(chunk.created_at);
+    }
+
+    entry.append(sequence, source, output);
+    return entry;
+  });
+}
+
+function renderDetailError(message) {
+  if (state.detailJob) {
+    return;
+  }
+  elements.detailLoading.hidden = true;
+  elements.detailContent.hidden = true;
+  elements.detailError.hidden = false;
+  elements.detailErrorMessage.textContent = message;
+}
+
+function createLogState(attempt = 0) {
+  return { attempt, status: "", logs: [], loaded: false, loading: false, error: "" };
+}
+
+function logStreamLabel(job) {
+  switch (job.status) {
+  case "assigned":
+    return "Waiting for agent";
+  case "running":
+    return "Live, refreshing every second";
+  case "succeeded":
+  case "failed":
+    return "Final output";
+  default:
+    return "Execution has not started";
+  }
+}
+
+function formatCommand(job) {
+  try {
+    const args = JSON.parse(job.args || "[]");
+    return [job.command, ...args].join(" ");
+  } catch {
+    return job.command || "None";
+  }
+}
+
+function formatLeaseTimestamp(timestamp) {
+  if (!timestamp) {
+    return "None";
+  }
+  return formatTimestamp(timestamp);
+}
+
+function formatTimestamp(timestamp) {
+  if (!timestamp) {
+    return "None";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "medium",
+  }).format(new Date(timestamp));
+}
+
+function formatUpdatedAt(timestamp) {
+  if (!timestamp) {
+    return "Unknown";
+  }
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (elapsedSeconds < 5) {
+    return "Just now";
+  }
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds}s ago`;
+  }
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes}m ago`;
+  }
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) {
+    return `${elapsedHours}h ago`;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(timestamp));
+}
+
+function formatLogTime(timestamp) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+  }).format(new Date(timestamp));
 }
 
 function renderNodes() {
@@ -385,7 +824,7 @@ async function sendJob(job, button, busyLabel, idleLabel) {
     setFormResult(elements.jobFormResult, `${created.id} accepted with state ${created.status}.`, "success");
     addActivity(`${created.id} submitted at priority ${created.priority}`);
     elements.jobID.value = nextJobID();
-    await refresh();
+    await refreshDashboard();
   } catch (error) {
     setFormResult(elements.jobFormResult, error.message, "error");
     addActivity(`Job submission failed: ${error.message}`);
@@ -434,7 +873,7 @@ async function startDevCluster(event) {
     });
     applyDevClusterStatus(status, false);
     addActivity(`Launched ${config.node_count} local agent processes`);
-    await refresh();
+    await refreshDashboard();
   } catch (error) {
     setFormResult(elements.devClusterResult, error.message, "error");
     addActivity(`Agent launch failed: ${error.message}`);
@@ -578,6 +1017,18 @@ function nextJobID() {
   const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "");
   const suffix = Math.random().toString(36).slice(2, 6);
   return `job-${stamp}-${suffix}`;
+}
+
+function jobIDFromPath() {
+  const match = window.location.pathname.match(/^\/jobs\/([^/]+)\/?$/);
+  if (!match) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
 }
 
 function formatClock(date) {

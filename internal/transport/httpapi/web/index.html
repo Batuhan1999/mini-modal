@@ -10,16 +10,16 @@
     <script src="/assets/app.js" defer></script>
   </head>
   <body>
-    <a class="skip-link" href="#main-content">Skip to dashboard</a>
+    <a class="skip-link" href="#main-content">Skip to content</a>
 
     <header class="topbar">
-      <div class="brand">
+      <a class="brand" href="/" aria-label="Mini Modal dashboard">
         <span class="brand-mark" aria-hidden="true">MM</span>
         <div>
           <p class="eyebrow">Distributed runtime</p>
           <h1>Mini Modal</h1>
         </div>
-      </div>
+      </a>
 
       <div class="connection" id="connection" data-state="connecting" role="status" aria-live="polite">
         <span class="connection-dot" aria-hidden="true"></span>
@@ -29,6 +29,7 @@
     </header>
 
     <main id="main-content" class="shell">
+      <div id="dashboard-view">
       <section class="intro" aria-labelledby="overview-title">
         <div>
           <p class="section-index">01 / Overview</p>
@@ -147,6 +148,7 @@
                 <tr>
                   <th scope="col">Job</th>
                   <th scope="col">State</th>
+                  <th scope="col">Updated at</th>
                   <th scope="col">Placement</th>
                   <th scope="col">Request</th>
                   <th scope="col">Attempt</th>
@@ -155,10 +157,10 @@
               </thead>
               <tbody id="jobs-body" aria-live="polite">
                 <tr class="loading-row" aria-hidden="true">
-                  <td colspan="6"><span class="skeleton"></span></td>
+                  <td colspan="7"><span class="skeleton"></span></td>
                 </tr>
                 <tr class="loading-row" aria-hidden="true">
-                  <td colspan="6"><span class="skeleton skeleton-short"></span></td>
+                  <td colspan="7"><span class="skeleton skeleton-short"></span></td>
                 </tr>
               </tbody>
             </table>
@@ -233,6 +235,61 @@
           </section>
         </div>
       </div>
+      </div>
+
+      <section class="job-detail-view" id="job-detail-view" aria-labelledby="detail-job-id" hidden>
+        <a class="back-link" href="/">Back to dashboard</a>
+
+        <div class="detail-loading" id="detail-loading" aria-hidden="true">
+          <span class="skeleton detail-skeleton-title"></span>
+          <span class="skeleton skeleton-short"></span>
+          <div class="detail-skeleton-grid">
+            <span class="skeleton"></span>
+            <span class="skeleton"></span>
+          </div>
+        </div>
+
+        <div class="detail-error" id="detail-error" role="alert" hidden>
+          <p class="section-index">Job unavailable</p>
+          <h2>Could not load this job</h2>
+          <p id="detail-error-message">The control plane did not return a job record.</p>
+          <button class="secondary-button" id="detail-retry" type="button">Retry</button>
+        </div>
+
+        <div id="detail-content" hidden>
+          <header class="detail-header">
+            <div>
+              <p class="section-index">Job / Execution record</p>
+              <h2 id="detail-job-id">Loading job</h2>
+              <p class="detail-command" id="detail-command">Waiting for command</p>
+            </div>
+            <span class="status" id="detail-status">Unknown</span>
+          </header>
+
+          <div class="detail-layout">
+            <section class="detail-logs" aria-labelledby="detail-logs-title">
+              <div class="detail-section-header">
+                <div>
+                  <p class="section-index">Live output</p>
+                  <h3 id="detail-logs-title">Logs</h3>
+                </div>
+                <span class="detail-attempt" id="detail-log-attempt">No attempt</span>
+              </div>
+              <div class="log-terminal detail-log-terminal" id="detail-log-terminal"></div>
+            </section>
+
+            <aside class="detail-record" aria-labelledby="detail-record-title">
+              <div class="detail-section-header">
+                <div>
+                  <p class="section-index">Stored state</p>
+                  <h3 id="detail-record-title">Complete record</h3>
+                </div>
+              </div>
+              <div id="detail-fields"></div>
+            </aside>
+          </div>
+        </div>
+      </section>
     </main>
 
     <footer>

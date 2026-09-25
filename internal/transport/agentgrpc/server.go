@@ -94,16 +94,6 @@ func (s *Server) StreamLogs(stream grpc.ClientStreamingServer[agentv1.StreamLogs
 			jobID = chunkJobID
 			attempt = chunk.GetAttempt()
 			lastSequence = chunk.GetSequence()
-			if err := s.service.CreateJobLog(stream.Context(), domain.LogStream{
-				JobID:     jobID,
-				Attempt:   attempt,
-				Sequence:  lastSequence,
-				Source:    chunk.GetSource(),
-				Data:      chunk.GetData(),
-				CreatedAt: time.UnixMilli(chunk.GetCreatedAtUnixMs()),
-			}); err != nil {
-				return status.Errorf(codes.Internal, "failed to create job log: %v", err)
-			}
 		} else {
 			if chunkJobID != jobID || chunk.GetAttempt() != attempt {
 				return status.Error(codes.InvalidArgument, "all chunks in a stream must belong to the same assignment")
@@ -112,6 +102,17 @@ func (s *Server) StreamLogs(stream grpc.ClientStreamingServer[agentv1.StreamLogs
 				return status.Error(codes.InvalidArgument, "log sequence must increase")
 			}
 			lastSequence = chunk.GetSequence()
+		}
+
+		if err := s.service.CreateJobLog(stream.Context(), domain.LogStream{
+			JobID:     jobID,
+			Attempt:   attempt,
+			Sequence:  lastSequence,
+			Source:    chunk.GetSource(),
+			Data:      chunk.GetData(),
+			CreatedAt: time.UnixMilli(chunk.GetCreatedAtUnixMs()),
+		}); err != nil {
+			return status.Errorf(codes.Internal, "failed to create job log: %v", err)
 		}
 
 		chunksReceived++

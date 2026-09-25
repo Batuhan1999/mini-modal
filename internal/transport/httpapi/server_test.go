@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/controlplane"
 	"mini-modal/internal/devcluster"
 	"mini-modal/internal/domain"
@@ -70,6 +72,32 @@ func TestJobEndpoints(t *testing.T) {
 	if len(listed) != 1 || listed[0].ID != "job-1" {
 		t.Fatalf("listed jobs = %+v, want only job-1", listed)
 	}
+
+	if err := server.service.CreateJobLog(context.Background(), domain.LogStream{
+		JobID:     "job-1",
+		Attempt:   submitted.Attempt,
+		Sequence:  0,
+		Source:    agentv1.LogSource_LOG_SOURCE_STDOUT,
+		Data:      []byte("hello from the executor\n"),
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("create job log: %v", err)
+	}
+
+	logsRequest := httptest.NewRequest(http.MethodGet, "/v1/jobs/job-1/logs?attempt=1", nil)
+	logsResponse := httptest.NewRecorder()
+	server.ServeHTTP(logsResponse, logsRequest)
+	if logsResponse.Code != http.StatusOK {
+		t.Fatalf("logs status = %d, want %d; body = %s", logsResponse.Code, http.StatusOK, logsResponse.Body.String())
+	}
+
+	var logs []sqlitedb.JobLog
+	if err := json.NewDecoder(logsResponse.Body).Decode(&logs); err != nil {
+		t.Fatalf("decode logs response: %v", err)
+	}
+	if len(logs) != 1 || logs[0].Data != "hello from the executor\n" || logs[0].Source != "stdout" {
+		t.Fatalf("logs = %+v, want one stdout chunk", logs)
+	}
 }
 
 func TestGetJobReturnsNotFound(t *testing.T) {
@@ -123,6 +151,19 @@ func TestDashboardAndNodesEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(dashboardResponse.Body.String(), "Mini Modal") {
 		t.Fatal("dashboard response does not contain the application title")
+	}
+	if !strings.Contains(dashboardResponse.Body.String(), `id="jobs-body"`) {
+		t.Fatal("dashboard response does not contain the jobs table")
+	}
+
+	detailRequest := httptest.NewRequest(http.MethodGet, "/jobs/job-1", nil)
+	detailResponse := httptest.NewRecorder()
+	server.ServeHTTP(detailResponse, detailRequest)
+	if detailResponse.Code != http.StatusOK {
+		t.Fatalf("job detail status = %d, want %d", detailResponse.Code, http.StatusOK)
+	}
+	if !strings.Contains(detailResponse.Body.String(), `id="job-detail-view"`) {
+		t.Fatal("job detail response does not contain the job detail view")
 	}
 
 	nodesRequest := httptest.NewRequest(http.MethodGet, "/v1/nodes", nil)

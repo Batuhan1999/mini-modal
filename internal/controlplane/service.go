@@ -15,6 +15,8 @@ import (
 	"mini-modal/internal/domain"
 	"mini-modal/internal/scheduler"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -241,6 +243,24 @@ func (s *Service) Jobs(ctx context.Context) ([]sqlitedb.Job, error) {
 	return jobs, nil
 }
 
+func (s *Service) JobLogs(ctx context.Context, jobID string, attempt int64) ([]sqlitedb.JobLog, error) {
+	if strings.TrimSpace(jobID) == "" {
+		return nil, fmt.Errorf("job ID is required")
+	}
+	if attempt <= 0 {
+		return nil, fmt.Errorf("attempt must be greater than 0")
+	}
+
+	logs, err := s.queries.ListJobLogs(ctx, sqlitedb.ListJobLogsParams{
+		JobID:   jobID,
+		Attempt: attempt,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list logs for job %q attempt %d: %w", jobID, attempt, err)
+	}
+	return logs, nil
+}
+
 func (s *Service) Nodes(ctx context.Context) ([]domain.Node, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -405,6 +425,7 @@ func (s *Service) CreateJobLog(ctx context.Context, logStream domain.LogStream) 
 		source = "stdout"
 	}
 	_, err := s.queries.CreateJobLog(ctx, sqlitedb.CreateJobLogParams{
+		ID:        uuid.NewString(),
 		JobID:     logStream.JobID,
 		Attempt:   logStream.Attempt,
 		Sequence:  logStream.Sequence,

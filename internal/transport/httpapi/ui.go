@@ -17,6 +17,7 @@ func (s *Server) registerUIRoutes() {
 
 	s.mux.Handle("GET /assets/", http.StripPrefix("/assets/", noCache(http.FileServer(http.FS(assets)))))
 	s.mux.HandleFunc("GET /{$}", s.dashboard)
+	s.mux.HandleFunc("GET /jobs/{id}", s.dashboard)
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, _ *http.Request) {
