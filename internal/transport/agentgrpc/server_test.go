@@ -33,6 +33,8 @@ func TestClaimAndComplete(t *testing.T) {
 		Priority: 1,
 		Cpus:     1,
 		MemoryGb: 1,
+		Command:  "echo",
+		Args:     "[]",
 	}
 	if _, err := service.Submit(context.Background(), job); err != nil {
 		t.Fatalf("submit job: %v", err)

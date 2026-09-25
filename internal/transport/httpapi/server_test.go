@@ -27,7 +27,9 @@ func TestJobEndpoints(t *testing.T) {
 			"gpus":0,
 			"cpus":2,
 			"memory_gb":4,
-			"duration_seconds":1
+			"duration_seconds":1,
+			"command":"echo",
+			"args":"[]"
 		}`),
 	)
 	submitResponse := httptest.NewRecorder()

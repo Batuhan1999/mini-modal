@@ -44,6 +44,8 @@ func (s *Server) Claim(ctx context.Context, req *agentv1.ClaimRequest) (*agentv1
 			JobId:   assignment.JobID,
 			NodeId:  assignment.NodeID,
 			Attempt: assignment.Attempt,
+			Command: assignment.Command,
+			Args:    assignment.Args,
 		},
 	}, nil
 }

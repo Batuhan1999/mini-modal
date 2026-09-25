@@ -8,6 +8,8 @@ message Assignment {
   string job_id = 1;
   string node_id = 2;
   int64 attempt = 3;
+  string command = 4;
+  repeated string args = 5;
 }
 
 message ClaimRequest {

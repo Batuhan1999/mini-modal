@@ -7,8 +7,10 @@ INSERT INTO jobs (
     cpus,
     memory_gb,
     duration_seconds,
+    command,
+    args,
     status
-) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
 ON CONFLICT (id) DO NOTHING
 RETURNING *;
 

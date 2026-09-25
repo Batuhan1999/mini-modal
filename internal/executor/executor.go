@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"mini-modal/internal/domain"
+	"os/exec"
 	"time"
 )
 
@@ -27,4 +28,15 @@ func (Fake) Run(ctx context.Context, assignment domain.Assignment) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+type ProcessExecutor struct {
+}
+
+func (ProcessExecutor) Run(ctx context.Context, assignment domain.Assignment) error {
+	cmd := exec.CommandContext(ctx, assignment.Command, assignment.Args...)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run job %q: %w", assignment.JobID, err)
+	}
+	return nil
 }

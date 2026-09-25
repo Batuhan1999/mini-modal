@@ -17,7 +17,7 @@ SET status = 'assigned',
     lease_expires_at = ?2
 WHERE id = ?3
   AND status = 'pending'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 `
 
 type AssignJobParams struct {
@@ -41,6 +41,8 @@ func (q *Queries) AssignJob(ctx context.Context, arg AssignJobParams) (Job, erro
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
+		&i.Command,
+		&i.Args,
 	)
 	return i, err
 }
@@ -58,7 +60,7 @@ WHERE id = (
     LIMIT 1
 )
   AND status = 'assigned'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 `
 
 type ClaimJobParams struct {
@@ -81,6 +83,8 @@ func (q *Queries) ClaimJob(ctx context.Context, arg ClaimJobParams) (Job, error)
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
+		&i.Command,
+		&i.Args,
 	)
 	return i, err
 }
@@ -92,7 +96,7 @@ SET status = 'succeeded',
 WHERE id = ?1
   AND attempt = ?2
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 `
 
 type CompleteJobParams struct {
@@ -115,6 +119,8 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
+		&i.Command,
+		&i.Args,
 	)
 	return i, err
 }
@@ -128,10 +134,12 @@ INSERT INTO jobs (
     cpus,
     memory_gb,
     duration_seconds,
+    command,
+    args,
     status
-) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
 ON CONFLICT (id) DO NOTHING
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 `
 
 type CreateJobParams struct {
@@ -142,6 +150,8 @@ type CreateJobParams struct {
 	Cpus            int64  `json:"cpus"`
 	MemoryGb        int64  `json:"memory_gb"`
 	DurationSeconds int64  `json:"duration_seconds"`
+	Command         string `json:"command"`
+	Args            string `json:"args"`
 }
 
 func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, error) {
@@ -153,6 +163,8 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		arg.Cpus,
 		arg.MemoryGb,
 		arg.DurationSeconds,
+		arg.Command,
+		arg.Args,
 	)
 	var i Job
 	err := row.Scan(
@@ -167,6 +179,8 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
+		&i.Command,
+		&i.Args,
 	)
 	return i, err
 }
@@ -178,7 +192,7 @@ SET status = 'failed',
 WHERE id = ?1
   AND attempt = ?2
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 `
 
 type FailJobParams struct {
@@ -201,12 +215,14 @@ func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (Job, error) {
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
+		&i.Command,
+		&i.Args,
 	)
 	return i, err
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 FROM jobs
 WHERE id = ?
 `
@@ -226,12 +242,14 @@ func (q *Queries) GetJob(ctx context.Context, id string) (Job, error) {
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
+		&i.Command,
+		&i.Args,
 	)
 	return i, err
 }
 
 const listActiveJobs = `-- name: ListActiveJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 FROM jobs
 WHERE status IN ('assigned', 'running')
 ORDER BY id
@@ -258,6 +276,8 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
+			&i.Command,
+			&i.Args,
 		); err != nil {
 			return nil, err
 		}
@@ -273,7 +293,7 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listJobs = `-- name: ListJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 FROM jobs
 ORDER BY id
 `
@@ -299,6 +319,8 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
+			&i.Command,
+			&i.Args,
 		); err != nil {
 			return nil, err
 		}
@@ -314,7 +336,7 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listPendingJobs = `-- name: ListPendingJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 FROM jobs
 WHERE status = 'pending'
 ORDER BY priority DESC, id
@@ -341,6 +363,8 @@ func (q *Queries) ListPendingJobs(ctx context.Context) ([]Job, error) {
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
+			&i.Command,
+			&i.Args,
 		); err != nil {
 			return nil, err
 		}
@@ -408,7 +432,7 @@ WHERE id = ?1
   AND node_id = ?2
   AND attempt = ?3
   AND status IN ('assigned', 'running')
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 `
 
 type RequeueAssignmentParams struct {
@@ -432,6 +456,8 @@ func (q *Queries) RequeueAssignment(ctx context.Context, arg RequeueAssignmentPa
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
+		&i.Command,
+		&i.Args,
 	)
 	return i, err
 }
@@ -443,7 +469,7 @@ SET status = 'pending',
     lease_expires_at = 0
 WHERE status IN ('assigned', 'running')
   AND lease_expires_at <= ?1
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args
 `
 
 func (q *Queries) RequeueExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error) {
@@ -467,6 +493,8 @@ func (q *Queries) RequeueExpiredAssignments(ctx context.Context, expiredBefore i
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
+			&i.Command,
+			&i.Args,
 		); err != nil {
 			return nil, err
 		}

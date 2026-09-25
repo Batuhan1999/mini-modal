@@ -16,6 +16,8 @@ type Job struct {
 	NodeID          string `json:"node_id"`
 	Attempt         int64  `json:"attempt"`
 	LeaseExpiresAt  int64  `json:"lease_expires_at"`
+	Command         string `json:"command"`
+	Args            string `json:"args"`
 }
 
 type Node struct {

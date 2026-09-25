@@ -36,6 +36,8 @@ func (c *Client) Claim(ctx context.Context, nodeID string) (domain.Assignment, b
 		JobID:   assignment.GetJobId(),
 		NodeID:  assignment.GetNodeId(),
 		Attempt: assignment.GetAttempt(),
+		Command: assignment.GetCommand(),
+		Args:    assignment.GetArgs(),
 	}, true, nil
 }
 

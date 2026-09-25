@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -146,7 +147,16 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 		return domain.Assignment{}, false, fmt.Errorf("claim job for node %q: %w", nodeID, err)
 	}
 
-	return domain.Assignment{JobID: job.ID, NodeID: job.NodeID, Attempt: job.Attempt}, true, nil
+	var args []string
+	if err := json.Unmarshal([]byte(job.Args), &args); err != nil {
+		return domain.Assignment{}, false, fmt.Errorf(
+			"decode arguments for job %q: %w",
+			job.ID,
+			err,
+		)
+	}
+
+	return domain.Assignment{JobID: job.ID, NodeID: job.NodeID, Attempt: job.Attempt, Command: job.Command, Args: args}, true, nil
 }
 
 func (s *Service) Complete(ctx context.Context, assignment domain.Assignment) error {
@@ -350,6 +360,14 @@ func validateJob(job sqlitedb.CreateJobParams) error {
 	}
 	if job.DurationSeconds < 0 {
 		return fmt.Errorf("job %q cannot have a negative duration", job.ID)
+	}
+	if strings.TrimSpace(job.Command) == "" {
+		return fmt.Errorf("job %q requires a command", job.ID)
+	}
+
+	var args []string
+	if err := json.Unmarshal([]byte(job.Args), &args); err != nil {
+		return fmt.Errorf("job %q has invalid arguments: %w", job.ID, err)
 	}
 	return nil
 }

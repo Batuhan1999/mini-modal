@@ -18,6 +18,7 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 
 	job, err := service.Submit(ctx, sqlitedb.CreateJobParams{
 		ID: "job-1", GpuType: "A100", Gpus: 2, Cpus: 4, MemoryGb: 8,
+		Command: "echo", Args: "[]",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -126,7 +127,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
-		ID: "job-1", Cpus: 1, MemoryGb: 1,
+		ID: "job-1", Cpus: 1, MemoryGb: 1, Command: "echo", Args: "[]",
 	}); err != nil {
 		t.Fatal(err)
 	}

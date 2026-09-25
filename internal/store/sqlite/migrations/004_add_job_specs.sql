@@ -1,0 +1,7 @@
+-- 004_add_job_execution.sql
+
+ALTER TABLE jobs
+ADD COLUMN command TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE jobs
+ADD COLUMN args TEXT NOT NULL DEFAULT '[]';

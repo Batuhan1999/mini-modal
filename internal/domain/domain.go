@@ -17,6 +17,8 @@ type Assignment struct {
 	JobID   string
 	NodeID  string
 	Attempt int64
+	Command string
+	Args    []string
 }
 
 func (n Node) CanRun(job sqlitedb.Job) bool {

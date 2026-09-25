@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
 
 	select {
 	case completed := <-controlPlane.completed:
-		if completed != assignment {
+		if !reflect.DeepEqual(completed, assignment) {
 			t.Fatalf("completed assignment %#v, want %#v", completed, assignment)
 		}
 	case <-time.After(time.Second):
@@ -115,7 +116,7 @@ func TestAgentReportsExecutionFailure(t *testing.T) {
 
 	select {
 	case failed := <-controlPlane.failed:
-		if failed != assignment {
+		if !reflect.DeepEqual(failed, assignment) {
 			t.Fatalf("failed assignment %#v, want %#v", failed, assignment)
 		}
 	case <-time.After(time.Second):

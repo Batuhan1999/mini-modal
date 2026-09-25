@@ -83,7 +83,7 @@ func main() {
 	agent := agent.New(
 		*nodeID,
 		client,
-		executor.Fake{},
+		executor.ProcessExecutor{},
 		250*time.Millisecond,
 	)
 
