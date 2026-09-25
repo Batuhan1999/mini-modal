@@ -44,7 +44,7 @@ func main() {
 	defer db.Close()
 
 	queries := sqlitedb.New(db)
-	service := controlplane.NewService(controlplane.NewRuntimeState(), queries)
+	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db)
 	if err := service.Initialize(ctx); err != nil {
 		log.Fatalf("failed to initialize control plane: %v", err)
 	}

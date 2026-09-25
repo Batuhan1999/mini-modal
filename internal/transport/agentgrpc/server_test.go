@@ -177,7 +177,7 @@ func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	service := controlplane.NewService(controlplane.NewRuntimeState(), sqlitedb.New(db))
+	service := controlplane.NewService(controlplane.NewRuntimeState(), sqlitedb.New(db), db)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

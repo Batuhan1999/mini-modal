@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"mini-modal/internal/domain"
 	jobmodel "mini-modal/internal/job"
@@ -49,6 +50,30 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if assignment.Image != "alpine:3.20" || assignment.CPUs != 4 || assignment.MemoryGB != 8 {
 		t.Fatalf("assignment runtime configuration = %#v", assignment)
 	}
+	queries := sqlitedb.New(service.db)
+	submissionEvents, err := queries.ListJobEvents(ctx, sqlitedb.ListJobEventsParams{
+		JobID:   job.ID,
+		Attempt: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(submissionEvents) != 1 || submissionEvents[0].Event != "submitted" {
+		t.Fatalf("submission events = %#v", submissionEvents)
+	}
+	events, err := queries.ListJobEvents(ctx, sqlitedb.ListJobEventsParams{
+		JobID:   job.ID,
+		Attempt: assignment.Attempt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 ||
+		events[0].Event != "assigned" ||
+		events[1].Event != "claimed" ||
+		events[1].NodeID != "node-a" {
+		t.Fatalf("claim events = %#v", events)
+	}
 
 	running, err := service.Job(ctx, job.ID)
 	if err != nil {
@@ -79,6 +104,16 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	}
 	if jobmodel.Status(completed.Status) != jobmodel.Succeeded {
 		t.Fatalf("got status %q, want %q", completed.Status, jobmodel.Succeeded)
+	}
+	events, err = queries.ListJobEvents(ctx, sqlitedb.ListJobEventsParams{
+		JobID:   job.ID,
+		Attempt: assignment.Attempt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 || events[2].Event != "completed" {
+		t.Fatalf("completed job events = %#v", events)
 	}
 }
 
@@ -125,7 +160,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(NewRuntimeState(), sqlitedb.New(db))
+	service := NewService(NewRuntimeState(), sqlitedb.New(db), db)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +188,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	restarted := NewService(NewRuntimeState(), sqlitedb.New(db))
+	restarted := NewService(NewRuntimeState(), sqlitedb.New(db), db)
 	if err := restarted.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -202,6 +237,10 @@ func TestServiceCancelsRunningAssignment(t *testing.T) {
 	if err := service.CancelJob(ctx, assignment.JobID); err != nil {
 		t.Fatal(err)
 	}
+	events := listTestJobEvents(t, service, assignment.JobID, assignment.Attempt)
+	if len(events) != 3 || events[2].Event != "cancellation_requested" {
+		t.Fatalf("events after cancellation request = %#v", events)
+	}
 	shouldCancel, err := service.RenewAssignment(ctx, assignment)
 	if err != nil {
 		t.Fatal(err)
@@ -216,6 +255,10 @@ func TestServiceCancelsRunningAssignment(t *testing.T) {
 	}
 	if err := service.Cancel(ctx, assignment); err != nil {
 		t.Fatal(err)
+	}
+	events = listTestJobEvents(t, service, assignment.JobID, assignment.Attempt)
+	if len(events) != 4 || events[3].Event != "cancelled" {
+		t.Fatalf("events after cancellation acknowledgement = %#v", events)
 	}
 
 	record, err := service.Job(ctx, assignment.JobID)
@@ -246,6 +289,61 @@ func TestServiceCancelsPendingJobImmediately(t *testing.T) {
 	if jobmodel.Status(record.Status) != jobmodel.Cancelled {
 		t.Fatalf("status = %q, want %q", record.Status, jobmodel.Cancelled)
 	}
+	events := listTestJobEvents(t, service, "job-1", 0)
+	if len(events) != 2 || events[0].Event != "submitted" || events[1].Event != "cancelled" {
+		t.Fatalf("pending cancellation events = %#v", events)
+	}
+}
+
+func TestServiceRecordsFailedJobEvent(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{{
+		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
+	}})
+	if _, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "false",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assignment, found, err := service.Claim(ctx, "node-a")
+	if err != nil || !found {
+		t.Fatalf("claim assignment: found=%v err=%v", found, err)
+	}
+	if err := service.Fail(ctx, assignment); err != nil {
+		t.Fatal(err)
+	}
+
+	events := listTestJobEvents(t, service, assignment.JobID, assignment.Attempt)
+	if len(events) != 3 || events[2].Event != "failed" {
+		t.Fatalf("failed job events = %#v", events)
+	}
+}
+
+func TestServiceRecordsExpiredLeaseEvent(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{{
+		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
+	}})
+	job, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "sleep",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expired, err := service.expireAssignmentsLocked(ctx, time.Now().Add(assignmentLeaseDuration+time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expired != 1 {
+		t.Fatalf("expired assignments = %d, want 1", expired)
+	}
+	events := listTestJobEvents(t, service, job.ID, 1)
+	if len(events) != 2 || events[1].Event != "lease_expired" || events[1].NodeID != "node-a" {
+		t.Fatalf("expired assignment events = %#v", events)
+	}
 }
 
 func newTestService(t *testing.T, nodes []domain.Node) *Service {
@@ -257,7 +355,7 @@ func newTestService(t *testing.T, nodes []domain.Node) *Service {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	service := NewService(NewRuntimeState(), sqlitedb.New(db))
+	service := NewService(NewRuntimeState(), sqlitedb.New(db), db)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -267,4 +365,16 @@ func newTestService(t *testing.T, nodes []domain.Node) *Service {
 		}
 	}
 	return service
+}
+
+func listTestJobEvents(t *testing.T, service *Service, jobID string, attempt int64) []sqlitedb.JobEvent {
+	t.Helper()
+	events, err := sqlitedb.New(service.db).ListJobEvents(context.Background(), sqlitedb.ListJobEventsParams{
+		JobID:   jobID,
+		Attempt: attempt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return events
 }

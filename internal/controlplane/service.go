@@ -27,12 +27,14 @@ type Service struct {
 	runtime *RuntimeState
 	queries sqlitedb.Querier
 	policy  *scheduler.Policy
+	db      *sql.DB
 }
 
-func NewService(runtime *RuntimeState, queries sqlitedb.Querier) *Service {
+func NewService(runtime *RuntimeState, queries sqlitedb.Querier, db *sql.DB) *Service {
 	return &Service{
 		runtime: runtime,
 		queries: queries,
+		db:      db,
 		policy:  scheduler.NewFirstFitPolicy(),
 	}
 }
@@ -46,27 +48,41 @@ func (s *Service) Cancel(ctx context.Context, assignment domain.Assignment) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	stored, err := s.queries.GetJob(ctx, assignment.JobID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("job %q not found", assignment.JobID)
-	}
-	if err != nil {
-		return fmt.Errorf("get job %q: %w", assignment.JobID, err)
-	}
-	if stored.Attempt != assignment.Attempt {
-		return fmt.Errorf("job %q is not at attempt %d", assignment.JobID, assignment.Attempt)
-	}
-	status, err := jobmodel.ParseStatus(stored.Status)
-	if err != nil {
-		return err
-	}
-	if _, err := status.Next(jobmodel.EventAcknowledgeCancellation); err != nil {
-		return fmt.Errorf("acknowledge cancellation for job %q: %w", assignment.JobID, err)
-	}
+	now := time.Now()
+	job, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+		stored, err := queries.GetJob(ctx, assignment.JobID)
+		if err != nil {
+			return sqlitedb.Job{}, err
+		}
+		if stored.Attempt != assignment.Attempt {
+			return sqlitedb.Job{}, fmt.Errorf("job %q is not at attempt %d", assignment.JobID, assignment.Attempt)
+		}
+		status, err := jobmodel.ParseStatus(stored.Status)
+		if err != nil {
+			return sqlitedb.Job{}, err
+		}
+		if _, err := status.Next(jobmodel.EventAcknowledgeCancellation); err != nil {
+			return sqlitedb.Job{}, fmt.Errorf("acknowledge cancellation for job %q: %w", assignment.JobID, err)
+		}
 
-	job, err := s.queries.AcknowledgeCancelledJob(ctx, sqlitedb.AcknowledgeCancelledJobParams{
-		JobID:             assignment.JobID,
-		AssignmentAttempt: assignment.Attempt,
+		cancelled, err := queries.AcknowledgeCancelledJob(ctx, sqlitedb.AcknowledgeCancelledJobParams{
+			JobID:             assignment.JobID,
+			AssignmentAttempt: assignment.Attempt,
+		})
+		if err != nil {
+			return sqlitedb.Job{}, err
+		}
+		if err := recordJobEvent(
+			ctx,
+			queries,
+			stored,
+			jobmodel.HistoryCancelled,
+			"Job cancellation acknowledged by node "+stored.NodeID,
+			now,
+		); err != nil {
+			return sqlitedb.Job{}, err
+		}
+		return cancelled, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("job %q is not cancelling with attempt %d", assignment.JobID, assignment.Attempt)
@@ -109,50 +125,84 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	job, err := s.queries.GetJob(ctx, jobID)
+	type cancellationResult struct {
+		schedule bool
+	}
+
+	now := time.Now()
+	result, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (cancellationResult, error) {
+		job, err := queries.GetJob(ctx, jobID)
+		if err != nil {
+			return cancellationResult{}, err
+		}
+
+		status, err := jobmodel.ParseStatus(job.Status)
+		if err != nil {
+			return cancellationResult{}, err
+		}
+		next, err := status.Next(jobmodel.EventRequestCancellation)
+		if err != nil {
+			return cancellationResult{}, fmt.Errorf("cancel job %q: %w", jobID, err)
+		}
+		if next == status {
+			return cancellationResult{}, nil
+		}
+
+		switch next {
+		case jobmodel.Cancelled:
+			updated, err := queries.CancelNotRunningJob(ctx, jobID)
+			if err != nil {
+				return cancellationResult{}, fmt.Errorf("cancel job %q: %w", jobID, err)
+			}
+			if updated == 0 {
+				return cancellationResult{}, fmt.Errorf("job %q changed status before cancellation", jobID)
+			}
+			if err := recordJobEvent(
+				ctx,
+				queries,
+				job,
+				jobmodel.HistoryCancelled,
+				"Job cancelled before execution",
+				now,
+			); err != nil {
+				return cancellationResult{}, err
+			}
+			return cancellationResult{schedule: true}, nil
+
+		case jobmodel.Cancelling:
+			updated, err := queries.StartCancelJob(ctx, jobID)
+			if err != nil {
+				return cancellationResult{}, fmt.Errorf("cancel running job %q: %w", jobID, err)
+			}
+			if updated == 0 {
+				return cancellationResult{}, fmt.Errorf("job %q changed status before cancellation", jobID)
+			}
+			if err := recordJobEvent(
+				ctx,
+				queries,
+				job,
+				jobmodel.HistoryCancellationRequested,
+				"Job cancellation requested",
+				now,
+			); err != nil {
+				return cancellationResult{}, err
+			}
+			return cancellationResult{}, nil
+
+		default:
+			return cancellationResult{}, fmt.Errorf("cancel job %q produced unsupported status %q", jobID, next)
+		}
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("job %q not found", jobID)
 	}
 	if err != nil {
-		return fmt.Errorf("get job %q: %w", jobID, err)
-	}
-
-	status, err := jobmodel.ParseStatus(job.Status)
-	if err != nil {
 		return err
 	}
-	next, err := status.Next(jobmodel.EventRequestCancellation)
-	if err != nil {
-		return fmt.Errorf("cancel job %q: %w", jobID, err)
-	}
-	if next == status {
-		return nil
-	}
-
-	switch next {
-	case jobmodel.Cancelled:
-		updated, err := s.queries.CancelNotRunningJob(ctx, jobID)
-		if err != nil {
-			return fmt.Errorf("cancel job %q: %w", jobID, err)
-		}
-		if updated == 0 {
-			return fmt.Errorf("job %q changed status before cancellation", jobID)
-		}
+	if result.schedule {
 		return s.scheduleLocked(ctx)
-
-	case jobmodel.Cancelling:
-		updated, err := s.queries.StartCancelJob(ctx, jobID)
-		if err != nil {
-			return fmt.Errorf("cancel running job %q: %w", jobID, err)
-		}
-		if updated == 0 {
-			return fmt.Errorf("job %q changed status before cancellation", jobID)
-		}
-		return nil
-
-	default:
-		return fmt.Errorf("cancel job %q produced unsupported status %q", jobID, next)
 	}
+	return nil
 }
 
 func (s *Service) RegisterNode(ctx context.Context, node domain.Node) error {
@@ -196,7 +246,24 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	created, err := s.queries.CreateJob(ctx, params)
+	now := time.Now()
+	created, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+		job, err := queries.CreateJob(ctx, params)
+		if err != nil {
+			return sqlitedb.Job{}, err
+		}
+		if err := recordJobEvent(
+			ctx,
+			queries,
+			job,
+			jobmodel.HistorySubmitted,
+			"Job submitted",
+			now,
+		); err != nil {
+			return sqlitedb.Job{}, err
+		}
+		return job, nil
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return sqlitedb.Job{}, fmt.Errorf("job %q already exists", params.ID)
 	}
@@ -222,10 +289,53 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 	if !healthy {
 		return domain.Assignment{}, false, nil
 	}
+	now := time.Now()
+	assignment, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (domain.Assignment, error) {
+		job, err := queries.ClaimJob(ctx, sqlitedb.ClaimJobParams{
+			LeaseExpiresAt: now.Add(assignmentLeaseDuration).UnixMilli(),
+			ClaimNodeID:    nodeID,
+		})
+		if err != nil {
+			return domain.Assignment{}, err
+		}
 
-	job, err := s.queries.ClaimJob(ctx, sqlitedb.ClaimJobParams{
-		LeaseExpiresAt: time.Now().Add(assignmentLeaseDuration).UnixMilli(),
-		ClaimNodeID:    nodeID,
+		var args []string
+		if err := json.Unmarshal([]byte(job.Args), &args); err != nil {
+			return domain.Assignment{}, fmt.Errorf(
+				"decode arguments for job %q: %w",
+				job.ID,
+				err,
+			)
+		}
+		status, err := jobmodel.ParseStatus(job.Status)
+		if err != nil {
+			return domain.Assignment{}, fmt.Errorf("read claimed job %q status: %w", job.ID, err)
+		}
+		if status != jobmodel.Running {
+			return domain.Assignment{}, fmt.Errorf("claimed job %q has status %q", job.ID, status)
+		}
+
+		if err := recordJobEvent(
+			ctx,
+			queries,
+			job,
+			jobmodel.HistoryClaimed,
+			"Job claimed by node "+nodeID,
+			now,
+		); err != nil {
+			return domain.Assignment{}, err
+		}
+
+		return domain.Assignment{
+			JobID:    job.ID,
+			NodeID:   job.NodeID,
+			Attempt:  job.Attempt,
+			Command:  job.Command,
+			Args:     args,
+			Image:    job.Image,
+			CPUs:     job.Cpus,
+			MemoryGB: job.MemoryGb,
+		}, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Assignment{}, false, nil
@@ -234,32 +344,7 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 		return domain.Assignment{}, false, fmt.Errorf("claim job for node %q: %w", nodeID, err)
 	}
 
-	var args []string
-	if err := json.Unmarshal([]byte(job.Args), &args); err != nil {
-		return domain.Assignment{}, false, fmt.Errorf(
-			"decode arguments for job %q: %w",
-			job.ID,
-			err,
-		)
-	}
-	status, err := jobmodel.ParseStatus(job.Status)
-	if err != nil {
-		return domain.Assignment{}, false, fmt.Errorf("read claimed job %q status: %w", job.ID, err)
-	}
-	if status != jobmodel.Running {
-		return domain.Assignment{}, false, fmt.Errorf("claimed job %q has status %q", job.ID, status)
-	}
-
-	return domain.Assignment{
-		JobID:    job.ID,
-		NodeID:   job.NodeID,
-		Attempt:  job.Attempt,
-		Command:  job.Command,
-		Args:     args,
-		Image:    job.Image,
-		CPUs:     job.Cpus,
-		MemoryGB: job.MemoryGb,
-	}, true, nil
+	return assignment, true, nil
 }
 
 func (s *Service) Complete(ctx context.Context, assignment domain.Assignment) error {
@@ -274,48 +359,60 @@ func (s *Service) finish(ctx context.Context, assignment domain.Assignment, even
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	stored, err := s.queries.GetJob(ctx, assignment.JobID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("job %q not found", assignment.JobID)
-	}
-	if err != nil {
-		return fmt.Errorf("get job %q: %w", assignment.JobID, err)
-	}
-	if stored.Attempt != assignment.Attempt {
-		return fmt.Errorf("job %q is not at attempt %d", assignment.JobID, assignment.Attempt)
-	}
-	current, err := jobmodel.ParseStatus(stored.Status)
-	if err != nil {
-		return err
-	}
-	next, err := current.Next(event)
-	if err != nil {
-		return fmt.Errorf("finish job %q: %w", assignment.JobID, err)
-	}
+	now := time.Now()
+	job, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+		stored, err := queries.GetJob(ctx, assignment.JobID)
+		if err != nil {
+			return sqlitedb.Job{}, err
+		}
+		if stored.Attempt != assignment.Attempt {
+			return sqlitedb.Job{}, fmt.Errorf("job %q is not at attempt %d", assignment.JobID, assignment.Attempt)
+		}
+		current, err := jobmodel.ParseStatus(stored.Status)
+		if err != nil {
+			return sqlitedb.Job{}, err
+		}
+		next, err := current.Next(event)
+		if err != nil {
+			return sqlitedb.Job{}, fmt.Errorf("finish job %q: %w", assignment.JobID, err)
+		}
 
-	var (
-		job      sqlitedb.Job
-		queryErr error
-	)
-	switch next {
-	case jobmodel.Succeeded:
-		job, queryErr = s.queries.CompleteJob(ctx, sqlitedb.CompleteJobParams{
-			JobID:             assignment.JobID,
-			AssignmentAttempt: assignment.Attempt,
-		})
-	case jobmodel.Failed:
-		job, queryErr = s.queries.FailJob(ctx, sqlitedb.FailJobParams{
-			JobID:             assignment.JobID,
-			AssignmentAttempt: assignment.Attempt,
-		})
-	default:
-		return fmt.Errorf("unsupported terminal job status %q", next)
-	}
-	if errors.Is(queryErr, sql.ErrNoRows) {
+		var (
+			finished     sqlitedb.Job
+			historyEvent jobmodel.HistoryEvent
+			message      string
+		)
+		switch next {
+		case jobmodel.Succeeded:
+			finished, err = queries.CompleteJob(ctx, sqlitedb.CompleteJobParams{
+				JobID:             assignment.JobID,
+				AssignmentAttempt: assignment.Attempt,
+			})
+			historyEvent = jobmodel.HistoryCompleted
+			message = "Job completed successfully"
+		case jobmodel.Failed:
+			finished, err = queries.FailJob(ctx, sqlitedb.FailJobParams{
+				JobID:             assignment.JobID,
+				AssignmentAttempt: assignment.Attempt,
+			})
+			historyEvent = jobmodel.HistoryFailed
+			message = "Job execution failed"
+		default:
+			return sqlitedb.Job{}, fmt.Errorf("unsupported terminal job status %q", next)
+		}
+		if err != nil {
+			return sqlitedb.Job{}, err
+		}
+		if err := recordJobEvent(ctx, queries, finished, historyEvent, message, now); err != nil {
+			return sqlitedb.Job{}, err
+		}
+		return finished, nil
+	})
+	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("job %q is not running with attempt %d", assignment.JobID, assignment.Attempt)
 	}
-	if queryErr != nil {
-		return fmt.Errorf("finish job %q: %w", assignment.JobID, queryErr)
+	if err != nil {
+		return fmt.Errorf("finish job %q: %w", assignment.JobID, err)
 	}
 
 	if err := s.scheduleLocked(ctx); err != nil {
@@ -435,10 +532,26 @@ func (s *Service) scheduleLocked(ctx context.Context) error {
 	assignments, _, possiblyUnschedulable := s.policy.Schedule(jobs, healthyNodes)
 
 	for _, assignment := range assignments {
-		_, err := s.queries.AssignJob(ctx, sqlitedb.AssignJobParams{
-			TargetNodeID:   assignment.NodeID,
-			LeaseExpiresAt: now.Add(assignmentLeaseDuration).UnixMilli(),
-			JobID:          assignment.JobID,
+		_, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+			job, err := queries.AssignJob(ctx, sqlitedb.AssignJobParams{
+				TargetNodeID:   assignment.NodeID,
+				LeaseExpiresAt: now.Add(assignmentLeaseDuration).UnixMilli(),
+				JobID:          assignment.JobID,
+			})
+			if err != nil {
+				return sqlitedb.Job{}, err
+			}
+			if err := recordJobEvent(
+				ctx,
+				queries,
+				job,
+				jobmodel.HistoryAssigned,
+				"Job assigned to node "+assignment.NodeID,
+				now,
+			); err != nil {
+				return sqlitedb.Job{}, err
+			}
+			return job, nil
 		})
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
@@ -511,15 +624,68 @@ func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]dom
 }
 
 func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (int, error) {
-	expired, err := s.queries.RequeueExpiredAssignments(ctx, now.UnixMilli())
-	if err != nil {
-		return 0, fmt.Errorf("requeue expired assignments: %w", err)
+	type expirationResult struct {
+		requeued  int
+		cancelled int
 	}
-	cancelled, err := s.queries.CancelExpiredAssignments(ctx, now.UnixMilli())
+
+	result, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (expirationResult, error) {
+		active, err := queries.ListActiveJobs(ctx)
+		if err != nil {
+			return expirationResult{}, fmt.Errorf("list active jobs before lease expiration: %w", err)
+		}
+		nodeByJobID := make(map[string]string, len(active))
+		for _, job := range active {
+			if job.LeaseExpiresAt <= now.UnixMilli() {
+				nodeByJobID[job.ID] = job.NodeID
+			}
+		}
+
+		expired, err := queries.RequeueExpiredAssignments(ctx, now.UnixMilli())
+		if err != nil {
+			return expirationResult{}, fmt.Errorf("requeue expired assignments: %w", err)
+		}
+		for _, job := range expired {
+			job.NodeID = nodeByJobID[job.ID]
+			if err := recordJobEvent(
+				ctx,
+				queries,
+				job,
+				jobmodel.HistoryLeaseExpired,
+				"Assignment lease expired; job returned to pending",
+				now,
+			); err != nil {
+				return expirationResult{}, err
+			}
+		}
+
+		cancelled, err := queries.CancelExpiredAssignments(ctx, now.UnixMilli())
+		if err != nil {
+			return expirationResult{}, fmt.Errorf("cancel expired assignments: %w", err)
+		}
+		for _, job := range cancelled {
+			job.NodeID = nodeByJobID[job.ID]
+			if err := recordJobEvent(
+				ctx,
+				queries,
+				job,
+				jobmodel.HistoryLeaseExpired,
+				"Cancellation finalized after assignment lease expired",
+				now,
+			); err != nil {
+				return expirationResult{}, err
+			}
+		}
+
+		return expirationResult{
+			requeued:  len(expired),
+			cancelled: len(cancelled),
+		}, nil
+	})
 	if err != nil {
-		return len(expired), fmt.Errorf("cancel expired assignments: %w", err)
+		return 0, err
 	}
-	return len(expired) + len(cancelled), nil
+	return result.requeued + result.cancelled, nil
 }
 
 func createJobParams(spec jobmodel.Spec) (sqlitedb.CreateJobParams, error) {

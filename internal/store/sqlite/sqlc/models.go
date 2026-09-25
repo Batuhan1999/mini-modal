@@ -22,6 +22,16 @@ type Job struct {
 	Image           string `json:"image"`
 }
 
+type JobEvent struct {
+	ID        string `json:"id"`
+	JobID     string `json:"job_id"`
+	Attempt   int64  `json:"attempt"`
+	Event     string `json:"event"`
+	NodeID    string `json:"node_id"`
+	Message   string `json:"message"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 type JobLog struct {
 	ID        string `json:"id"`
 	JobID     string `json:"job_id"`
