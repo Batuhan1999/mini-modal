@@ -13,6 +13,7 @@ message Assignment {
   string image = 6;
   int64 cpus = 7;
   int64 memory_gb = 8;
+  bool should_cancel = 9;
 }
 
 message ClaimRequest {
@@ -41,6 +42,7 @@ enum LogSource {
   LOG_SOURCE_UNSPECIFIED = 0;
   LOG_SOURCE_STDOUT = 1;
   LOG_SOURCE_STDERR = 2;
+  LOG_SOURCE_SYSTEM = 3;
 }
 
 message StreamLogsResponse {
@@ -56,10 +58,17 @@ message StreamLogsRequest {
   int64 created_at_unix_ms = 6;
 }
 
+message CancelRequest {
+  string job_id = 1;
+  int64 attempt = 2;
+}
+message CancelResponse {}
+
 service AgentService {
   rpc Claim(ClaimRequest) returns (ClaimResponse);
   rpc Complete(CompleteRequest) returns (CompleteResponse);
   rpc Fail(FailRequest) returns (FailResponse);
+  rpc Cancel(CancelRequest) returns (CancelResponse);
   rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
   rpc RenewAssignment(RenewAssignmentRequest) returns (RenewAssignmentResponse);
@@ -79,7 +88,9 @@ message RegisterNodeResponse {}
 message RenewAssignmentRequest {
   Assignment assignment = 1;
 }
-message RenewAssignmentResponse {}
+message RenewAssignmentResponse {
+  bool should_cancel = 1;
+}
 
 message HeartbeatRequest {
   string node_id = 1;

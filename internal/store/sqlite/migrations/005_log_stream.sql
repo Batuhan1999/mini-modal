@@ -4,7 +4,7 @@ Create table job_logs (
     job_id TEXT NOT NULL,
     attempt INTEGER NOT NULL,
     sequence INTEGER NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('stdout', 'stderr')),
+    source TEXT NOT NULL CHECK (source IN ('stdout', 'stderr', 'system')),
     data TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );

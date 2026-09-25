@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/domain"
 )
 
@@ -21,15 +22,18 @@ type claimResponse struct {
 func (f *fakeControlPlane) RenewAssignment(
 	ctx context.Context,
 	assignment domain.Assignment,
-) error {
-	return nil
+) (bool, error) {
+	return f.shouldCancel, nil
 }
 
 type fakeControlPlane struct {
-	mu        sync.Mutex
-	claims    []claimResponse
-	completed chan domain.Assignment
-	failed    chan domain.Assignment
+	mu           sync.Mutex
+	claims       []claimResponse
+	completed    chan domain.Assignment
+	failed       chan domain.Assignment
+	cancelled    chan domain.Assignment
+	logs         chan domain.LogStream
+	shouldCancel bool
 }
 
 func (f *fakeControlPlane) Claim(ctx context.Context, nodeID string) (domain.Assignment, bool, error) {
@@ -55,24 +59,47 @@ func (f *fakeControlPlane) Fail(ctx context.Context, assignment domain.Assignmen
 	return nil
 }
 
+func (f *fakeControlPlane) Cancel(ctx context.Context, assignment domain.Assignment) error {
+	f.cancelled <- assignment
+	return nil
+}
+
 func (f *fakeControlPlane) StreamLogs(ctx context.Context, chunks <-chan domain.LogStream) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case _, ok := <-chunks:
+		case chunk, ok := <-chunks:
 			if !ok {
 				return nil
+			}
+			if f.logs != nil {
+				f.logs <- chunk
 			}
 		}
 	}
 }
 
 type fakeExecutor struct {
-	err error
+	err                 error
+	systemOutput        string
+	waitForCancellation bool
 }
 
-func (f fakeExecutor) Run(context.Context, domain.Assignment, io.Writer, io.Writer) error {
+func (f fakeExecutor) Run(
+	ctx context.Context,
+	_ domain.Assignment,
+	_ io.Writer,
+	_ io.Writer,
+	systemOut io.Writer,
+) error {
+	if f.systemOutput != "" {
+		_, _ = io.WriteString(systemOut, f.systemOutput)
+	}
+	if f.waitForCancellation {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	return f.err
 }
 
@@ -85,8 +112,9 @@ func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
 		},
 		completed: make(chan domain.Assignment, 1),
 		failed:    make(chan domain.Assignment, 1),
+		logs:      make(chan domain.LogStream, 1),
 	}
-	agent := New("node-a", controlPlane, fakeExecutor{}, time.Millisecond)
+	agent := New("node-a", controlPlane, fakeExecutor{systemOutput: "pulling image\n"}, time.Millisecond)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -102,6 +130,15 @@ func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for job completion")
+	}
+
+	select {
+	case chunk := <-controlPlane.logs:
+		if chunk.Source != agentv1.LogSource_LOG_SOURCE_SYSTEM || string(chunk.Data) != "pulling image\n" {
+			t.Fatalf("system log = %+v, want system pull output", chunk)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for system log")
 	}
 
 	cancel()
@@ -142,5 +179,59 @@ func TestAgentReportsExecutionFailure(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for agent shutdown")
+	}
+}
+
+func TestAgentCancelsExecutionWhenRenewalRequestsIt(t *testing.T) {
+	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 2}
+	controlPlane := &fakeControlPlane{
+		completed:    make(chan domain.Assignment, 1),
+		failed:       make(chan domain.Assignment, 1),
+		cancelled:    make(chan domain.Assignment, 1),
+		logs:         make(chan domain.LogStream, 2),
+		shouldCancel: true,
+	}
+	agent := New("node-a", controlPlane, fakeExecutor{waitForCancellation: true}, time.Second)
+	agent.renewInterval = time.Millisecond
+
+	done := make(chan struct{})
+	go func() {
+		agent.runAssignment(context.Background(), assignment)
+		close(done)
+	}()
+
+	select {
+	case cancelled := <-controlPlane.cancelled:
+		if !reflect.DeepEqual(cancelled, assignment) {
+			t.Fatalf("cancelled assignment %#v, want %#v", cancelled, assignment)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for cancellation acknowledgement")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for assignment shutdown")
+	}
+
+	first := <-controlPlane.logs
+	second := <-controlPlane.logs
+	if first.Source != agentv1.LogSource_LOG_SOURCE_SYSTEM || string(first.Data) != "Cancellation requested\n" {
+		t.Fatalf("first cancellation log = %+v", first)
+	}
+	if second.Source != agentv1.LogSource_LOG_SOURCE_SYSTEM || string(second.Data) != "Execution stopped after cancellation\n" {
+		t.Fatalf("second cancellation log = %+v", second)
+	}
+
+	select {
+	case failed := <-controlPlane.failed:
+		t.Fatalf("cancelled assignment was reported failed: %+v", failed)
+	default:
+	}
+	select {
+	case completed := <-controlPlane.completed:
+		t.Fatalf("cancelled assignment was reported complete: %+v", completed)
+	default:
 	}
 }

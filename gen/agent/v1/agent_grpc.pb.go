@@ -22,6 +22,7 @@ const (
 	AgentService_Claim_FullMethodName           = "/minimodal.agent.v1.AgentService/Claim"
 	AgentService_Complete_FullMethodName        = "/minimodal.agent.v1.AgentService/Complete"
 	AgentService_Fail_FullMethodName            = "/minimodal.agent.v1.AgentService/Fail"
+	AgentService_Cancel_FullMethodName          = "/minimodal.agent.v1.AgentService/Cancel"
 	AgentService_RegisterNode_FullMethodName    = "/minimodal.agent.v1.AgentService/RegisterNode"
 	AgentService_Heartbeat_FullMethodName       = "/minimodal.agent.v1.AgentService/Heartbeat"
 	AgentService_RenewAssignment_FullMethodName = "/minimodal.agent.v1.AgentService/RenewAssignment"
@@ -35,6 +36,7 @@ type AgentServiceClient interface {
 	Claim(ctx context.Context, in *ClaimRequest, opts ...grpc.CallOption) (*ClaimResponse, error)
 	Complete(ctx context.Context, in *CompleteRequest, opts ...grpc.CallOption) (*CompleteResponse, error)
 	Fail(ctx context.Context, in *FailRequest, opts ...grpc.CallOption) (*FailResponse, error)
+	Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error)
 	RegisterNode(ctx context.Context, in *RegisterNodeRequest, opts ...grpc.CallOption) (*RegisterNodeResponse, error)
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 	RenewAssignment(ctx context.Context, in *RenewAssignmentRequest, opts ...grpc.CallOption) (*RenewAssignmentResponse, error)
@@ -73,6 +75,16 @@ func (c *agentServiceClient) Fail(ctx context.Context, in *FailRequest, opts ...
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FailResponse)
 	err := c.cc.Invoke(ctx, AgentService_Fail_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *agentServiceClient) Cancel(ctx context.Context, in *CancelRequest, opts ...grpc.CallOption) (*CancelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelResponse)
+	err := c.cc.Invoke(ctx, AgentService_Cancel_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +141,7 @@ type AgentServiceServer interface {
 	Claim(context.Context, *ClaimRequest) (*ClaimResponse, error)
 	Complete(context.Context, *CompleteRequest) (*CompleteResponse, error)
 	Fail(context.Context, *FailRequest) (*FailResponse, error)
+	Cancel(context.Context, *CancelRequest) (*CancelResponse, error)
 	RegisterNode(context.Context, *RegisterNodeRequest) (*RegisterNodeResponse, error)
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	RenewAssignment(context.Context, *RenewAssignmentRequest) (*RenewAssignmentResponse, error)
@@ -151,6 +164,9 @@ func (UnimplementedAgentServiceServer) Complete(context.Context, *CompleteReques
 }
 func (UnimplementedAgentServiceServer) Fail(context.Context, *FailRequest) (*FailResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Fail not implemented")
+}
+func (UnimplementedAgentServiceServer) Cancel(context.Context, *CancelRequest) (*CancelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Cancel not implemented")
 }
 func (UnimplementedAgentServiceServer) RegisterNode(context.Context, *RegisterNodeRequest) (*RegisterNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterNode not implemented")
@@ -239,6 +255,24 @@ func _AgentService_Fail_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_Cancel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AgentServiceServer).Cancel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AgentService_Cancel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AgentServiceServer).Cancel(ctx, req.(*CancelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AgentService_RegisterNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RegisterNodeRequest)
 	if err := dec(in); err != nil {
@@ -318,6 +352,10 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Fail",
 			Handler:    _AgentService_Fail_Handler,
+		},
+		{
+			MethodName: "Cancel",
+			Handler:    _AgentService_Cancel_Handler,
 		},
 		{
 			MethodName: "RegisterNode",

@@ -58,8 +58,9 @@ func (s *Server) StreamLogs(stream grpc.ClientStreamingServer[agentv1.StreamLogs
 			return status.Error(codes.InvalidArgument, "sequence cannot be negative")
 		}
 		if chunk.GetSource() != agentv1.LogSource_LOG_SOURCE_STDOUT &&
-			chunk.GetSource() != agentv1.LogSource_LOG_SOURCE_STDERR {
-			return status.Error(codes.InvalidArgument, "log source must be stdout or stderr")
+			chunk.GetSource() != agentv1.LogSource_LOG_SOURCE_STDERR &&
+			chunk.GetSource() != agentv1.LogSource_LOG_SOURCE_SYSTEM {
+			return status.Error(codes.InvalidArgument, "log source must be stdout, stderr, or system")
 		}
 		if len(chunk.GetData()) == 0 {
 			return status.Error(codes.InvalidArgument, "log data cannot be empty")
@@ -82,7 +83,11 @@ func (s *Server) StreamLogs(stream grpc.ClientStreamingServer[agentv1.StreamLogs
 					chunk.GetAttempt(),
 				)
 			}
-			if record.Status != controlplane.JobRunning {
+			jobStatus, err := controlplane.ParseJobStatus(record.Status)
+			if err != nil {
+				return status.Errorf(codes.Internal, "job %q has invalid status: %v", chunkJobID, err)
+			}
+			if !jobStatus.AcceptsLogs() {
 				return status.Errorf(
 					codes.FailedPrecondition,
 					"job %q is %q, not running",
@@ -183,14 +188,33 @@ func (s *Server) RenewAssignment(ctx context.Context, req *agentv1.RenewAssignme
 		return nil, status.Error(codes.InvalidArgument, "job ID is required")
 	}
 
-	if err := s.service.RenewAssignment(ctx, domain.Assignment{
+	shouldCancel, err := s.service.RenewAssignment(ctx, domain.Assignment{
 		JobID:   assignment.GetJobId(),
 		NodeID:  assignment.GetNodeId(),
 		Attempt: assignment.GetAttempt(),
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "failed to renew lease: %v", err)
 	}
-	return &agentv1.RenewAssignmentResponse{}, nil
+
+	return &agentv1.RenewAssignmentResponse{ShouldCancel: shouldCancel}, nil
+
+}
+
+func (s *Server) Cancel(ctx context.Context, req *agentv1.CancelRequest) (*agentv1.CancelResponse, error) {
+	jobID := strings.TrimSpace(req.GetJobId())
+	if jobID == "" {
+		return nil, status.Error(codes.InvalidArgument, "job ID is required")
+	}
+	attempt := req.GetAttempt()
+	if attempt <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "attempt must be greater than 0")
+	}
+	err := s.service.Cancel(ctx, domain.Assignment{JobID: jobID, Attempt: attempt})
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "failed to cancel job: %v", err)
+	}
+	return &agentv1.CancelResponse{}, nil
 }
 
 func (s *Server) Fail(ctx context.Context, req *agentv1.FailRequest) (*agentv1.FailResponse, error) {

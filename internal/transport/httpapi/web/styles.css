@@ -1091,6 +1091,18 @@ tbody tr[data-expanded="true"]:hover td {
   color: var(--danger);
 }
 
+.log-entry[data-source="system"] {
+  background: rgb(120 183 210 / 4%);
+}
+
+.log-entry[data-source="system"] .log-source {
+  color: var(--info);
+}
+
+.log-entry[data-source="system"] .log-data {
+  color: var(--muted);
+}
+
 .log-data {
   min-width: 0;
   margin: 0;

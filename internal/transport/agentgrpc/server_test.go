@@ -73,8 +73,53 @@ func TestClaimAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get completed job: %v", err)
 	}
-	if record.Status != controlplane.JobSucceeded {
+	if controlplane.JobStatus(record.Status) != controlplane.JobSucceeded {
 		t.Fatalf("job status = %q, want %q", record.Status, controlplane.JobSucceeded)
+	}
+}
+
+func TestRenewAndAcknowledgeCancellation(t *testing.T) {
+	ctx := context.Background()
+	server, service := newTestServer(t)
+	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
+		ID: "job-1", Cpus: 1, MemoryGb: 1,
+		Image: "alpine:3.20", Command: "sleep", Args: `["30"]`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := server.Claim(ctx, &agentv1.ClaimRequest{NodeId: "node-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignment := claim.GetAssignment()
+	if assignment == nil {
+		t.Fatal("assignment is nil")
+	}
+	if err := service.CancelJob(ctx, assignment.GetJobId()); err != nil {
+		t.Fatal(err)
+	}
+
+	renewal, err := server.RenewAssignment(ctx, &agentv1.RenewAssignmentRequest{
+		Assignment: assignment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !renewal.GetShouldCancel() {
+		t.Fatal("renewal did not request cancellation")
+	}
+	if _, err := server.Cancel(ctx, &agentv1.CancelRequest{
+		JobId: assignment.GetJobId(), Attempt: assignment.GetAttempt(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	record, err := service.Job(ctx, assignment.GetJobId())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if controlplane.JobStatus(record.Status) != controlplane.JobCancelled {
+		t.Fatalf("status = %q, want %q", record.Status, controlplane.JobCancelled)
 	}
 }
 
@@ -102,6 +147,13 @@ func TestRPCsRejectEmptyIdentifiers(t *testing.T) {
 			name: "fail",
 			call: func() error {
 				_, err := server.Fail(context.Background(), &agentv1.FailRequest{})
+				return err
+			},
+		},
+		{
+			name: "cancel",
+			call: func() error {
+				_, err := server.Cancel(context.Background(), &agentv1.CancelRequest{})
 				return err
 			},
 		},

@@ -9,6 +9,46 @@ import (
 	"context"
 )
 
+const acknowledgeCancelledJob = `-- name: AcknowledgeCancelledJob :one
+UPDATE jobs
+SET status = 'cancelled',
+    node_id = '',
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE id = ?1
+  AND attempt = ?2
+  AND status = 'cancelling'
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image
+`
+
+type AcknowledgeCancelledJobParams struct {
+	JobID             string `json:"job_id"`
+	AssignmentAttempt int64  `json:"assignment_attempt"`
+}
+
+func (q *Queries) AcknowledgeCancelledJob(ctx context.Context, arg AcknowledgeCancelledJobParams) (Job, error) {
+	row := q.db.QueryRowContext(ctx, acknowledgeCancelledJob, arg.JobID, arg.AssignmentAttempt)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.Priority,
+		&i.GpuType,
+		&i.Gpus,
+		&i.Cpus,
+		&i.MemoryGb,
+		&i.DurationSeconds,
+		&i.Status,
+		&i.NodeID,
+		&i.Attempt,
+		&i.LeaseExpiresAt,
+		&i.Command,
+		&i.Args,
+		&i.UpdatedAt,
+		&i.Image,
+	)
+	return i, err
+}
+
 const assignJob = `-- name: AssignJob :one
 UPDATE jobs
 SET status = 'assigned',
@@ -48,6 +88,74 @@ func (q *Queries) AssignJob(ctx context.Context, arg AssignJobParams) (Job, erro
 		&i.Image,
 	)
 	return i, err
+}
+
+const cancelExpiredAssignments = `-- name: CancelExpiredAssignments :many
+UPDATE jobs
+SET status = 'cancelled',
+    node_id = '',
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE status = 'cancelling'
+  AND lease_expires_at <= ?1
+RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image
+`
+
+func (q *Queries) CancelExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error) {
+	rows, err := q.db.QueryContext(ctx, cancelExpiredAssignments, expiredBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Job
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.Priority,
+			&i.GpuType,
+			&i.Gpus,
+			&i.Cpus,
+			&i.MemoryGb,
+			&i.DurationSeconds,
+			&i.Status,
+			&i.NodeID,
+			&i.Attempt,
+			&i.LeaseExpiresAt,
+			&i.Command,
+			&i.Args,
+			&i.UpdatedAt,
+			&i.Image,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const cancelNotRunningJob = `-- name: CancelNotRunningJob :execrows
+UPDATE jobs
+SET status = 'cancelled',
+    node_id = '',
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE id = ?
+  AND status IN ('pending', 'assigned', 'unschedulable')
+`
+
+func (q *Queries) CancelNotRunningJob(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, cancelNotRunningJob, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const claimJob = `-- name: ClaimJob :one
@@ -271,7 +379,7 @@ func (q *Queries) GetJob(ctx context.Context, id string) (Job, error) {
 const listActiveJobs = `-- name: ListActiveJobs :many
 SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image
 FROM jobs
-WHERE status IN ('assigned', 'running')
+WHERE status IN ('assigned', 'running', 'cancelling')
 ORDER BY id
 `
 
@@ -552,6 +660,22 @@ WHERE status = 'unschedulable'
 
 func (q *Queries) RequeueUnschedulableJobs(ctx context.Context) (int64, error) {
 	result, err := q.db.ExecContext(ctx, requeueUnschedulableJobs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const startCancelJob = `-- name: StartCancelJob :execrows
+UPDATE jobs
+SET status = 'cancelling',
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE id = ?
+  AND status = 'running'
+`
+
+func (q *Queries) StartCancelJob(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, startCancelJob, id)
 	if err != nil {
 		return 0, err
 	}

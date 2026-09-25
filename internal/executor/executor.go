@@ -14,12 +14,12 @@ import (
 )
 
 type Executor interface {
-	Run(context context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer) error
+	Run(context context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer, systemOut io.Writer) error
 }
 
 type Fake struct{}
 
-func (Fake) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer) error {
+func (Fake) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer, systemOut io.Writer) error {
 	fmt.Printf("running job %s on node %s\n",
 		assignment.JobID,
 		assignment.NodeID,
@@ -38,8 +38,7 @@ func (Fake) Run(ctx context.Context, assignment domain.Assignment, stdout io.Wri
 type ProcessExecutor struct {
 }
 
-func (ProcessExecutor) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer,
-	stderr io.Writer) error {
+func (ProcessExecutor) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer, systemOut io.Writer) error {
 	cmd := exec.CommandContext(ctx, assignment.Command, assignment.Args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -60,8 +59,17 @@ func (e DockerExecutor) Run(
 	assignment domain.Assignment,
 	stdout io.Writer,
 	stderr io.Writer,
+	systemOut io.Writer,
 ) error {
+
 	containerName := dockerContainerName(assignment)
+
+	if !e.checkImageExixts(ctx, e.binary(), assignment.Image) {
+		pullErr := e.pullImage(ctx, e.binary(), assignment.Image, systemOut)
+		if pullErr != nil {
+			return fmt.Errorf("pull image %q: %w", assignment.Image, pullErr)
+		}
+	}
 	args := []string{
 		"run",
 		"--name", containerName,
@@ -73,6 +81,7 @@ func (e DockerExecutor) Run(
 	args = append(args, assignment.Args...)
 
 	cmd := exec.CommandContext(ctx, e.binary(), args...)
+
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	runErr := cmd.Run()
@@ -80,6 +89,7 @@ func (e DockerExecutor) Run(
 
 	if runErr != nil {
 		runErr = fmt.Errorf("run Docker container for job %q: %w", assignment.JobID, runErr)
+
 	}
 	if cleanupErr != nil {
 		cleanupErr = fmt.Errorf("clean up Docker container for job %q: %w", assignment.JobID, cleanupErr)
@@ -87,6 +97,25 @@ func (e DockerExecutor) Run(
 	return errors.Join(runErr, cleanupErr)
 }
 
+func (e DockerExecutor) checkImageExixts(ctx context.Context, dockerBinary string, image string) bool {
+	cmd := exec.CommandContext(ctx, dockerBinary, "image", "inspect", image)
+	err := cmd.Run()
+	if err != nil {
+		return false
+	}
+	return true
+}
+
+func (e DockerExecutor) pullImage(ctx context.Context, dockerBinary string, image string, systemOut io.Writer) error {
+	cmd := exec.CommandContext(ctx, dockerBinary, "pull", image)
+	cmd.Stdout = systemOut
+	cmd.Stderr = systemOut
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("pull image %q: %w", image, err)
+	}
+	return nil
+}
 func (e DockerExecutor) removeContainer(containerName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerCleanupTimeout)
 	defer cancel()

@@ -583,7 +583,7 @@ function buildLogTerminal(job, logState, retry, compact) {
     const message = createElement("div", "log-message");
     message.append(
       createElement("strong", "", "No output yet"),
-      createElement("p", "", "Logs appear when the assigned process writes to stdout or stderr."),
+      createElement("p", "", "Image preparation and process output will appear here."),
     );
     terminal.append(message);
     return terminal;

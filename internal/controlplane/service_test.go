@@ -23,7 +23,7 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Status != JobAssigned {
+	if JobStatus(job.Status) != JobAssigned {
 		t.Fatalf("got status %q after scheduling, want %q", job.Status, JobAssigned)
 	}
 
@@ -53,7 +53,7 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if running.Status != JobRunning {
+	if JobStatus(running.Status) != JobRunning {
 		t.Fatalf("got status %q after claim, want %q", running.Status, JobRunning)
 	}
 	if _, found, err := service.Claim(ctx, "node-a"); err != nil {
@@ -76,7 +76,7 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if completed.Status != JobSucceeded {
+	if JobStatus(completed.Status) != JobSucceeded {
 		t.Fatalf("got status %q, want %q", completed.Status, JobSucceeded)
 	}
 }
@@ -160,7 +160,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if running.Status != JobRunning {
+	if JobStatus(running.Status) != JobRunning {
 		t.Fatalf("status after restart = %q, want %q", running.Status, JobRunning)
 	}
 	if running.Attempt != firstAssignment.Attempt {
@@ -170,11 +170,80 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	if err := restarted.RegisterNode(ctx, node); err != nil {
 		t.Fatal(err)
 	}
-	if err := restarted.RenewAssignment(ctx, firstAssignment); err != nil {
+	shouldCancel, err := restarted.RenewAssignment(ctx, firstAssignment)
+	if err != nil {
 		t.Fatalf("renew assignment after restart: %v", err)
+	}
+	if shouldCancel {
+		t.Fatal("renewed running assignment requested cancellation")
 	}
 	if err := restarted.Complete(ctx, firstAssignment); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestServiceCancelsRunningAssignment(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{{
+		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
+	}})
+	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
+		ID: "job-1", Cpus: 1, MemoryGb: 1,
+		Image: "alpine:3.20", Command: "sleep", Args: `["30"]`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assignment, found, err := service.Claim(ctx, "node-a")
+	if err != nil || !found {
+		t.Fatalf("claim assignment: found=%v err=%v", found, err)
+	}
+
+	if err := service.CancelJob(ctx, assignment.JobID); err != nil {
+		t.Fatal(err)
+	}
+	shouldCancel, err := service.RenewAssignment(ctx, assignment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shouldCancel {
+		t.Fatal("renewal did not return cancellation request")
+	}
+	if err := service.Cancel(ctx, domain.Assignment{
+		JobID: assignment.JobID, Attempt: assignment.Attempt + 1,
+	}); err == nil {
+		t.Fatal("stale cancellation acknowledgement was accepted")
+	}
+	if err := service.Cancel(ctx, assignment); err != nil {
+		t.Fatal(err)
+	}
+
+	record, err := service.Job(ctx, assignment.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if JobStatus(record.Status) != JobCancelled || record.NodeID != "" || record.LeaseExpiresAt != 0 {
+		t.Fatalf("cancelled job = %+v", record)
+	}
+}
+
+func TestServiceCancelsPendingJobImmediately(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, nil)
+	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
+		ID: "job-1", Cpus: 1, MemoryGb: 1,
+		Image: "alpine:3.20", Command: "echo", Args: "[]",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.CancelJob(ctx, "job-1"); err != nil {
+		t.Fatal(err)
+	}
+	record, err := service.Job(ctx, "job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if JobStatus(record.Status) != JobCancelled {
+		t.Fatalf("status = %q, want %q", record.Status, JobCancelled)
 	}
 }
 

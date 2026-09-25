@@ -46,7 +46,7 @@ func TestJobEndpoints(t *testing.T) {
 	if err := json.NewDecoder(submitResponse.Body).Decode(&submitted); err != nil {
 		t.Fatalf("decode submit response: %v", err)
 	}
-	if submitted.ID != "job-1" || submitted.Status != controlplane.JobAssigned || submitted.Image != "alpine:3.20" {
+	if submitted.ID != "job-1" || controlplane.JobStatus(submitted.Status) != controlplane.JobAssigned || submitted.Image != "alpine:3.20" {
 		t.Fatalf("submitted job = %+v, want ID job-1 with assigned status", submitted)
 	}
 
@@ -84,6 +84,16 @@ func TestJobEndpoints(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create job log: %v", err)
 	}
+	if err := server.service.CreateJobLog(context.Background(), domain.LogStream{
+		JobID:     "job-1",
+		Attempt:   submitted.Attempt,
+		Sequence:  1,
+		Source:    agentv1.LogSource_LOG_SOURCE_SYSTEM,
+		Data:      []byte("pulling image\n"),
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("create system job log: %v", err)
+	}
 
 	logsRequest := httptest.NewRequest(http.MethodGet, "/v1/jobs/job-1/logs?attempt=1", nil)
 	logsResponse := httptest.NewRecorder()
@@ -96,8 +106,9 @@ func TestJobEndpoints(t *testing.T) {
 	if err := json.NewDecoder(logsResponse.Body).Decode(&logs); err != nil {
 		t.Fatalf("decode logs response: %v", err)
 	}
-	if len(logs) != 1 || logs[0].Data != "hello from the executor\n" || logs[0].Source != "stdout" {
-		t.Fatalf("logs = %+v, want one stdout chunk", logs)
+	if len(logs) != 2 || logs[0].Data != "hello from the executor\n" || logs[0].Source != "stdout" ||
+		logs[1].Data != "pulling image\n" || logs[1].Source != "system" {
+		t.Fatalf("logs = %+v, want stdout and system chunks", logs)
 	}
 }
 
@@ -106,6 +117,43 @@ func TestGetJobReturnsNotFound(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/v1/jobs/missing", nil)
 	response := httptest.NewRecorder()
 
+	server.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusNotFound, response.Body.String())
+	}
+}
+
+func TestCancelJobEndpoint(t *testing.T) {
+	server := newTestServer(t)
+	ctx := context.Background()
+	if _, err := server.service.Submit(ctx, sqlitedb.CreateJobParams{
+		ID: "job-cancel", Cpus: 1, MemoryGb: 1,
+		Image: "alpine:3.20", Command: "sleep", Args: `["30"]`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/jobs/job-cancel/cancel", nil)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusAccepted, response.Body.String())
+	}
+
+	var record sqlitedb.Job
+	if err := json.NewDecoder(response.Body).Decode(&record); err != nil {
+		t.Fatal(err)
+	}
+	if controlplane.JobStatus(record.Status) != controlplane.JobCancelled {
+		t.Fatalf("status = %q, want %q", record.Status, controlplane.JobCancelled)
+	}
+}
+
+func TestCancelMissingJobReturnsNotFound(t *testing.T) {
+	server := newTestServer(t)
+	request := httptest.NewRequest(http.MethodPost, "/v1/jobs/missing/cancel", nil)
+	response := httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 
 	if response.Code != http.StatusNotFound {

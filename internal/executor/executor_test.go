@@ -16,6 +16,7 @@ func TestDockerExecutorRunsWithLimitsStreamsOutputAndCleansUp(t *testing.T) {
 	binary, capturePath := fakeDockerBinary(t)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+	var systemOut bytes.Buffer
 	assignment := domain.Assignment{
 		JobID:    "Job/One",
 		Image:    "alpine:3.20",
@@ -32,6 +33,7 @@ func TestDockerExecutorRunsWithLimitsStreamsOutputAndCleansUp(t *testing.T) {
 		assignment,
 		&stdout,
 		&stderr,
+		&systemOut,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +44,12 @@ func TestDockerExecutorRunsWithLimitsStreamsOutputAndCleansUp(t *testing.T) {
 	if stderr.String() != "container stderr\n" {
 		t.Fatalf("stderr = %q, want container error output", stderr.String())
 	}
+	if systemOut.Len() != 0 {
+		t.Fatalf("system output = %q, want no pull output for a local image", systemOut.String())
+	}
 
 	want := []string{
+		"image", "inspect", "alpine:3.20",
 		"run",
 		"--name", "mini-modal-job-one-3",
 		"--cpus", "2",
@@ -72,6 +78,7 @@ func TestDockerExecutorCleansUpAfterContainerFailure(t *testing.T) {
 		assignment,
 		&bytes.Buffer{},
 		&bytes.Buffer{},
+		&bytes.Buffer{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "run Docker container") {
 		t.Fatalf("error = %v, want Docker execution failure", err)
@@ -84,6 +91,45 @@ func TestDockerExecutorCleansUpAfterContainerFailure(t *testing.T) {
 	}
 }
 
+func TestDockerExecutorPullsMissingImageIntoSystemOutput(t *testing.T) {
+	binary, capturePath := fakeDockerBinary(t)
+	t.Setenv("MINI_MODAL_IMAGE_MISSING", "1")
+	var systemOut bytes.Buffer
+	assignment := domain.Assignment{
+		JobID: "pull-job", Image: "alpine:3.20", Attempt: 1,
+		Command: "true", CPUs: 1, MemoryGB: 1,
+	}
+
+	if err := (DockerExecutor{Binary: binary}).Run(
+		context.Background(),
+		assignment,
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		&systemOut,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if systemOut.String() != "pull stdout\npull stderr\n" {
+		t.Fatalf("system output = %q, want image pull output", systemOut.String())
+	}
+
+	want := []string{
+		"image", "inspect", "alpine:3.20",
+		"pull", "alpine:3.20",
+		"run",
+		"--name", "mini-modal-pull-job-1",
+		"--cpus", "1",
+		"--memory", "1g",
+		"alpine:3.20",
+		"true",
+		"rm", "-f", "mini-modal-pull-job-1",
+	}
+	if got := capturedArguments(t, capturePath); !reflect.DeepEqual(got, want) {
+		t.Fatalf("docker arguments = %#v, want %#v", got, want)
+	}
+}
+
 func fakeDockerBinary(t *testing.T) (string, string) {
 	t.Helper()
 	directory := t.TempDir()
@@ -91,6 +137,14 @@ func fakeDockerBinary(t *testing.T) (string, string) {
 	capturePath := filepath.Join(directory, "arguments")
 	script := `#!/bin/sh
 printf '%s\n' "$@" >> "$MINI_MODAL_DOCKER_CAPTURE"
+if [ "$1" = "image" ] && [ "$2" = "inspect" ] && [ "$MINI_MODAL_IMAGE_MISSING" = "1" ]; then
+  exit 1
+fi
+if [ "$1" = "pull" ]; then
+  printf 'pull stdout\n'
+  printf 'pull stderr\n' >&2
+  exit 0
+fi
 if [ "$1" = "run" ]; then
   printf 'container stdout\n'
   printf 'container stderr\n' >&2

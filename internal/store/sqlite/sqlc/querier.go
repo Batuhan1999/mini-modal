@@ -9,7 +9,10 @@ import (
 )
 
 type Querier interface {
+	AcknowledgeCancelledJob(ctx context.Context, arg AcknowledgeCancelledJobParams) (Job, error)
 	AssignJob(ctx context.Context, arg AssignJobParams) (Job, error)
+	CancelExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error)
+	CancelNotRunningJob(ctx context.Context, id string) (int64, error)
 	ClaimJob(ctx context.Context, arg ClaimJobParams) (Job, error)
 	CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, error)
 	CreateJob(ctx context.Context, arg CreateJobParams) (Job, error)
@@ -27,6 +30,7 @@ type Querier interface {
 	RequeueAssignment(ctx context.Context, arg RequeueAssignmentParams) (Job, error)
 	RequeueExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error)
 	RequeueUnschedulableJobs(ctx context.Context) (int64, error)
+	StartCancelJob(ctx context.Context, id string) (int64, error)
 	UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, error)
 }
 

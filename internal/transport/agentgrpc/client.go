@@ -100,13 +100,24 @@ func (c *Client) Complete(ctx context.Context, assignment domain.Assignment) err
 	return err
 }
 
-func (c *Client) RenewAssignment(ctx context.Context, assignment domain.Assignment) error {
-	_, err := c.client.RenewAssignment(ctx, &agentv1.RenewAssignmentRequest{
+func (c *Client) RenewAssignment(ctx context.Context, assignment domain.Assignment) (bool, error) {
+	response, err := c.client.RenewAssignment(ctx, &agentv1.RenewAssignmentRequest{
 		Assignment: &agentv1.Assignment{
 			JobId:   assignment.JobID,
 			NodeId:  assignment.NodeID,
 			Attempt: assignment.Attempt,
 		},
+	})
+	if err != nil {
+		return false, err
+	}
+	return response.GetShouldCancel(), nil
+}
+
+func (c *Client) Cancel(ctx context.Context, assignment domain.Assignment) error {
+	_, err := c.client.Cancel(ctx, &agentv1.CancelRequest{
+		JobId:   assignment.JobID,
+		Attempt: assignment.Attempt,
 	})
 	return err
 }

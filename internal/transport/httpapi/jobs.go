@@ -57,6 +57,25 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, record)
 }
 
+func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {
+	jobID := strings.TrimSpace(r.PathValue("id"))
+	if _, err := s.service.Job(r.Context(), jobID); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err := s.service.CancelJob(r.Context(), jobID); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	record, err := s.service.Job(r.Context(), jobID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusAccepted, record)
+}
+
 func (s *Server) listJobLogs(w http.ResponseWriter, r *http.Request) {
 	jobID := strings.TrimSpace(r.PathValue("id"))
 	record, err := s.service.Job(r.Context(), jobID)

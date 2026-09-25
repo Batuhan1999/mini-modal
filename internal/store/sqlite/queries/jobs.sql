@@ -35,7 +35,7 @@ ORDER BY priority DESC, id;
 -- name: ListActiveJobs :many
 SELECT *
 FROM jobs
-WHERE status IN ('assigned', 'running')
+WHERE status IN ('assigned', 'running', 'cancelling')
 ORDER BY id;
 
 -- name: AssignJob :one
@@ -128,3 +128,42 @@ UPDATE jobs
 SET status = 'pending',
     updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE status = 'unschedulable';
+
+
+
+-- name: StartCancelJob :execrows
+UPDATE jobs
+SET status = 'cancelling',
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE id = ?
+  AND status = 'running';
+
+-- name: CancelNotRunningJob :execrows
+UPDATE jobs
+SET status = 'cancelled',
+    node_id = '',
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE id = ?
+  AND status IN ('pending', 'assigned', 'unschedulable');
+
+-- name: AcknowledgeCancelledJob :one
+UPDATE jobs
+SET status = 'cancelled',
+    node_id = '',
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE id = sqlc.arg(job_id)
+  AND attempt = sqlc.arg(assignment_attempt)
+  AND status = 'cancelling'
+RETURNING *;
+
+-- name: CancelExpiredAssignments :many
+UPDATE jobs
+SET status = 'cancelled',
+    node_id = '',
+    lease_expires_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE status = 'cancelling'
+  AND lease_expires_at <= sqlc.arg(expired_before)
+RETURNING *;

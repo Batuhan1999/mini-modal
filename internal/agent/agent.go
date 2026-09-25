@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"io"
 	"log"
 	"time"
 
@@ -17,15 +18,17 @@ type ControlPlane interface {
 	Claim(ctx context.Context, nodeID string) (domain.Assignment, bool, error)
 	Complete(ctx context.Context, assignment domain.Assignment) error
 	Fail(ctx context.Context, assignment domain.Assignment) error
-	RenewAssignment(ctx context.Context, assignment domain.Assignment) error
+	RenewAssignment(ctx context.Context, assignment domain.Assignment) (bool, error)
+	Cancel(ctx context.Context, assignment domain.Assignment) error
 	StreamLogs(ctx context.Context, chunks <-chan domain.LogStream) error
 }
 
 type Agent struct {
-	nodeID       string
-	controlPlane ControlPlane
-	executor     executor.Executor
-	pollInterval time.Duration
+	nodeID        string
+	controlPlane  ControlPlane
+	executor      executor.Executor
+	pollInterval  time.Duration
+	renewInterval time.Duration
 }
 
 func New(nodeID string, controlPlane ControlPlane, executor executor.Executor, pollInterval time.Duration) *Agent {
@@ -34,10 +37,11 @@ func New(nodeID string, controlPlane ControlPlane, executor executor.Executor, p
 	}
 
 	return &Agent{
-		nodeID:       nodeID,
-		controlPlane: controlPlane,
-		executor:     executor,
-		pollInterval: pollInterval,
+		nodeID:        nodeID,
+		controlPlane:  controlPlane,
+		executor:      executor,
+		pollInterval:  pollInterval,
+		renewInterval: 5 * time.Second,
 	}
 }
 
@@ -67,8 +71,9 @@ func (a *Agent) Run(ctx context.Context) {
 func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment) {
 	renewCtx, stopRenewing := context.WithCancel(ctx)
 	defer stopRenewing()
-	go a.renewAssignment(renewCtx, assignment)
 
+	executionCtx, cancelExecution := context.WithCancel(ctx)
+	defer cancelExecution()
 	chunks := make(chan domain.LogStream, 128)
 	uploadResult := make(chan error, 1)
 	uploadDone := make(chan struct{})
@@ -87,7 +92,6 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 		sequence,
 		uploadDone,
 	)
-
 	stderr := newLogWriter(
 		ctx,
 		assignment,
@@ -97,12 +101,54 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 		uploadDone,
 	)
 
-	executionErr := a.executor.Run(ctx, assignment, stdout, stderr)
-	close(chunks)
+	systemOut := newLogWriter(
+		ctx,
+		assignment,
+		agentv1.LogSource_LOG_SOURCE_SYSTEM,
+		chunks,
+		sequence,
+		uploadDone,
+	)
 
+	cancellationRequested := make(chan struct{})
+	renewDone := make(chan struct{})
+	go func() {
+		defer close(renewDone)
+		a.renewAssignment(
+			renewCtx,
+			assignment,
+			cancelExecution,
+			systemOut,
+			cancellationRequested,
+		)
+	}()
+
+	executionErr := a.executor.Run(executionCtx, assignment, stdout, stderr, systemOut)
+	stopRenewing()
+	<-renewDone
+
+	wasCancelled := false
+	select {
+	case <-cancellationRequested:
+		wasCancelled = true
+	default:
+	}
+	if wasCancelled {
+		_, _ = io.WriteString(systemOut, "Execution stopped after cancellation\n")
+	}
+
+	close(chunks)
 	uploadErr := <-uploadResult
 	if uploadErr != nil {
 		log.Printf("agent %q failed to upload logs: %v", a.nodeID, uploadErr)
+	}
+
+	if ctx.Err() != nil {
+		return
+	}
+	if wasCancelled {
+		a.reportResult(ctx, assignment, "cancelled", a.controlPlane.Cancel)
+		return
 	}
 
 	if executionErr != nil {
@@ -156,8 +202,11 @@ func (a *Agent) reportResult(
 func (a *Agent) renewAssignment(
 	ctx context.Context,
 	assignment domain.Assignment,
+	cancelExecution context.CancelFunc,
+	systemOut io.Writer,
+	cancellationRequested chan<- struct{},
 ) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(a.renewInterval)
 	defer ticker.Stop()
 
 	for {
@@ -166,18 +215,19 @@ func (a *Agent) renewAssignment(
 			return
 
 		case <-ticker.C:
-			if err := a.controlPlane.RenewAssignment(ctx, assignment); err != nil {
-				if ctx.Err() != nil {
-					return
-				}
 
-				log.Printf(
-					"agent %q failed to renew job %q attempt %d: %v",
-					a.nodeID,
-					assignment.JobID,
-					assignment.Attempt,
-					err,
-				)
+			shouldCancel, err := a.controlPlane.RenewAssignment(ctx, assignment)
+
+			if err != nil {
+				log.Printf("agent %q failed to renew job %q attempt %d: %v", a.nodeID, assignment.JobID, assignment.Attempt, err)
+				continue
+			}
+
+			if shouldCancel {
+				_, _ = io.WriteString(systemOut, "Cancellation requested\n")
+				close(cancellationRequested)
+				cancelExecution()
+				return
 			}
 		}
 	}
