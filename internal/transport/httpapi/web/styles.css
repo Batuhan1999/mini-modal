@@ -447,10 +447,29 @@ button:disabled {
 
 .job-form {
   display: grid;
-  grid-template-columns: minmax(145px, 1.4fr) repeat(4, minmax(82px, 0.65fr)) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   align-items: end;
   padding: 8px 20px 15px;
+}
+
+.job-field-id,
+.job-field-command {
+  grid-column: span 2;
+}
+
+.job-field-args {
+  grid-column: span 3;
+}
+
+.job-form-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.job-form-actions button {
+  white-space: nowrap;
 }
 
 .job-form label,
@@ -890,8 +909,14 @@ footer b {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .job-form label:first-child {
+  .job-field-id,
+  .job-field-command,
+  .job-field-args {
     grid-column: span 2;
+  }
+
+  .job-form-actions {
+    grid-column: 1 / -1;
   }
 
   .node-list {
@@ -970,8 +995,10 @@ footer b {
     grid-template-columns: 1fr 1fr;
   }
 
-  .job-form label:first-child,
-  .job-form .primary-button {
+  .job-field-id,
+  .job-field-command,
+  .job-field-args,
+  .job-form-actions {
     grid-column: 1 / -1;
   }
 

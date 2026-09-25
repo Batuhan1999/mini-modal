@@ -105,7 +105,7 @@
           <details class="job-composer">
             <summary>Submit a job</summary>
             <form id="job-form" class="job-form">
-              <label>
+              <label class="job-field-id">
                 <span>Job ID</span>
                 <input id="job-id" name="id" type="text" required maxlength="80" autocomplete="off">
               </label>
@@ -125,7 +125,18 @@
                 <span>Duration s</span>
                 <input name="duration_seconds" type="number" value="8" min="0" max="86400" required>
               </label>
-              <button type="submit" class="primary-button" id="submit-job">Submit job</button>
+              <label class="job-field-command">
+                <span>Command</span>
+                <input name="command" type="text" value="sleep" required autocomplete="off">
+              </label>
+              <label class="job-field-args">
+                <span>Arguments (JSON)</span>
+                <input name="args" type="text" value='["8"]' required autocomplete="off" spellcheck="false">
+              </label>
+              <div class="job-form-actions">
+                <button type="submit" class="primary-button" id="submit-job" aria-label="Submit configured job">Submit</button>
+                <button type="button" class="secondary-button" id="random-job" aria-label="Generate and submit a random job">Random</button>
+              </div>
             </form>
             <p class="form-result" id="job-form-result" aria-live="polite"></p>
           </details>

@@ -23,6 +23,7 @@ const elements = {
   jobForm: document.querySelector("#job-form"),
   jobID: document.querySelector("#job-id"),
   submitJob: document.querySelector("#submit-job"),
+  randomJob: document.querySelector("#random-job"),
   jobFormResult: document.querySelector("#job-form-result"),
   devClusterForm: document.querySelector("#dev-cluster-form"),
   devClusterState: document.querySelector("#dev-cluster-state"),
@@ -57,6 +58,7 @@ elements.jobID.value = nextJobID();
 elements.jobSearch.addEventListener("input", renderJobs);
 elements.statusFilter.addEventListener("change", renderJobs);
 elements.jobForm.addEventListener("submit", submitJob);
+elements.randomJob.addEventListener("click", submitRandomJob);
 elements.devClusterForm.addEventListener("submit", startDevCluster);
 elements.stopDevCluster.addEventListener("click", stopDevCluster);
 
@@ -333,9 +335,6 @@ function trackJobTransitions(jobs) {
 
 async function submitJob(event) {
   event.preventDefault();
-  setBusy(elements.submitJob, true, "Submitting");
-  setFormResult(elements.jobFormResult, "", "");
-
   const form = new FormData(elements.jobForm);
   const job = {
     id: String(form.get("id") || "").trim(),
@@ -344,9 +343,40 @@ async function submitJob(event) {
     cpus: Number(form.get("cpus")),
     memory_gb: Number(form.get("memory_gb")),
     duration_seconds: Number(form.get("duration_seconds")),
+    command: String(form.get("command") || "").trim(),
+    args: String(form.get("args") || "[]").trim(),
   };
 
+  await sendJob(job, elements.submitJob, "Submitting", "Submit");
+}
+
+async function submitRandomJob() {
+  const duration = randomInteger(2, 10);
+  const job = {
+    id: nextJobID(),
+    priority: randomInteger(1, 100),
+    gpus: 0,
+    cpus: randomCapacity("total_cpus", 8),
+    memory_gb: randomCapacity("total_memory_gb", 16),
+    duration_seconds: duration,
+    command: "sleep",
+    args: JSON.stringify([String(duration)]),
+  };
+
+  populateJobForm(job);
+  await sendJob(job, elements.randomJob, "Sending", "Random");
+}
+
+async function sendJob(job, button, busyLabel, idleLabel) {
+  setBusy(button, true, busyLabel);
+  setFormResult(elements.jobFormResult, "", "");
+
   try {
+    const args = JSON.parse(job.args);
+    if (!Array.isArray(args) || args.some((argument) => typeof argument !== "string")) {
+      throw new Error("Arguments must be a JSON array of strings");
+    }
+
     const created = await fetchJSON("/v1/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -360,8 +390,30 @@ async function submitJob(event) {
     setFormResult(elements.jobFormResult, error.message, "error");
     addActivity(`Job submission failed: ${error.message}`);
   } finally {
-    setBusy(elements.submitJob, false, "Submit job");
+    setBusy(button, false, idleLabel);
   }
+}
+
+function populateJobForm(job) {
+  for (const [name, value] of Object.entries(job)) {
+    const field = elements.jobForm.elements.namedItem(name);
+    if (field instanceof HTMLInputElement) {
+      field.value = String(value);
+    }
+  }
+}
+
+function randomCapacity(field, fallback) {
+  const healthyNodes = state.nodes.filter((node) => node.healthy);
+  const maximum = healthyNodes.length > 0
+    ? healthyNodes.reduce((current, node) => Math.max(current, Number(node[field]) || 0), 0)
+    : fallback;
+  const options = [1, 2, 4, 8, 16].filter((value) => value <= maximum);
+  return options[randomInteger(0, options.length - 1)];
+}
+
+function randomInteger(minimum, maximum) {
+  return Math.floor(Math.random() * (maximum - minimum + 1)) + minimum;
 }
 
 async function startDevCluster(event) {
@@ -523,8 +575,9 @@ function setFormResult(element, message, status) {
 }
 
 function nextJobID() {
-  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
-  return `job-${stamp}`;
+  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "");
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `job-${stamp}-${suffix}`;
 }
 
 function formatClock(date) {
