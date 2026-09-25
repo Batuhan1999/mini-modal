@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/domain"
 	"mini-modal/internal/executor"
 
@@ -17,6 +18,7 @@ type ControlPlane interface {
 	Complete(ctx context.Context, assignment domain.Assignment) error
 	Fail(ctx context.Context, assignment domain.Assignment) error
 	RenewAssignment(ctx context.Context, assignment domain.Assignment) error
+	StreamLogs(ctx context.Context, chunks <-chan domain.LogStream) error
 }
 
 type Agent struct {
@@ -67,7 +69,41 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 	defer stopRenewing()
 	go a.renewAssignment(renewCtx, assignment)
 
-	executionErr := a.executor.Run(ctx, assignment)
+	chunks := make(chan domain.LogStream, 128)
+	uploadResult := make(chan error, 1)
+	uploadDone := make(chan struct{})
+
+	go func() {
+		defer close(uploadDone)
+		uploadResult <- a.controlPlane.StreamLogs(ctx, chunks)
+	}()
+	sequence := &logSequence{}
+
+	stdout := newLogWriter(
+		ctx,
+		assignment,
+		agentv1.LogSource_LOG_SOURCE_STDOUT,
+		chunks,
+		sequence,
+		uploadDone,
+	)
+
+	stderr := newLogWriter(
+		ctx,
+		assignment,
+		agentv1.LogSource_LOG_SOURCE_STDERR,
+		chunks,
+		sequence,
+		uploadDone,
+	)
+
+	executionErr := a.executor.Run(ctx, assignment, stdout, stderr)
+	close(chunks)
+
+	uploadErr := <-uploadResult
+	if uploadErr != nil {
+		log.Printf("agent %q failed to upload logs: %v", a.nodeID, uploadErr)
+	}
 
 	if executionErr != nil {
 		a.reportResult(ctx, assignment, "failure", a.controlPlane.Fail)

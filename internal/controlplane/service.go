@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/domain"
 	"mini-modal/internal/scheduler"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
@@ -368,6 +369,51 @@ func validateJob(job sqlitedb.CreateJobParams) error {
 	var args []string
 	if err := json.Unmarshal([]byte(job.Args), &args); err != nil {
 		return fmt.Errorf("job %q has invalid arguments: %w", job.ID, err)
+	}
+	return nil
+}
+
+func validateLogStream(logStream domain.LogStream) error {
+	if strings.TrimSpace(logStream.JobID) == "" {
+		return fmt.Errorf("log stream job ID is required")
+	}
+	if logStream.Attempt <= 0 {
+		return fmt.Errorf("log stream attempt must be greater than 0")
+	}
+	if logStream.Sequence < 0 {
+		return fmt.Errorf("log stream sequence cannot be negative")
+	}
+	if logStream.Source != agentv1.LogSource_LOG_SOURCE_STDOUT &&
+		logStream.Source != agentv1.LogSource_LOG_SOURCE_STDERR {
+		return fmt.Errorf("log stream source must be stdout or stderr")
+	}
+	if len(logStream.Data) == 0 {
+		return fmt.Errorf("log stream data cannot be empty")
+	}
+	if logStream.CreatedAt.IsZero() {
+		return fmt.Errorf("log stream created at is required")
+	}
+	return nil
+}
+
+func (s *Service) CreateJobLog(ctx context.Context, logStream domain.LogStream) error {
+	if err := validateLogStream(logStream); err != nil {
+		return fmt.Errorf("validate log stream: %w", err)
+	}
+	source := "stderr"
+	if logStream.Source == agentv1.LogSource_LOG_SOURCE_STDOUT {
+		source = "stdout"
+	}
+	_, err := s.queries.CreateJobLog(ctx, sqlitedb.CreateJobLogParams{
+		JobID:     logStream.JobID,
+		Attempt:   logStream.Attempt,
+		Sequence:  logStream.Sequence,
+		Source:    source,
+		Data:      string(logStream.Data),
+		CreatedAt: logStream.CreatedAt.UnixMilli(),
+	})
+	if err != nil {
+		return fmt.Errorf("create job log: %w", err)
 	}
 	return nil
 }

@@ -25,6 +25,7 @@ const (
 	AgentService_RegisterNode_FullMethodName    = "/minimodal.agent.v1.AgentService/RegisterNode"
 	AgentService_Heartbeat_FullMethodName       = "/minimodal.agent.v1.AgentService/Heartbeat"
 	AgentService_RenewAssignment_FullMethodName = "/minimodal.agent.v1.AgentService/RenewAssignment"
+	AgentService_StreamLogs_FullMethodName      = "/minimodal.agent.v1.AgentService/StreamLogs"
 )
 
 // AgentServiceClient is the client API for AgentService service.
@@ -37,6 +38,7 @@ type AgentServiceClient interface {
 	RegisterNode(ctx context.Context, in *RegisterNodeRequest, opts ...grpc.CallOption) (*RegisterNodeResponse, error)
 	Heartbeat(ctx context.Context, in *HeartbeatRequest, opts ...grpc.CallOption) (*HeartbeatResponse, error)
 	RenewAssignment(ctx context.Context, in *RenewAssignmentRequest, opts ...grpc.CallOption) (*RenewAssignmentResponse, error)
+	StreamLogs(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[StreamLogsRequest, StreamLogsResponse], error)
 }
 
 type agentServiceClient struct {
@@ -107,6 +109,19 @@ func (c *agentServiceClient) RenewAssignment(ctx context.Context, in *RenewAssig
 	return out, nil
 }
 
+func (c *agentServiceClient) StreamLogs(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[StreamLogsRequest, StreamLogsResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_StreamLogs_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamLogsRequest, StreamLogsResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_StreamLogsClient = grpc.ClientStreamingClient[StreamLogsRequest, StreamLogsResponse]
+
 // AgentServiceServer is the server API for AgentService service.
 // All implementations must embed UnimplementedAgentServiceServer
 // for forward compatibility.
@@ -117,6 +132,7 @@ type AgentServiceServer interface {
 	RegisterNode(context.Context, *RegisterNodeRequest) (*RegisterNodeResponse, error)
 	Heartbeat(context.Context, *HeartbeatRequest) (*HeartbeatResponse, error)
 	RenewAssignment(context.Context, *RenewAssignmentRequest) (*RenewAssignmentResponse, error)
+	StreamLogs(grpc.ClientStreamingServer[StreamLogsRequest, StreamLogsResponse]) error
 	mustEmbedUnimplementedAgentServiceServer()
 }
 
@@ -144,6 +160,9 @@ func (UnimplementedAgentServiceServer) Heartbeat(context.Context, *HeartbeatRequ
 }
 func (UnimplementedAgentServiceServer) RenewAssignment(context.Context, *RenewAssignmentRequest) (*RenewAssignmentResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RenewAssignment not implemented")
+}
+func (UnimplementedAgentServiceServer) StreamLogs(grpc.ClientStreamingServer[StreamLogsRequest, StreamLogsResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamLogs not implemented")
 }
 func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
 func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
@@ -274,6 +293,13 @@ func _AgentService_RenewAssignment_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AgentService_StreamLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentServiceServer).StreamLogs(&grpc.GenericServerStream[StreamLogsRequest, StreamLogsResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_StreamLogsServer = grpc.ClientStreamingServer[StreamLogsRequest, StreamLogsResponse]
+
 // AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -306,6 +332,12 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _AgentService_RenewAssignment_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamLogs",
+			Handler:       _AgentService_StreamLogs_Handler,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "agent/v1/agent.proto",
 }

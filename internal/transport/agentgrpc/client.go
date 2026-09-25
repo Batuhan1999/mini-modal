@@ -2,6 +2,7 @@ package agentgrpc
 
 import (
 	"context"
+	"fmt"
 
 	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/domain"
@@ -16,6 +17,53 @@ type Client struct {
 func NewClient(connection grpc.ClientConnInterface) *Client {
 	return &Client{
 		client: agentv1.NewAgentServiceClient(connection),
+	}
+}
+
+func (c *Client) StreamLogs(
+	ctx context.Context,
+	chunks <-chan domain.LogStream,
+) error {
+	stream, err := c.client.StreamLogs(ctx)
+	if err != nil {
+		return fmt.Errorf("open log stream: %w", err)
+	}
+
+	var sent int64
+	for {
+		select {
+		case <-ctx.Done():
+			_ = stream.CloseSend()
+			return ctx.Err()
+
+		case chunk, ok := <-chunks:
+			if !ok {
+				response, err := stream.CloseAndRecv()
+				if err != nil {
+					return fmt.Errorf("close log stream: %w", err)
+				}
+				if response.GetChunksReceived() != sent {
+					return fmt.Errorf(
+						"control plane received %d log chunks, sent %d",
+						response.GetChunksReceived(),
+						sent,
+					)
+				}
+				return nil
+			}
+
+			if err := stream.Send(&agentv1.StreamLogsRequest{
+				JobId:           chunk.JobID,
+				Attempt:         chunk.Attempt,
+				Sequence:        chunk.Sequence,
+				Source:          chunk.Source,
+				Data:            chunk.Data,
+				CreatedAtUnixMs: chunk.CreatedAt.UnixMilli(),
+			}); err != nil {
+				return fmt.Errorf("send log chunk %d for job %q: %w", chunk.Sequence, chunk.JobID, err)
+			}
+			sent++
+		}
 	}
 }
 

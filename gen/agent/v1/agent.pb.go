@@ -21,6 +21,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type LogSource int32
+
+const (
+	LogSource_LOG_SOURCE_UNSPECIFIED LogSource = 0
+	LogSource_LOG_SOURCE_STDOUT      LogSource = 1
+	LogSource_LOG_SOURCE_STDERR      LogSource = 2
+)
+
+// Enum value maps for LogSource.
+var (
+	LogSource_name = map[int32]string{
+		0: "LOG_SOURCE_UNSPECIFIED",
+		1: "LOG_SOURCE_STDOUT",
+		2: "LOG_SOURCE_STDERR",
+	}
+	LogSource_value = map[string]int32{
+		"LOG_SOURCE_UNSPECIFIED": 0,
+		"LOG_SOURCE_STDOUT":      1,
+		"LOG_SOURCE_STDERR":      2,
+	}
+)
+
+func (x LogSource) Enum() *LogSource {
+	p := new(LogSource)
+	*p = x
+	return p
+}
+
+func (x LogSource) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (LogSource) Descriptor() protoreflect.EnumDescriptor {
+	return file_agent_v1_agent_proto_enumTypes[0].Descriptor()
+}
+
+func (LogSource) Type() protoreflect.EnumType {
+	return &file_agent_v1_agent_proto_enumTypes[0]
+}
+
+func (x LogSource) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use LogSource.Descriptor instead.
+func (LogSource) EnumDescriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+}
+
 type Assignment struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -361,6 +410,134 @@ func (*FailResponse) Descriptor() ([]byte, []int) {
 	return file_agent_v1_agent_proto_rawDescGZIP(), []int{6}
 }
 
+type StreamLogsResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	ChunksReceived int64                  `protobuf:"varint,1,opt,name=chunks_received,json=chunksReceived,proto3" json:"chunks_received,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *StreamLogsResponse) Reset() {
+	*x = StreamLogsResponse{}
+	mi := &file_agent_v1_agent_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamLogsResponse) ProtoMessage() {}
+
+func (x *StreamLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamLogsResponse.ProtoReflect.Descriptor instead.
+func (*StreamLogsResponse) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StreamLogsResponse) GetChunksReceived() int64 {
+	if x != nil {
+		return x.ChunksReceived
+	}
+	return 0
+}
+
+type StreamLogsRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	JobId           string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Attempt         int64                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Sequence        int64                  `protobuf:"varint,3,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	Source          LogSource              `protobuf:"varint,4,opt,name=source,proto3,enum=minimodal.agent.v1.LogSource" json:"source,omitempty"`
+	Data            []byte                 `protobuf:"bytes,5,opt,name=data,proto3" json:"data,omitempty"`
+	CreatedAtUnixMs int64                  `protobuf:"varint,6,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *StreamLogsRequest) Reset() {
+	*x = StreamLogsRequest{}
+	mi := &file_agent_v1_agent_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamLogsRequest) ProtoMessage() {}
+
+func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agent_v1_agent_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
+func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StreamLogsRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *StreamLogsRequest) GetAttempt() int64 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *StreamLogsRequest) GetSequence() int64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *StreamLogsRequest) GetSource() LogSource {
+	if x != nil {
+		return x.Source
+	}
+	return LogSource_LOG_SOURCE_UNSPECIFIED
+}
+
+func (x *StreamLogsRequest) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+func (x *StreamLogsRequest) GetCreatedAtUnixMs() int64 {
+	if x != nil {
+		return x.CreatedAtUnixMs
+	}
+	return 0
+}
+
 type RegisterNodeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
@@ -374,7 +551,7 @@ type RegisterNodeRequest struct {
 
 func (x *RegisterNodeRequest) Reset() {
 	*x = RegisterNodeRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_agent_v1_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +563,7 @@ func (x *RegisterNodeRequest) String() string {
 func (*RegisterNodeRequest) ProtoMessage() {}
 
 func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[7]
+	mi := &file_agent_v1_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +576,7 @@ func (x *RegisterNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterNodeRequest.ProtoReflect.Descriptor instead.
 func (*RegisterNodeRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{7}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RegisterNodeRequest) GetNodeId() string {
@@ -445,7 +622,7 @@ type RegisterNodeResponse struct {
 
 func (x *RegisterNodeResponse) Reset() {
 	*x = RegisterNodeResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_agent_v1_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -457,7 +634,7 @@ func (x *RegisterNodeResponse) String() string {
 func (*RegisterNodeResponse) ProtoMessage() {}
 
 func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[8]
+	mi := &file_agent_v1_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -470,7 +647,7 @@ func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterNodeResponse.ProtoReflect.Descriptor instead.
 func (*RegisterNodeResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{8}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{10}
 }
 
 type RenewAssignmentRequest struct {
@@ -482,7 +659,7 @@ type RenewAssignmentRequest struct {
 
 func (x *RenewAssignmentRequest) Reset() {
 	*x = RenewAssignmentRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_agent_v1_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +671,7 @@ func (x *RenewAssignmentRequest) String() string {
 func (*RenewAssignmentRequest) ProtoMessage() {}
 
 func (x *RenewAssignmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[9]
+	mi := &file_agent_v1_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +684,7 @@ func (x *RenewAssignmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewAssignmentRequest.ProtoReflect.Descriptor instead.
 func (*RenewAssignmentRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{9}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RenewAssignmentRequest) GetAssignment() *Assignment {
@@ -525,7 +702,7 @@ type RenewAssignmentResponse struct {
 
 func (x *RenewAssignmentResponse) Reset() {
 	*x = RenewAssignmentResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_agent_v1_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -537,7 +714,7 @@ func (x *RenewAssignmentResponse) String() string {
 func (*RenewAssignmentResponse) ProtoMessage() {}
 
 func (x *RenewAssignmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[10]
+	mi := &file_agent_v1_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -550,7 +727,7 @@ func (x *RenewAssignmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewAssignmentResponse.ProtoReflect.Descriptor instead.
 func (*RenewAssignmentResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{10}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{12}
 }
 
 type HeartbeatRequest struct {
@@ -562,7 +739,7 @@ type HeartbeatRequest struct {
 
 func (x *HeartbeatRequest) Reset() {
 	*x = HeartbeatRequest{}
-	mi := &file_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_agent_v1_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -574,7 +751,7 @@ func (x *HeartbeatRequest) String() string {
 func (*HeartbeatRequest) ProtoMessage() {}
 
 func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[11]
+	mi := &file_agent_v1_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -587,7 +764,7 @@ func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{11}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *HeartbeatRequest) GetNodeId() string {
@@ -605,7 +782,7 @@ type HeartbeatResponse struct {
 
 func (x *HeartbeatResponse) Reset() {
 	*x = HeartbeatResponse{}
-	mi := &file_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_agent_v1_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -617,7 +794,7 @@ func (x *HeartbeatResponse) String() string {
 func (*HeartbeatResponse) ProtoMessage() {}
 
 func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agent_v1_agent_proto_msgTypes[12]
+	mi := &file_agent_v1_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -630,7 +807,7 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{12}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{14}
 }
 
 var File_agent_v1_agent_proto protoreflect.FileDescriptor
@@ -658,7 +835,16 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\vFailRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\"\x0e\n" +
-	"\fFailResponse\"\xaf\x01\n" +
+	"\fFailResponse\"=\n" +
+	"\x12StreamLogsResponse\x12'\n" +
+	"\x0fchunks_received\x18\x01 \x01(\x03R\x0echunksReceived\"\xd8\x01\n" +
+	"\x11StreamLogsRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +
+	"\aattempt\x18\x02 \x01(\x03R\aattempt\x12\x1a\n" +
+	"\bsequence\x18\x03 \x01(\x03R\bsequence\x125\n" +
+	"\x06source\x18\x04 \x01(\x0e2\x1d.minimodal.agent.v1.LogSourceR\x06source\x12\x12\n" +
+	"\x04data\x18\x05 \x01(\fR\x04data\x12+\n" +
+	"\x12created_at_unix_ms\x18\x06 \x01(\x03R\x0fcreatedAtUnixMs\"\xaf\x01\n" +
 	"\x13RegisterNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x19\n" +
 	"\bgpu_type\x18\x02 \x01(\tR\agpuType\x12\x1d\n" +
@@ -675,14 +861,20 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x17RenewAssignmentResponse\"+\n" +
 	"\x10HeartbeatRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x13\n" +
-	"\x11HeartbeatResponse2\xa7\x04\n" +
+	"\x11HeartbeatResponse*U\n" +
+	"\tLogSource\x12\x1a\n" +
+	"\x16LOG_SOURCE_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11LOG_SOURCE_STDOUT\x10\x01\x12\x15\n" +
+	"\x11LOG_SOURCE_STDERR\x10\x022\x86\x05\n" +
 	"\fAgentService\x12L\n" +
 	"\x05Claim\x12 .minimodal.agent.v1.ClaimRequest\x1a!.minimodal.agent.v1.ClaimResponse\x12U\n" +
 	"\bComplete\x12#.minimodal.agent.v1.CompleteRequest\x1a$.minimodal.agent.v1.CompleteResponse\x12I\n" +
 	"\x04Fail\x12\x1f.minimodal.agent.v1.FailRequest\x1a .minimodal.agent.v1.FailResponse\x12a\n" +
 	"\fRegisterNode\x12'.minimodal.agent.v1.RegisterNodeRequest\x1a(.minimodal.agent.v1.RegisterNodeResponse\x12X\n" +
 	"\tHeartbeat\x12$.minimodal.agent.v1.HeartbeatRequest\x1a%.minimodal.agent.v1.HeartbeatResponse\x12j\n" +
-	"\x0fRenewAssignment\x12*.minimodal.agent.v1.RenewAssignmentRequest\x1a+.minimodal.agent.v1.RenewAssignmentResponseB!Z\x1fmini-modal/gen/agent/v1;agentv1b\x06proto3"
+	"\x0fRenewAssignment\x12*.minimodal.agent.v1.RenewAssignmentRequest\x1a+.minimodal.agent.v1.RenewAssignmentResponse\x12]\n" +
+	"\n" +
+	"StreamLogs\x12%.minimodal.agent.v1.StreamLogsRequest\x1a&.minimodal.agent.v1.StreamLogsResponse(\x01B!Z\x1fmini-modal/gen/agent/v1;agentv1b\x06proto3"
 
 var (
 	file_agent_v1_agent_proto_rawDescOnce sync.Once
@@ -696,42 +888,49 @@ func file_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agent_v1_agent_proto_rawDescData
 }
 
-var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_agent_v1_agent_proto_goTypes = []any{
-	(*Assignment)(nil),              // 0: minimodal.agent.v1.Assignment
-	(*ClaimRequest)(nil),            // 1: minimodal.agent.v1.ClaimRequest
-	(*ClaimResponse)(nil),           // 2: minimodal.agent.v1.ClaimResponse
-	(*CompleteRequest)(nil),         // 3: minimodal.agent.v1.CompleteRequest
-	(*CompleteResponse)(nil),        // 4: minimodal.agent.v1.CompleteResponse
-	(*FailRequest)(nil),             // 5: minimodal.agent.v1.FailRequest
-	(*FailResponse)(nil),            // 6: minimodal.agent.v1.FailResponse
-	(*RegisterNodeRequest)(nil),     // 7: minimodal.agent.v1.RegisterNodeRequest
-	(*RegisterNodeResponse)(nil),    // 8: minimodal.agent.v1.RegisterNodeResponse
-	(*RenewAssignmentRequest)(nil),  // 9: minimodal.agent.v1.RenewAssignmentRequest
-	(*RenewAssignmentResponse)(nil), // 10: minimodal.agent.v1.RenewAssignmentResponse
-	(*HeartbeatRequest)(nil),        // 11: minimodal.agent.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),       // 12: minimodal.agent.v1.HeartbeatResponse
+	(LogSource)(0),                  // 0: minimodal.agent.v1.LogSource
+	(*Assignment)(nil),              // 1: minimodal.agent.v1.Assignment
+	(*ClaimRequest)(nil),            // 2: minimodal.agent.v1.ClaimRequest
+	(*ClaimResponse)(nil),           // 3: minimodal.agent.v1.ClaimResponse
+	(*CompleteRequest)(nil),         // 4: minimodal.agent.v1.CompleteRequest
+	(*CompleteResponse)(nil),        // 5: minimodal.agent.v1.CompleteResponse
+	(*FailRequest)(nil),             // 6: minimodal.agent.v1.FailRequest
+	(*FailResponse)(nil),            // 7: minimodal.agent.v1.FailResponse
+	(*StreamLogsResponse)(nil),      // 8: minimodal.agent.v1.StreamLogsResponse
+	(*StreamLogsRequest)(nil),       // 9: minimodal.agent.v1.StreamLogsRequest
+	(*RegisterNodeRequest)(nil),     // 10: minimodal.agent.v1.RegisterNodeRequest
+	(*RegisterNodeResponse)(nil),    // 11: minimodal.agent.v1.RegisterNodeResponse
+	(*RenewAssignmentRequest)(nil),  // 12: minimodal.agent.v1.RenewAssignmentRequest
+	(*RenewAssignmentResponse)(nil), // 13: minimodal.agent.v1.RenewAssignmentResponse
+	(*HeartbeatRequest)(nil),        // 14: minimodal.agent.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),       // 15: minimodal.agent.v1.HeartbeatResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
-	0,  // 0: minimodal.agent.v1.ClaimResponse.assignment:type_name -> minimodal.agent.v1.Assignment
-	0,  // 1: minimodal.agent.v1.RenewAssignmentRequest.assignment:type_name -> minimodal.agent.v1.Assignment
-	1,  // 2: minimodal.agent.v1.AgentService.Claim:input_type -> minimodal.agent.v1.ClaimRequest
-	3,  // 3: minimodal.agent.v1.AgentService.Complete:input_type -> minimodal.agent.v1.CompleteRequest
-	5,  // 4: minimodal.agent.v1.AgentService.Fail:input_type -> minimodal.agent.v1.FailRequest
-	7,  // 5: minimodal.agent.v1.AgentService.RegisterNode:input_type -> minimodal.agent.v1.RegisterNodeRequest
-	11, // 6: minimodal.agent.v1.AgentService.Heartbeat:input_type -> minimodal.agent.v1.HeartbeatRequest
-	9,  // 7: minimodal.agent.v1.AgentService.RenewAssignment:input_type -> minimodal.agent.v1.RenewAssignmentRequest
-	2,  // 8: minimodal.agent.v1.AgentService.Claim:output_type -> minimodal.agent.v1.ClaimResponse
-	4,  // 9: minimodal.agent.v1.AgentService.Complete:output_type -> minimodal.agent.v1.CompleteResponse
-	6,  // 10: minimodal.agent.v1.AgentService.Fail:output_type -> minimodal.agent.v1.FailResponse
-	8,  // 11: minimodal.agent.v1.AgentService.RegisterNode:output_type -> minimodal.agent.v1.RegisterNodeResponse
-	12, // 12: minimodal.agent.v1.AgentService.Heartbeat:output_type -> minimodal.agent.v1.HeartbeatResponse
-	10, // 13: minimodal.agent.v1.AgentService.RenewAssignment:output_type -> minimodal.agent.v1.RenewAssignmentResponse
-	8,  // [8:14] is the sub-list for method output_type
-	2,  // [2:8] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	1,  // 0: minimodal.agent.v1.ClaimResponse.assignment:type_name -> minimodal.agent.v1.Assignment
+	0,  // 1: minimodal.agent.v1.StreamLogsRequest.source:type_name -> minimodal.agent.v1.LogSource
+	1,  // 2: minimodal.agent.v1.RenewAssignmentRequest.assignment:type_name -> minimodal.agent.v1.Assignment
+	2,  // 3: minimodal.agent.v1.AgentService.Claim:input_type -> minimodal.agent.v1.ClaimRequest
+	4,  // 4: minimodal.agent.v1.AgentService.Complete:input_type -> minimodal.agent.v1.CompleteRequest
+	6,  // 5: minimodal.agent.v1.AgentService.Fail:input_type -> minimodal.agent.v1.FailRequest
+	10, // 6: minimodal.agent.v1.AgentService.RegisterNode:input_type -> minimodal.agent.v1.RegisterNodeRequest
+	14, // 7: minimodal.agent.v1.AgentService.Heartbeat:input_type -> minimodal.agent.v1.HeartbeatRequest
+	12, // 8: minimodal.agent.v1.AgentService.RenewAssignment:input_type -> minimodal.agent.v1.RenewAssignmentRequest
+	9,  // 9: minimodal.agent.v1.AgentService.StreamLogs:input_type -> minimodal.agent.v1.StreamLogsRequest
+	3,  // 10: minimodal.agent.v1.AgentService.Claim:output_type -> minimodal.agent.v1.ClaimResponse
+	5,  // 11: minimodal.agent.v1.AgentService.Complete:output_type -> minimodal.agent.v1.CompleteResponse
+	7,  // 12: minimodal.agent.v1.AgentService.Fail:output_type -> minimodal.agent.v1.FailResponse
+	11, // 13: minimodal.agent.v1.AgentService.RegisterNode:output_type -> minimodal.agent.v1.RegisterNodeResponse
+	15, // 14: minimodal.agent.v1.AgentService.Heartbeat:output_type -> minimodal.agent.v1.HeartbeatResponse
+	13, // 15: minimodal.agent.v1.AgentService.RenewAssignment:output_type -> minimodal.agent.v1.RenewAssignmentResponse
+	8,  // 16: minimodal.agent.v1.AgentService.StreamLogs:output_type -> minimodal.agent.v1.StreamLogsResponse
+	10, // [10:17] is the sub-list for method output_type
+	3,  // [3:10] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_agent_proto_init() }
@@ -744,13 +943,14 @@ func file_agent_v1_agent_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   13,
+			NumEnums:      1,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_agent_v1_agent_proto_goTypes,
 		DependencyIndexes: file_agent_v1_agent_proto_depIdxs,
+		EnumInfos:         file_agent_v1_agent_proto_enumTypes,
 		MessageInfos:      file_agent_v1_agent_proto_msgTypes,
 	}.Build()
 	File_agent_v1_agent_proto = out.File

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"io"
 	"reflect"
 	"sync"
 	"testing"
@@ -54,11 +55,24 @@ func (f *fakeControlPlane) Fail(ctx context.Context, assignment domain.Assignmen
 	return nil
 }
 
+func (f *fakeControlPlane) StreamLogs(ctx context.Context, chunks <-chan domain.LogStream) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case _, ok := <-chunks:
+			if !ok {
+				return nil
+			}
+		}
+	}
+}
+
 type fakeExecutor struct {
 	err error
 }
 
-func (f fakeExecutor) Run(context.Context, domain.Assignment) error {
+func (f fakeExecutor) Run(context.Context, domain.Assignment, io.Writer, io.Writer) error {
 	return f.err
 }
 

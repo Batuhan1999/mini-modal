@@ -1,6 +1,10 @@
 package domain
 
-import sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+import (
+	agentv1 "mini-modal/gen/agent/v1"
+	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	"time"
+)
 
 type Node struct {
 	ID                string
@@ -11,6 +15,15 @@ type Node struct {
 	AvailableCPUs     int64
 	TotalMemoryGB     int64
 	AvailableMemoryGB int64
+}
+
+type LogStream struct {
+	JobID     string
+	Attempt   int64
+	Sequence  int64
+	Source    agentv1.LogSource
+	Data      []byte
+	CreatedAt time.Time
 }
 
 type Assignment struct {

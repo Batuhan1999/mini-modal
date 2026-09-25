@@ -20,6 +20,16 @@ type Job struct {
 	Args            string `json:"args"`
 }
 
+type JobLog struct {
+	ID        string `json:"id"`
+	JobID     string `json:"job_id"`
+	Attempt   int64  `json:"attempt"`
+	Sequence  int64  `json:"sequence"`
+	Source    string `json:"source"`
+	Data      string `json:"data"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 type Node struct {
 	ID            string `json:"id"`
 	GpuType       string `json:"gpu_type"`
