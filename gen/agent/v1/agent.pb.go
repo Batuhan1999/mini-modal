@@ -78,6 +78,8 @@ type Assignment struct {
 	Command       string                 `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
 	Args          []string               `protobuf:"bytes,5,rep,name=args,proto3" json:"args,omitempty"`
 	Image         string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
+	Cpus          int64                  `protobuf:"varint,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
+	MemoryGb      int64                  `protobuf:"varint,8,opt,name=memory_gb,json=memoryGb,proto3" json:"memory_gb,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -152,6 +154,20 @@ func (x *Assignment) GetImage() string {
 		return x.Image
 	}
 	return ""
+}
+
+func (x *Assignment) GetCpus() int64 {
+	if x != nil {
+		return x.Cpus
+	}
+	return 0
+}
+
+func (x *Assignment) GetMemoryGb() int64 {
+	if x != nil {
+		return x.MemoryGb
+	}
+	return 0
 }
 
 type ClaimRequest struct {
@@ -822,7 +838,7 @@ var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\x9a\x01\n" +
+	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\xcb\x01\n" +
 	"\n" +
 	"Assignment\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
@@ -830,7 +846,9 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\aattempt\x18\x03 \x01(\x03R\aattempt\x12\x18\n" +
 	"\acommand\x18\x04 \x01(\tR\acommand\x12\x12\n" +
 	"\x04args\x18\x05 \x03(\tR\x04args\x12\x14\n" +
-	"\x05image\x18\x06 \x01(\tR\x05image\"'\n" +
+	"\x05image\x18\x06 \x01(\tR\x05image\x12\x12\n" +
+	"\x04cpus\x18\a \x01(\x03R\x04cpus\x12\x1b\n" +
+	"\tmemory_gb\x18\b \x01(\x03R\bmemoryGb\"'\n" +
 	"\fClaimRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"O\n" +
 	"\rClaimResponse\x12>\n" +

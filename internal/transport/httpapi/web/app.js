@@ -298,7 +298,10 @@ function renderJobs(changedJobs = new Set()) {
     const jobLink = createElement("a", "job-link", job.id);
     jobLink.href = `/jobs/${encodeURIComponent(job.id)}`;
     titleLine.append(expandButton, jobLink);
-    idCell.append(titleLine, createElement("span", "job-meta", `priority ${job.priority}`));
+    idCell.append(
+      titleLine,
+      createElement("span", "job-meta", `${job.image} · priority ${job.priority}`),
+    );
 
     const statusCell = tableCell("State");
     statusCell.append(createElement("span", `status status-${job.status}`, job.status));
@@ -472,6 +475,7 @@ function renderDetailFields(job) {
       ["GPU type", job.gpu_type || "None"],
     ]],
     ["Execution", [
+      ["Image", job.image],
       ["Duration", `${job.duration_seconds} seconds`],
       ["Command", job.command || "None"],
       ["Arguments", job.args || "[]"],
@@ -782,6 +786,7 @@ async function submitJob(event) {
     cpus: Number(form.get("cpus")),
     memory_gb: Number(form.get("memory_gb")),
     duration_seconds: Number(form.get("duration_seconds")),
+    image: String(form.get("image") || "").trim(),
     command: String(form.get("command") || "").trim(),
     args: String(form.get("args") || "[]").trim(),
   };
@@ -798,6 +803,7 @@ async function submitRandomJob() {
     cpus: randomCapacity("total_cpus", 8),
     memory_gb: randomCapacity("total_memory_gb", 16),
     duration_seconds: duration,
+    image: "alpine:3.20",
     command: "sleep",
     args: JSON.stringify([String(duration)]),
   };

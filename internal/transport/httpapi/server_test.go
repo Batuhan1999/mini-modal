@@ -30,6 +30,7 @@ func TestJobEndpoints(t *testing.T) {
 			"cpus":2,
 			"memory_gb":4,
 			"duration_seconds":1,
+			"image":"alpine:3.20",
 			"command":"echo",
 			"args":"[]"
 		}`),
@@ -45,7 +46,7 @@ func TestJobEndpoints(t *testing.T) {
 	if err := json.NewDecoder(submitResponse.Body).Decode(&submitted); err != nil {
 		t.Fatalf("decode submit response: %v", err)
 	}
-	if submitted.ID != "job-1" || submitted.Status != controlplane.JobAssigned {
+	if submitted.ID != "job-1" || submitted.Status != controlplane.JobAssigned || submitted.Image != "alpine:3.20" {
 		t.Fatalf("submitted job = %+v, want ID job-1 with assigned status", submitted)
 	}
 

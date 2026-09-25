@@ -464,6 +464,7 @@ button:disabled {
 }
 
 .job-field-id,
+.job-field-image,
 .job-field-command {
   grid-column: span 2;
 }
@@ -1355,6 +1356,7 @@ footer b {
   }
 
   .job-field-id,
+  .job-field-image,
   .job-field-command,
   .job-field-args {
     grid-column: span 2;
@@ -1450,6 +1452,7 @@ footer b {
   }
 
   .job-field-id,
+  .job-field-image,
   .job-field-command,
   .job-field-args,
   .job-form-actions {

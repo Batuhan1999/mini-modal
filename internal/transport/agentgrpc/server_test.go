@@ -33,6 +33,7 @@ func TestClaimAndComplete(t *testing.T) {
 		Priority: 1,
 		Cpus:     1,
 		MemoryGb: 1,
+		Image:    "alpine:3.20",
 		Command:  "echo",
 		Args:     "[]",
 	}
@@ -56,6 +57,9 @@ func TestClaimAndComplete(t *testing.T) {
 	}
 	if assignment.GetAttempt() <= 0 {
 		t.Fatalf("assignment attempt = %d, want a positive attempt", assignment.GetAttempt())
+	}
+	if assignment.GetImage() != job.Image || assignment.GetCpus() != job.Cpus || assignment.GetMemoryGb() != job.MemoryGb {
+		t.Fatalf("assignment runtime configuration = %+v", assignment)
 	}
 
 	if _, err := server.Complete(

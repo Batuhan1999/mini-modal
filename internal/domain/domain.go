@@ -27,12 +27,14 @@ type LogStream struct {
 }
 
 type Assignment struct {
-	JobID   string
-	Image   string
-	NodeID  string
-	Attempt int64
-	Command string
-	Args    []string
+	JobID    string
+	Image    string
+	NodeID   string
+	Attempt  int64
+	Command  string
+	Args     []string
+	CPUs     int64
+	MemoryGB int64
 }
 
 func (n Node) CanRun(job sqlitedb.Job) bool {

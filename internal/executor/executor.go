@@ -2,12 +2,15 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"mini-modal/internal/domain"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
+
+	"mini-modal/internal/domain"
 )
 
 type Executor interface {
@@ -46,31 +49,80 @@ func (ProcessExecutor) Run(ctx context.Context, assignment domain.Assignment, st
 	return nil
 }
 
+const dockerCleanupTimeout = 10 * time.Second
+
 type DockerExecutor struct {
+	Binary string
 }
 
-func (DockerExecutor) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer) error {
-	cmd := exec.CommandContext(ctx, "docker", "run", assignment.Image, "--", assignment.Command, strings.Join(assignment.Args, " "))
+func (e DockerExecutor) Run(
+	ctx context.Context,
+	assignment domain.Assignment,
+	stdout io.Writer,
+	stderr io.Writer,
+) error {
+	containerName := dockerContainerName(assignment)
+	args := []string{
+		"run",
+		"--name", containerName,
+		"--cpus", strconv.FormatInt(assignment.CPUs, 10),
+		"--memory", fmt.Sprintf("%dg", assignment.MemoryGB),
+		assignment.Image,
+		assignment.Command,
+	}
+	args = append(args, assignment.Args...)
+
+	cmd := exec.CommandContext(ctx, e.binary(), args...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start job %q: %w", assignment.JobID, err)
-	}
+	runErr := cmd.Run()
+	cleanupErr := e.removeContainer(containerName)
 
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			fmt.Errorf("wait for job %q: %w", assignment.JobID, err)
+	if runErr != nil {
+		runErr = fmt.Errorf("run Docker container for job %q: %w", assignment.JobID, runErr)
+	}
+	if cleanupErr != nil {
+		cleanupErr = fmt.Errorf("clean up Docker container for job %q: %w", assignment.JobID, cleanupErr)
+	}
+	return errors.Join(runErr, cleanupErr)
+}
+
+func (e DockerExecutor) removeContainer(containerName string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerCleanupTimeout)
+	defer cancel()
+
+	output, err := exec.CommandContext(ctx, e.binary(), "rm", "-f", containerName).CombinedOutput()
+	if err == nil || strings.Contains(string(output), "No such container") {
+		return nil
+	}
+	return fmt.Errorf("docker rm -f: %w: %s", err, strings.TrimSpace(string(output)))
+}
+
+func (e DockerExecutor) binary() string {
+	if strings.TrimSpace(e.Binary) == "" {
+		return "docker"
+	}
+	return e.Binary
+}
+
+func dockerContainerName(assignment domain.Assignment) string {
+	var name strings.Builder
+	for _, character := range strings.ToLower(assignment.JobID) {
+		if character >= 'a' && character <= 'z' ||
+			character >= '0' && character <= '9' ||
+			character == '-' || character == '_' || character == '.' {
+			name.WriteRune(character)
+			continue
 		}
-	}()
-
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("run job %q: %w", assignment.JobID, err)
-	}
-	//stop the docker after run
-	if err := cmd.Process.Kill(); err != nil {
-		return fmt.Errorf("kill job %q: %w", assignment.JobID, err)
+		name.WriteByte('-')
 	}
 
-	return nil
+	jobID := strings.Trim(name.String(), "-_.")
+	if jobID == "" {
+		jobID = "job"
+	}
+	if len(jobID) > 80 {
+		jobID = jobID[:80]
+	}
+	return fmt.Sprintf("mini-modal-%s-%d", jobID, assignment.Attempt)
 }

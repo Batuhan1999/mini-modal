@@ -159,7 +159,16 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 		)
 	}
 
-	return domain.Assignment{JobID: job.ID, NodeID: job.NodeID, Attempt: job.Attempt, Command: job.Command, Args: args, Image: job.Image}, true, nil
+	return domain.Assignment{
+		JobID:    job.ID,
+		NodeID:   job.NodeID,
+		Attempt:  job.Attempt,
+		Command:  job.Command,
+		Args:     args,
+		Image:    job.Image,
+		CPUs:     job.Cpus,
+		MemoryGB: job.MemoryGb,
+	}, true, nil
 }
 
 func (s *Service) Complete(ctx context.Context, assignment domain.Assignment) error {
@@ -391,7 +400,7 @@ func validateJob(job sqlitedb.CreateJobParams) error {
 		return fmt.Errorf("job %q has invalid arguments: %w", job.ID, err)
 	}
 
-	if job.Image == "" {
+	if strings.TrimSpace(job.Image) == "" {
 		return fmt.Errorf("job %q has invalid image", job.ID)
 	}
 

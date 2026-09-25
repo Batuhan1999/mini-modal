@@ -18,7 +18,7 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 
 	job, err := service.Submit(ctx, sqlitedb.CreateJobParams{
 		ID: "job-1", GpuType: "A100", Gpus: 2, Cpus: 4, MemoryGb: 8,
-		Command: "echo", Args: "[]",
+		Image: "alpine:3.20", Command: "echo", Args: "[]",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +44,9 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	}
 	if assignment.JobID != job.ID || assignment.NodeID != "node-a" {
 		t.Fatalf("unexpected assignment: %#v", assignment)
+	}
+	if assignment.Image != "alpine:3.20" || assignment.CPUs != 4 || assignment.MemoryGB != 8 {
+		t.Fatalf("assignment runtime configuration = %#v", assignment)
 	}
 
 	running, err := service.Job(ctx, job.ID)
@@ -89,6 +92,8 @@ func TestServiceRejectsInvalidJobs(t *testing.T) {
 		{name: "zero memory", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1}},
 		{name: "negative GPUs", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1, MemoryGb: 1, Gpus: -1}},
 		{name: "negative duration", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1, MemoryGb: 1, DurationSeconds: -1}},
+		{name: "missing image", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1, MemoryGb: 1, Command: "echo", Args: "[]"}},
+		{name: "blank image", job: sqlitedb.CreateJobParams{ID: "job-1", Cpus: 1, MemoryGb: 1, Command: "echo", Args: "[]", Image: "   "}},
 	}
 
 	for _, test := range tests {
@@ -127,7 +132,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := service.Submit(ctx, sqlitedb.CreateJobParams{
-		ID: "job-1", Cpus: 1, MemoryGb: 1, Command: "echo", Args: "[]",
+		ID: "job-1", Cpus: 1, MemoryGb: 1, Image: "alpine:3.20", Command: "echo", Args: "[]",
 	}); err != nil {
 		t.Fatal(err)
 	}

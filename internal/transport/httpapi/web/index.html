@@ -126,6 +126,10 @@
                 <span>Duration s</span>
                 <input name="duration_seconds" type="number" value="8" min="0" max="86400" required>
               </label>
+              <label class="job-field-image">
+                <span>Container image</span>
+                <input name="image" type="text" value="alpine:3.20" required autocomplete="off" spellcheck="false">
+              </label>
               <label class="job-field-command">
                 <span>Command</span>
                 <input name="command" type="text" value="sleep" required autocomplete="off">
