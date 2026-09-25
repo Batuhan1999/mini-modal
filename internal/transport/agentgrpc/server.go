@@ -231,7 +231,7 @@ func (s *Server) Fail(ctx context.Context, req *agentv1.FailRequest) (*agentv1.F
 	if err := s.service.Fail(ctx, domain.Assignment{
 		JobID:   jobID,
 		Attempt: attempt,
-	}); err != nil {
+	}, req.GetLastError()); err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "failed to fail job: %v", err)
 	}
 

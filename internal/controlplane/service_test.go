@@ -302,7 +302,7 @@ func TestServiceRecordsFailedJobEvent(t *testing.T) {
 	}})
 	if _, err := service.Submit(ctx, jobmodel.Spec{
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
-		Image: "alpine:3.20", Command: "false",
+		Image: "alpine:3.20", Command: "false", MaxAttempts: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -310,13 +310,71 @@ func TestServiceRecordsFailedJobEvent(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("claim assignment: found=%v err=%v", found, err)
 	}
-	if err := service.Fail(ctx, assignment); err != nil {
+	if err := service.Fail(ctx, assignment, "executor failed"); err != nil {
 		t.Fatal(err)
 	}
 
 	events := listTestJobEvents(t, service, assignment.JobID, assignment.Attempt)
 	if len(events) != 3 || events[2].Event != "failed" {
 		t.Fatalf("failed job events = %#v", events)
+	}
+}
+
+func TestServiceRetriesFailedJobAfterBackoff(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{{
+		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
+	}})
+	if _, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "false",
+		MaxAttempts: 2, RetryBackoffSeconds: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assignment, found, err := service.Claim(ctx, "node-a")
+	if err != nil || !found {
+		t.Fatalf("claim assignment: found=%v err=%v", found, err)
+	}
+
+	if err := service.Fail(ctx, assignment, "executor failed"); err != nil {
+		t.Fatal(err)
+	}
+	retrying, err := service.Job(ctx, assignment.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(retrying.Status) != jobmodel.Retrying {
+		t.Fatalf("status after retryable failure = %q, want %q", retrying.Status, jobmodel.Retrying)
+	}
+	if retrying.LastError != "executor failed" || retrying.NextAttemptAt == 0 {
+		t.Fatalf("retry metadata = %+v", retrying)
+	}
+
+	released, err := service.releaseDueRetriesLocked(ctx, time.UnixMilli(retrying.NextAttemptAt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released != 1 {
+		t.Fatalf("released retries = %d, want 1", released)
+	}
+	pending, err := service.Job(ctx, assignment.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(pending.Status) != jobmodel.Pending {
+		t.Fatalf("status after backoff = %q, want %q", pending.Status, jobmodel.Pending)
+	}
+
+	events := listTestJobEvents(t, service, assignment.JobID, assignment.Attempt)
+	want := []string{"assigned", "claimed", "attempt_failed", "retry_scheduled", "retry_ready"}
+	if len(events) != len(want) {
+		t.Fatalf("retry events = %#v", events)
+	}
+	for i, event := range events {
+		if event.Event != want[i] {
+			t.Fatalf("retry event %d = %q, want %q", i, event.Event, want[i])
+		}
 	}
 }
 
@@ -341,8 +399,18 @@ func TestServiceRecordsExpiredLeaseEvent(t *testing.T) {
 		t.Fatalf("expired assignments = %d, want 1", expired)
 	}
 	events := listTestJobEvents(t, service, job.ID, 1)
-	if len(events) != 2 || events[1].Event != "lease_expired" || events[1].NodeID != "node-a" {
+	if len(events) != 3 ||
+		events[1].Event != "lease_expired" ||
+		events[1].NodeID != "node-a" ||
+		events[2].Event != "retry_scheduled" {
 		t.Fatalf("expired assignment events = %#v", events)
+	}
+	retrying, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(retrying.Status) != jobmodel.Retrying {
+		t.Fatalf("status after lease expiration = %q, want %q", retrying.Status, jobmodel.Retrying)
 	}
 }
 

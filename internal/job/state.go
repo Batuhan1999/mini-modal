@@ -8,6 +8,7 @@ const (
 	Pending       Status = "pending"
 	Assigned      Status = "assigned"
 	Running       Status = "running"
+	Retrying      Status = "retrying"
 	Cancelling    Status = "cancelling"
 	Cancelled     Status = "cancelled"
 	Succeeded     Status = "succeeded"
@@ -24,6 +25,8 @@ const (
 	EventClaim                   Event = "claim"
 	EventComplete                Event = "complete"
 	EventFail                    Event = "fail"
+	EventScheduleRetry           Event = "schedule_retry"
+	EventRetryReady              Event = "retry_ready"
 	EventRequestCancellation     Event = "request_cancellation"
 	EventAcknowledgeCancellation Event = "acknowledge_cancellation"
 	EventLeaseExpired            Event = "lease_expired"
@@ -37,14 +40,21 @@ var transitions = map[Status]map[Event]Status{
 	},
 	Assigned: {
 		EventClaim:               Running,
+		EventFail:                Failed,
+		EventScheduleRetry:       Retrying,
 		EventRequestCancellation: Cancelled,
-		EventLeaseExpired:        Pending,
+		EventLeaseExpired:        Retrying,
 	},
 	Running: {
 		EventComplete:            Succeeded,
 		EventFail:                Failed,
+		EventScheduleRetry:       Retrying,
 		EventRequestCancellation: Cancelling,
-		EventLeaseExpired:        Pending,
+		EventLeaseExpired:        Retrying,
+	},
+	Retrying: {
+		EventRetryReady:          Pending,
+		EventRequestCancellation: Cancelled,
 	},
 	Cancelling: {
 		EventRequestCancellation:     Cancelling,

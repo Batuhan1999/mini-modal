@@ -10,10 +10,36 @@ INSERT INTO jobs (
     command,
     args,
     image,
+    max_attempts,
+    retry_backoff_seconds,
+    next_attempt_at,
+    last_error,
     status,
     updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?, ?, 'pending', CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
 ON CONFLICT (id) DO NOTHING
+RETURNING *;
+
+-- name: RetryJob :one
+UPDATE jobs
+SET status = 'retrying',
+    node_id = '',
+    lease_expires_at = 0,
+    next_attempt_at = sqlc.arg(next_attempt_at),
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER),
+    last_error = sqlc.arg(last_error)
+WHERE id = sqlc.arg(job_id)
+  AND attempt = sqlc.arg(assignment_attempt)
+  AND status = 'running'
+RETURNING *;
+
+-- name: ReleaseDueRetries :many
+UPDATE jobs
+SET status = 'pending',
+    next_attempt_at = 0,
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE status = 'retrying'
+  AND next_attempt_at <= sqlc.arg(ready_before)
 RETURNING *;
 
 -- name: GetJob :one
@@ -30,6 +56,7 @@ ORDER BY updated_at DESC, id;
 SELECT *
 FROM jobs
 WHERE status = 'pending'
+  AND next_attempt_at <= CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 ORDER BY priority DESC, id;
 
 -- name: ListActiveJobs :many
@@ -86,7 +113,8 @@ RETURNING *;
 UPDATE jobs
 SET status = 'failed',
     lease_expires_at = 0,
-    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER),
+    last_error = sqlc.arg(last_error)
 WHERE id = sqlc.arg(job_id)
   AND attempt = sqlc.arg(assignment_attempt)
   AND status = 'running'
@@ -113,14 +141,28 @@ WHERE id = sqlc.arg(job_id)
   AND attempt = sqlc.arg(assignment_attempt)
   AND status = 'running';
 
--- name: RequeueExpiredAssignments :many
+-- name: RetryExpiredAssignments :many
 UPDATE jobs
-SET status = 'pending',
+SET status = 'retrying',
     node_id = '',
     lease_expires_at = 0,
+    next_attempt_at = sqlc.arg(expired_before) + retry_backoff_seconds * 1000,
+    last_error = 'assignment lease expired',
     updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE status IN ('assigned', 'running')
   AND lease_expires_at <= sqlc.arg(expired_before)
+  AND attempt < max_attempts
+RETURNING *;
+
+-- name: FailExpiredAssignments :many
+UPDATE jobs
+SET status = 'failed',
+    lease_expires_at = 0,
+    last_error = 'assignment lease expired',
+    updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+WHERE status IN ('assigned', 'running')
+  AND lease_expires_at <= sqlc.arg(expired_before)
+  AND attempt >= max_attempts
 RETURNING *;
 
 -- name: RequeueUnschedulableJobs :execrows
@@ -145,7 +187,7 @@ SET status = 'cancelled',
     lease_expires_at = 0,
     updated_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
 WHERE id = ?
-  AND status IN ('pending', 'assigned', 'unschedulable');
+  AND status IN ('pending', 'assigned', 'retrying', 'unschedulable');
 
 -- name: AcknowledgeCancelledJob :one
 UPDATE jobs

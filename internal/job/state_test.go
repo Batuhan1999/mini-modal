@@ -13,11 +13,14 @@ func TestStateTransitions(t *testing.T) {
 		{Pending, EventRequestCancellation, Cancelled},
 		{Assigned, EventClaim, Running},
 		{Assigned, EventRequestCancellation, Cancelled},
-		{Assigned, EventLeaseExpired, Pending},
+		{Assigned, EventLeaseExpired, Retrying},
 		{Running, EventComplete, Succeeded},
 		{Running, EventFail, Failed},
+		{Running, EventScheduleRetry, Retrying},
 		{Running, EventRequestCancellation, Cancelling},
-		{Running, EventLeaseExpired, Pending},
+		{Running, EventLeaseExpired, Retrying},
+		{Retrying, EventRetryReady, Pending},
+		{Retrying, EventRequestCancellation, Cancelled},
 		{Cancelling, EventRequestCancellation, Cancelling},
 		{Cancelling, EventAcknowledgeCancellation, Cancelled},
 		{Cancelling, EventLeaseExpired, Cancelled},
@@ -45,7 +48,7 @@ func TestStateRejectsInvalidTransitions(t *testing.T) {
 		event   Event
 	}{
 		{Pending, EventComplete},
-		{Assigned, EventFail},
+		{Assigned, EventComplete},
 		{Running, EventClaim},
 		{Cancelling, EventComplete},
 		{Succeeded, EventRequestCancellation},
@@ -65,6 +68,9 @@ func TestStatusBehavior(t *testing.T) {
 	}
 	if Running.Terminal() {
 		t.Fatal("running status was considered terminal")
+	}
+	if Retrying.Terminal() {
+		t.Fatal("retrying status was considered terminal")
 	}
 	if !Assigned.HoldsResources() || !Running.HoldsResources() || !Cancelling.HoldsResources() {
 		t.Fatal("active status did not hold resources")

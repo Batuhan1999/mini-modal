@@ -20,7 +20,11 @@ import (
 	"github.com/google/uuid"
 )
 
-const assignmentLeaseDuration = 15 * time.Second
+const (
+	assignmentLeaseDuration    = 15 * time.Second
+	defaultMaxAttempts         = 3
+	defaultRetryBackoffSeconds = 1
+)
 
 type Service struct {
 	mu      sync.Mutex
@@ -112,6 +116,13 @@ func (s *Service) Run(ctx context.Context) {
 			}
 			if expired > 0 {
 				log.Printf("expired %d assignments", expired)
+			}
+			released, releaseErr := s.releaseDueRetriesLocked(ctx, now)
+			if releaseErr != nil {
+				log.Printf("failed to release due retries: %v", releaseErr)
+			}
+			if released > 0 {
+				log.Printf("released %d jobs for retry", released)
 			}
 			if err := s.scheduleLocked(ctx); err != nil {
 				log.Printf("failed to schedule jobs: %v", err)
@@ -348,14 +359,14 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 }
 
 func (s *Service) Complete(ctx context.Context, assignment domain.Assignment) error {
-	return s.finish(ctx, assignment, jobmodel.EventComplete)
+	return s.finish(ctx, assignment, jobmodel.EventComplete, "")
 }
 
-func (s *Service) Fail(ctx context.Context, assignment domain.Assignment) error {
-	return s.finish(ctx, assignment, jobmodel.EventFail)
+func (s *Service) Fail(ctx context.Context, assignment domain.Assignment, lastError string) error {
+	return s.finish(ctx, assignment, jobmodel.EventFail, lastError)
 }
 
-func (s *Service) finish(ctx context.Context, assignment domain.Assignment, event jobmodel.Event) error {
+func (s *Service) finish(ctx context.Context, assignment domain.Assignment, event jobmodel.Event, lastError string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -372,38 +383,60 @@ func (s *Service) finish(ctx context.Context, assignment domain.Assignment, even
 		if err != nil {
 			return sqlitedb.Job{}, err
 		}
+		if event == jobmodel.EventFail && stored.Attempt < stored.MaxAttempts {
+			event = jobmodel.EventScheduleRetry
+		}
 		next, err := current.Next(event)
 		if err != nil {
 			return sqlitedb.Job{}, fmt.Errorf("finish job %q: %w", assignment.JobID, err)
 		}
 
-		var (
-			finished     sqlitedb.Job
-			historyEvent jobmodel.HistoryEvent
-			message      string
-		)
+		var finished sqlitedb.Job
 		switch next {
 		case jobmodel.Succeeded:
 			finished, err = queries.CompleteJob(ctx, sqlitedb.CompleteJobParams{
 				JobID:             assignment.JobID,
 				AssignmentAttempt: assignment.Attempt,
 			})
-			historyEvent = jobmodel.HistoryCompleted
-			message = "Job completed successfully"
+			if err == nil {
+				err = recordJobEvent(ctx, queries, finished, jobmodel.HistoryCompleted, "Job completed successfully", now)
+			}
 		case jobmodel.Failed:
 			finished, err = queries.FailJob(ctx, sqlitedb.FailJobParams{
 				JobID:             assignment.JobID,
 				AssignmentAttempt: assignment.Attempt,
+				LastError:         lastError,
 			})
-			historyEvent = jobmodel.HistoryFailed
-			message = "Job execution failed"
+			if err == nil {
+				err = recordJobEvent(ctx, queries, finished, jobmodel.HistoryFailed, failureHistoryMessage(lastError), now)
+			}
+		case jobmodel.Retrying:
+			retryBackoff := time.Duration(stored.RetryBackoffSeconds) * time.Second
+			finished, err = queries.RetryJob(ctx, sqlitedb.RetryJobParams{
+				JobID:             assignment.JobID,
+				AssignmentAttempt: assignment.Attempt,
+				NextAttemptAt:     now.Add(retryBackoff).UnixMilli(),
+				LastError:         lastError,
+			})
+			if err == nil {
+				eventJob := finished
+				eventJob.NodeID = stored.NodeID
+				err = recordJobEvent(ctx, queries, eventJob, jobmodel.HistoryAttemptFailed, failureHistoryMessage(lastError), now)
+				if err == nil {
+					err = recordJobEvent(
+						ctx,
+						queries,
+						eventJob,
+						jobmodel.HistoryRetryScheduled,
+						"Retry scheduled in "+retryBackoff.String(),
+						now,
+					)
+				}
+			}
 		default:
 			return sqlitedb.Job{}, fmt.Errorf("unsupported terminal job status %q", next)
 		}
 		if err != nil {
-			return sqlitedb.Job{}, err
-		}
-		if err := recordJobEvent(ctx, queries, finished, historyEvent, message, now); err != nil {
 			return sqlitedb.Job{}, err
 		}
 		return finished, nil
@@ -638,7 +671,8 @@ func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]dom
 
 func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (int, error) {
 	type expirationResult struct {
-		requeued  int
+		retrying  int
+		failed    int
 		cancelled int
 	}
 
@@ -653,21 +687,44 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 				nodeByJobID[job.ID] = job.NodeID
 			}
 		}
-
-		expired, err := queries.RequeueExpiredAssignments(ctx, now.UnixMilli())
+		retrying, err := queries.RetryExpiredAssignments(ctx, now.UnixMilli())
 		if err != nil {
-			return expirationResult{}, fmt.Errorf("requeue expired assignments: %w", err)
+			return expirationResult{}, fmt.Errorf("retry expired assignments: %w", err)
 		}
-		for _, job := range expired {
+		for _, job := range retrying {
 			job.NodeID = nodeByJobID[job.ID]
 			if err := recordJobEvent(
 				ctx,
 				queries,
 				job,
 				jobmodel.HistoryLeaseExpired,
-				"Assignment lease expired; job returned to pending",
+				"Assignment lease expired",
 				now,
 			); err != nil {
+				return expirationResult{}, err
+			}
+			if err := recordJobEvent(
+				ctx,
+				queries,
+				job,
+				jobmodel.HistoryRetryScheduled,
+				"Retry scheduled in "+(time.Duration(job.RetryBackoffSeconds)*time.Second).String(),
+				now,
+			); err != nil {
+				return expirationResult{}, err
+			}
+		}
+
+		failed, err := queries.FailExpiredAssignments(ctx, now.UnixMilli())
+		if err != nil {
+			return expirationResult{}, fmt.Errorf("fail expired assignments: %w", err)
+		}
+		for _, job := range failed {
+			job.NodeID = nodeByJobID[job.ID]
+			if err := recordJobEvent(ctx, queries, job, jobmodel.HistoryLeaseExpired, "Assignment lease expired", now); err != nil {
+				return expirationResult{}, err
+			}
+			if err := recordJobEvent(ctx, queries, job, jobmodel.HistoryFailed, "Job failed after its final assignment lease expired", now); err != nil {
 				return expirationResult{}, err
 			}
 		}
@@ -691,14 +748,41 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 		}
 
 		return expirationResult{
-			requeued:  len(expired),
+			retrying:  len(retrying),
+			failed:    len(failed),
 			cancelled: len(cancelled),
 		}, nil
 	})
 	if err != nil {
 		return 0, err
 	}
-	return result.requeued + result.cancelled, nil
+	return result.retrying + result.failed + result.cancelled, nil
+}
+
+func (s *Service) releaseDueRetriesLocked(ctx context.Context, now time.Time) (int, error) {
+	released, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) ([]sqlitedb.Job, error) {
+		jobs, err := queries.ReleaseDueRetries(ctx, now.UnixMilli())
+		if err != nil {
+			return nil, fmt.Errorf("release due retries: %w", err)
+		}
+		for _, job := range jobs {
+			if err := recordJobEvent(
+				ctx,
+				queries,
+				job,
+				jobmodel.HistoryRetryReady,
+				"Retry backoff elapsed; job returned to pending",
+				now,
+			); err != nil {
+				return nil, err
+			}
+		}
+		return jobs, nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(released), nil
 }
 
 func createJobParams(spec jobmodel.Spec) (sqlitedb.CreateJobParams, error) {
@@ -710,18 +794,36 @@ func createJobParams(spec jobmodel.Spec) (sqlitedb.CreateJobParams, error) {
 	if err != nil {
 		return sqlitedb.CreateJobParams{}, fmt.Errorf("encode arguments for job %q: %w", spec.ID, err)
 	}
+	maxAttempts := spec.MaxAttempts
+	if maxAttempts == 0 {
+		maxAttempts = defaultMaxAttempts
+	}
+	retryBackoffSeconds := spec.RetryBackoffSeconds
+	if retryBackoffSeconds == 0 {
+		retryBackoffSeconds = defaultRetryBackoffSeconds
+	}
 	return sqlitedb.CreateJobParams{
-		ID:              spec.ID,
-		Priority:        spec.Priority,
-		GpuType:         spec.GPUType,
-		Gpus:            spec.GPUs,
-		Cpus:            spec.CPUs,
-		MemoryGb:        spec.MemoryGB,
-		DurationSeconds: spec.DurationSeconds,
-		Command:         spec.Command,
-		Args:            string(encodedArgs),
-		Image:           spec.Image,
+		ID:                  spec.ID,
+		Priority:            spec.Priority,
+		GpuType:             spec.GPUType,
+		Gpus:                spec.GPUs,
+		Cpus:                spec.CPUs,
+		MemoryGb:            spec.MemoryGB,
+		DurationSeconds:     spec.DurationSeconds,
+		Command:             spec.Command,
+		Args:                string(encodedArgs),
+		Image:               spec.Image,
+		MaxAttempts:         maxAttempts,
+		RetryBackoffSeconds: retryBackoffSeconds,
 	}, nil
+}
+
+func failureHistoryMessage(lastError string) string {
+	lastError = strings.TrimSpace(lastError)
+	if lastError == "" {
+		return "Job execution failed"
+	}
+	return "Job execution failed: " + lastError
 }
 
 func validateLogStream(logStream domain.LogStream) error {

@@ -13,30 +13,34 @@ import (
 )
 
 type submitJobRequest struct {
-	ID              string   `json:"id"`
-	Priority        int64    `json:"priority"`
-	GPUType         string   `json:"gpu_type"`
-	GPUs            int64    `json:"gpus"`
-	CPUs            int64    `json:"cpus"`
-	MemoryGB        int64    `json:"memory_gb"`
-	DurationSeconds int64    `json:"duration_seconds"`
-	Image           string   `json:"image"`
-	Command         string   `json:"command"`
-	Args            []string `json:"args"`
+	ID                  string   `json:"id"`
+	Priority            int64    `json:"priority"`
+	GPUType             string   `json:"gpu_type"`
+	GPUs                int64    `json:"gpus"`
+	CPUs                int64    `json:"cpus"`
+	MemoryGB            int64    `json:"memory_gb"`
+	DurationSeconds     int64    `json:"duration_seconds"`
+	Image               string   `json:"image"`
+	Command             string   `json:"command"`
+	Args                []string `json:"args"`
+	MaxAttempts         int64    `json:"max_attempts"`
+	RetryBackoffSeconds int64    `json:"retry_backoff_seconds"`
 }
 
 func (r submitJobRequest) spec() jobmodel.Spec {
 	return jobmodel.Spec{
-		ID:              r.ID,
-		Priority:        r.Priority,
-		GPUType:         r.GPUType,
-		GPUs:            r.GPUs,
-		CPUs:            r.CPUs,
-		MemoryGB:        r.MemoryGB,
-		DurationSeconds: r.DurationSeconds,
-		Image:           r.Image,
-		Command:         r.Command,
-		Args:            r.Args,
+		ID:                  r.ID,
+		Priority:            r.Priority,
+		GPUType:             r.GPUType,
+		GPUs:                r.GPUs,
+		CPUs:                r.CPUs,
+		MemoryGB:            r.MemoryGB,
+		DurationSeconds:     r.DurationSeconds,
+		Image:               r.Image,
+		Command:             r.Command,
+		Args:                r.Args,
+		MaxAttempts:         r.MaxAttempts,
+		RetryBackoffSeconds: r.RetryBackoffSeconds,
 	}
 }
 

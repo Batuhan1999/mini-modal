@@ -27,13 +27,14 @@ func (f *fakeControlPlane) RenewAssignment(
 }
 
 type fakeControlPlane struct {
-	mu           sync.Mutex
-	claims       []claimResponse
-	completed    chan domain.Assignment
-	failed       chan domain.Assignment
-	cancelled    chan domain.Assignment
-	logs         chan domain.LogStream
-	shouldCancel bool
+	mu            sync.Mutex
+	claims        []claimResponse
+	completed     chan domain.Assignment
+	failed        chan domain.Assignment
+	failureErrors chan string
+	cancelled     chan domain.Assignment
+	logs          chan domain.LogStream
+	shouldCancel  bool
 }
 
 func (f *fakeControlPlane) Claim(ctx context.Context, nodeID string) (domain.Assignment, bool, error) {
@@ -54,8 +55,11 @@ func (f *fakeControlPlane) Complete(ctx context.Context, assignment domain.Assig
 	return nil
 }
 
-func (f *fakeControlPlane) Fail(ctx context.Context, assignment domain.Assignment) error {
+func (f *fakeControlPlane) Fail(ctx context.Context, assignment domain.Assignment, lastError string) error {
 	f.failed <- assignment
+	if f.failureErrors != nil {
+		f.failureErrors <- lastError
+	}
 	return nil
 }
 
@@ -152,9 +156,10 @@ func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
 func TestAgentReportsExecutionFailure(t *testing.T) {
 	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 1}
 	controlPlane := &fakeControlPlane{
-		claims:    []claimResponse{{assignment: assignment, found: true}},
-		completed: make(chan domain.Assignment, 1),
-		failed:    make(chan domain.Assignment, 1),
+		claims:        []claimResponse{{assignment: assignment, found: true}},
+		completed:     make(chan domain.Assignment, 1),
+		failed:        make(chan domain.Assignment, 1),
+		failureErrors: make(chan string, 1),
 	}
 	agent := New("node-a", controlPlane, fakeExecutor{err: errors.New("executor failed")}, time.Millisecond)
 
@@ -172,6 +177,14 @@ func TestAgentReportsExecutionFailure(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for job failure")
+	}
+	select {
+	case failureError := <-controlPlane.failureErrors:
+		if failureError != "executor failed" {
+			t.Fatalf("failure error = %q, want %q", failureError, "executor failed")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for execution error")
 	}
 
 	cancel()

@@ -64,7 +64,7 @@ const state = {
   inlineLogs: new Map(),
   detailJobID: jobIDFromPath(),
   detailJob: null,
-  detailLogs: createLogState(),
+  detailLogs: new Map(),
   detailEvents: [],
   cancellingJobIDs: new Set(),
 };
@@ -147,17 +147,13 @@ async function refreshDetail() {
       fetchJSON(`/v1/jobs/${encodeURIComponent(state.detailJobID)}`),
       fetchJSON(`/v1/jobs/${encodeURIComponent(state.detailJobID)}/events`),
     ]);
-    const attemptChanged = state.detailJob?.attempt !== job.attempt;
     const statusChanged = state.detailJob?.status !== job.status;
-    if (attemptChanged) {
-      state.detailLogs = createLogState(job.attempt);
-    }
     state.detailJob = job;
     state.detailEvents = events;
     renderJobDetail(job);
     const active = ["assigned", "running", "cancelling"].includes(job.status);
-    if (!state.detailLogs.loaded || attemptChanged || statusChanged || active) {
-      await loadDetailLogs(job, state.detailLogs.loaded);
+    if (job.attempt > 0) {
+      await loadDetailLogs(job, !statusChanged && !active);
     }
     setConnection(true);
   } catch (error) {
@@ -215,7 +211,7 @@ function renderMetrics() {
 
   elements.metricTotal.textContent = formatNumber(state.jobs.length);
   elements.metricActive.textContent = formatNumber(count(["assigned", "running", "cancelling"]));
-  elements.metricWaiting.textContent = formatNumber(count(["pending", "unschedulable"]));
+  elements.metricWaiting.textContent = formatNumber(count(["pending", "retrying", "unschedulable"]));
   elements.metricNodes.textContent = `${healthyNodes} / ${state.nodes.length}`;
 }
 
@@ -473,7 +469,9 @@ function renderJobDetail(job) {
   elements.detailStatus.className = `status status-${job.status}`;
   elements.detailStatus.textContent = job.status;
   renderDetailCancelAction(job);
-  elements.detailLogAttempt.textContent = job.attempt > 0 ? `Attempt ${job.attempt}` : "No attempt";
+  elements.detailLogAttempt.textContent = job.attempt > 0
+    ? `${job.attempt} ${job.attempt === 1 ? "attempt" : "attempts"}`
+    : "No attempts";
   document.title = `${job.id} · Mini Modal`;
   renderDetailFields(job);
   renderDetailEvents(state.detailEvents);
@@ -505,6 +503,12 @@ function renderDetailFields(job) {
       ["Duration", `${job.duration_seconds} seconds`],
       ["Command", job.command || "None"],
       ["Arguments", job.args || "[]"],
+    ]],
+    ["Retry policy", [
+      ["Max attempts", String(job.max_attempts)],
+      ["Backoff", `${job.retry_backoff_seconds} seconds`],
+      ["Next attempt", job.next_attempt_at ? formatTimestamp(job.next_attempt_at) : "Not scheduled"],
+      ["Last error", job.last_error || "None"],
     ]],
   ];
 
@@ -569,45 +573,89 @@ function formatEventName(event) {
 }
 
 function renderDetailLogs(job) {
-  elements.detailLogTerminal.replaceChildren(buildLogTerminal(job, state.detailLogs, () => {
-    void loadDetailLogs(job, false);
-  }, false));
+  if (job.attempt <= 0) {
+    elements.detailLogTerminal.replaceChildren(buildLogTerminal(job, createLogState(), () => {
+      void loadDetailLogs(job, false);
+    }, false));
+    return;
+  }
+
+  const groups = createElement("div", "attempt-log-groups");
+  for (let attempt = job.attempt; attempt >= 1; attempt -= 1) {
+    const logState = ensureDetailLogState(attempt);
+    const group = document.createElement("details");
+    group.className = "attempt-log-group";
+    group.open = attempt === job.attempt;
+
+    const summary = document.createElement("summary");
+    const label = createElement("span", "attempt-log-label", `Attempt ${attempt}`);
+    const meta = logState.loading && !logState.loaded
+      ? "Loading"
+      : `${logState.logs.length} ${logState.logs.length === 1 ? "chunk" : "chunks"}`;
+    summary.append(label, createElement("span", "attempt-log-meta", meta));
+
+    const content = createElement("div", "attempt-log-content");
+    content.append(buildLogTerminal(job, logState, () => {
+      logState.loaded = false;
+      void loadDetailLogs(job, false);
+    }, false));
+    group.append(summary, content);
+    groups.append(group);
+  }
+  elements.detailLogTerminal.replaceChildren(groups);
 }
 
 async function loadDetailLogs(job, quiet) {
-  const logState = state.detailLogs;
-  if (logState.loading) {
-    return;
-  }
   if (job.attempt <= 0) {
-    logState.logs = [];
-    logState.loaded = true;
-    logState.error = "";
     renderDetailLogs(job);
     return;
   }
 
-  logState.loading = true;
-  if (!quiet || !logState.loaded) {
+  const active = ["assigned", "running", "cancelling"].includes(job.status);
+  const attempts = [];
+  for (let attempt = 1; attempt <= job.attempt; attempt += 1) {
+    const logState = ensureDetailLogState(attempt);
+    const refreshCurrent = attempt === job.attempt && active;
+    if (!logState.loading && (!logState.loaded || refreshCurrent)) {
+      logState.loading = true;
+      attempts.push([attempt, logState]);
+    }
+  }
+  if (attempts.length === 0) {
+    return;
+  }
+  if (!quiet || attempts.some(([, logState]) => !logState.loaded)) {
     renderDetailLogs(job);
   }
-  try {
-    logState.logs = await fetchJobLogs(job);
-    logState.loaded = true;
-    logState.error = "";
-  } catch (error) {
-    logState.error = error.message;
-  } finally {
-    logState.loading = false;
-    if (state.detailJob?.id === job.id && state.detailJob?.attempt === job.attempt) {
-      renderDetailLogs(state.detailJob);
+
+  await Promise.all(attempts.map(async ([attempt, logState]) => {
+    try {
+      logState.logs = await fetchJobLogs(job, attempt);
+      logState.loaded = true;
+      logState.error = "";
+    } catch (error) {
+      logState.error = error.message;
+    } finally {
+      logState.loading = false;
     }
+  }));
+  if (state.detailJob?.id === job.id) {
+    renderDetailLogs(state.detailJob);
   }
 }
 
-async function fetchJobLogs(job) {
+function ensureDetailLogState(attempt) {
+  let logState = state.detailLogs.get(attempt);
+  if (!logState) {
+    logState = createLogState(attempt);
+    state.detailLogs.set(attempt, logState);
+  }
+  return logState;
+}
+
+async function fetchJobLogs(job, attempt = job.attempt) {
   const logs = await fetchJSON(
-    `/v1/jobs/${encodeURIComponent(job.id)}/logs?attempt=${job.attempt}`,
+    `/v1/jobs/${encodeURIComponent(job.id)}/logs?attempt=${attempt}`,
   );
   return Array.isArray(logs)
     ? [...logs].sort((left, right) => left.sequence - right.sequence)
@@ -706,7 +754,7 @@ function createLogState(attempt = 0) {
 }
 
 function canCancelJob(job) {
-  return ["pending", "assigned", "running", "unschedulable"].includes(job.status);
+  return ["pending", "assigned", "running", "retrying", "unschedulable"].includes(job.status);
 }
 
 function buildCancelButton(job) {
@@ -796,6 +844,8 @@ function logStreamLabel(job) {
     return "Live, refreshing every second";
   case "cancelling":
     return "Cancellation requested, awaiting agent";
+  case "retrying":
+    return "Attempt failed, waiting for retry";
   case "cancelled":
   case "succeeded":
   case "failed":

@@ -6,16 +6,18 @@ import (
 )
 
 type Spec struct {
-	ID              string
-	Priority        int64
-	GPUType         string
-	GPUs            int64
-	CPUs            int64
-	MemoryGB        int64
-	DurationSeconds int64
-	Image           string
-	Command         string
-	Args            []string
+	ID                  string
+	Priority            int64
+	GPUType             string
+	GPUs                int64
+	CPUs                int64
+	MemoryGB            int64
+	DurationSeconds     int64
+	Image               string
+	Command             string
+	Args                []string
+	MaxAttempts         int64
+	RetryBackoffSeconds int64
 }
 
 func (s Spec) Validate() error {
@@ -33,6 +35,12 @@ func (s Spec) Validate() error {
 	}
 	if s.DurationSeconds < 0 {
 		return fmt.Errorf("job %q cannot have a negative duration", s.ID)
+	}
+	if s.MaxAttempts < 0 {
+		return fmt.Errorf("job %q cannot have negative max attempts", s.ID)
+	}
+	if s.RetryBackoffSeconds < 0 {
+		return fmt.Errorf("job %q cannot have a negative retry backoff", s.ID)
 	}
 	if strings.TrimSpace(s.Image) == "" {
 		return fmt.Errorf("job %q requires an image", s.ID)

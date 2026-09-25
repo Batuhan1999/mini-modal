@@ -353,6 +353,7 @@ type FailRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	Attempt       int64                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	LastError     string                 `protobuf:"bytes,3,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -399,6 +400,13 @@ func (x *FailRequest) GetAttempt() int64 {
 		return x.Attempt
 	}
 	return 0
+}
+
+func (x *FailRequest) GetLastError() string {
+	if x != nil {
+		return x.LastError
+	}
+	return ""
 }
 
 type FailResponse struct {
@@ -957,10 +965,12 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x0fCompleteRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\"\x12\n" +
-	"\x10CompleteResponse\">\n" +
+	"\x10CompleteResponse\"]\n" +
 	"\vFailRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +
-	"\aattempt\x18\x02 \x01(\x03R\aattempt\"\x0e\n" +
+	"\aattempt\x18\x02 \x01(\x03R\aattempt\x12\x1d\n" +
+	"\n" +
+	"last_error\x18\x03 \x01(\tR\tlastError\"\x0e\n" +
 	"\fFailResponse\"=\n" +
 	"\x12StreamLogsResponse\x12'\n" +
 	"\x0fchunks_received\x18\x01 \x01(\x03R\x0echunksReceived\"\xd8\x01\n" +

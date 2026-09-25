@@ -20,6 +20,8 @@ func TestSpecValidation(t *testing.T) {
 		{name: "zero memory", spec: Spec{ID: "job-1", CPUs: 1, Image: "image", Command: "echo"}},
 		{name: "negative GPUs", spec: Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, GPUs: -1, Image: "image", Command: "echo"}},
 		{name: "negative duration", spec: Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, DurationSeconds: -1, Image: "image", Command: "echo"}},
+		{name: "negative max attempts", spec: Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, MaxAttempts: -1, Image: "image", Command: "echo"}},
+		{name: "negative retry backoff", spec: Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, RetryBackoffSeconds: -1, Image: "image", Command: "echo"}},
 		{name: "missing image", spec: Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, Command: "echo"}},
 		{name: "missing command", spec: Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "image"}},
 	}

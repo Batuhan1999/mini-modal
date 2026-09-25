@@ -122,10 +122,11 @@ func (c *Client) Cancel(ctx context.Context, assignment domain.Assignment) error
 	return err
 }
 
-func (c *Client) Fail(ctx context.Context, assignment domain.Assignment) error {
+func (c *Client) Fail(ctx context.Context, assignment domain.Assignment, lastError string) error {
 	_, err := c.client.Fail(ctx, &agentv1.FailRequest{
-		JobId:   assignment.JobID,
-		Attempt: assignment.Attempt,
+		JobId:     assignment.JobID,
+		Attempt:   assignment.Attempt,
+		LastError: lastError,
 	})
 	return err
 }
