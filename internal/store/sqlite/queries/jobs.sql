@@ -9,9 +9,10 @@ INSERT INTO jobs (
     duration_seconds,
     command,
     args,
+    image,
     status,
     updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
 ON CONFLICT (id) DO NOTHING
 RETURNING *;
 

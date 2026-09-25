@@ -6,6 +6,7 @@ import (
 	"io"
 	"mini-modal/internal/domain"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -42,5 +43,34 @@ func (ProcessExecutor) Run(ctx context.Context, assignment domain.Assignment, st
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("run job %q: %w", assignment.JobID, err)
 	}
+	return nil
+}
+
+type DockerExecutor struct {
+}
+
+func (DockerExecutor) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer) error {
+	cmd := exec.CommandContext(ctx, "docker", "run", assignment.Image, "--", assignment.Command, strings.Join(assignment.Args, " "))
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start job %q: %w", assignment.JobID, err)
+	}
+
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			fmt.Errorf("wait for job %q: %w", assignment.JobID, err)
+		}
+	}()
+
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("run job %q: %w", assignment.JobID, err)
+	}
+	//stop the docker after run
+	if err := cmd.Process.Kill(); err != nil {
+		return fmt.Errorf("kill job %q: %w", assignment.JobID, err)
+	}
+
 	return nil
 }

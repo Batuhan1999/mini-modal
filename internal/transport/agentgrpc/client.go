@@ -86,6 +86,7 @@ func (c *Client) Claim(ctx context.Context, nodeID string) (domain.Assignment, b
 		Attempt: assignment.GetAttempt(),
 		Command: assignment.GetCommand(),
 		Args:    assignment.GetArgs(),
+		Image:   assignment.GetImage(),
 	}, true, nil
 }
 

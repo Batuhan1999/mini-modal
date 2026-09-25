@@ -19,6 +19,7 @@ type Job struct {
 	Command         string `json:"command"`
 	Args            string `json:"args"`
 	UpdatedAt       int64  `json:"updated_at"`
+	Image           string `json:"image"`
 }
 
 type JobLog struct {

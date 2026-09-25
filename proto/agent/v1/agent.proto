@@ -10,6 +10,7 @@ message Assignment {
   int64 attempt = 3;
   string command = 4;
   repeated string args = 5;
+  string image = 6;
 }
 
 message ClaimRequest {

@@ -28,6 +28,7 @@ type LogStream struct {
 
 type Assignment struct {
 	JobID   string
+	Image   string
 	NodeID  string
 	Attempt int64
 	Command string

@@ -77,6 +77,7 @@ type Assignment struct {
 	Attempt       int64                  `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	Command       string                 `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
 	Args          []string               `protobuf:"bytes,5,rep,name=args,proto3" json:"args,omitempty"`
+	Image         string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -144,6 +145,13 @@ func (x *Assignment) GetArgs() []string {
 		return x.Args
 	}
 	return nil
+}
+
+func (x *Assignment) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
 }
 
 type ClaimRequest struct {
@@ -814,14 +822,15 @@ var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\x84\x01\n" +
+	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\x9a\x01\n" +
 	"\n" +
 	"Assignment\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12\x18\n" +
 	"\aattempt\x18\x03 \x01(\x03R\aattempt\x12\x18\n" +
 	"\acommand\x18\x04 \x01(\tR\acommand\x12\x12\n" +
-	"\x04args\x18\x05 \x03(\tR\x04args\"'\n" +
+	"\x04args\x18\x05 \x03(\tR\x04args\x12\x14\n" +
+	"\x05image\x18\x06 \x01(\tR\x05image\"'\n" +
 	"\fClaimRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"O\n" +
 	"\rClaimResponse\x12>\n" +

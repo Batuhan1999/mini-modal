@@ -140,6 +140,7 @@ func (s *Server) Claim(ctx context.Context, req *agentv1.ClaimRequest) (*agentv1
 			Attempt: assignment.Attempt,
 			Command: assignment.Command,
 			Args:    assignment.Args,
+			Image:   assignment.Image,
 		},
 	}, nil
 }

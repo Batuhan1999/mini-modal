@@ -83,7 +83,7 @@ func main() {
 	agent := agent.New(
 		*nodeID,
 		client,
-		executor.ProcessExecutor{},
+		executor.DockerExecutor{},
 		250*time.Millisecond,
 	)
 
