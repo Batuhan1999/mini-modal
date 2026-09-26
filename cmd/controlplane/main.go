@@ -21,6 +21,8 @@ import (
 	"mini-modal/internal/transport/agentgrpc"
 	"mini-modal/internal/transport/httpapi"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
 )
 
@@ -44,7 +46,13 @@ func main() {
 	defer db.Close()
 
 	queries := sqlitedb.New(db)
-	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db)
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+	metrics := controlplane.NewMetrics(registry)
+	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, metrics)
 	if err := service.Initialize(ctx); err != nil {
 		log.Fatalf("failed to initialize control plane: %v", err)
 	}
@@ -52,7 +60,7 @@ func main() {
 	defer localAgents.Stop()
 	httpServer := &http.Server{
 		Addr:              ":8080",
-		Handler:           httpapi.NewServer(service, localAgents),
+		Handler:           httpapi.NewServer(service, localAgents, registry),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -1,0 +1,11 @@
+{
+  "name": "mini-modal limited box",
+  "dockerComposeFile": "../compose.dev.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "remoteUser": "developer",
+  "updateRemoteUserUID": true,
+  "forwardPorts": [8080, 9090],
+  "postCreateCommand": "go mod download"
+}

@@ -11,6 +11,7 @@ import (
 	"mini-modal/internal/store/sqlite"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -177,7 +178,8 @@ func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	service := controlplane.NewService(controlplane.NewRuntimeState(), sqlitedb.New(db), db)
+	metrics := controlplane.NewMetrics(prometheus.NewRegistry())
+	service := controlplane.NewService(controlplane.NewRuntimeState(), sqlitedb.New(db), db, metrics)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

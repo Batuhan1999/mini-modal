@@ -10,7 +10,37 @@ import (
 	jobmodel "mini-modal/internal/job"
 	"mini-modal/internal/store/sqlite"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
+
+func TestServiceRecordsSubmittedJobMetric(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	metrics := NewMetrics(registry)
+	service := newTestServiceWithMetrics(t, nil, metrics)
+
+	if _, err := service.Submit(context.Background(), jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "echo",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() != "mini_modal_jobs_submitted_total" {
+			continue
+		}
+		if len(family.Metric) != 1 || family.Metric[0].GetCounter().GetValue() != 1 {
+			t.Fatalf("submitted metric = %+v, want 1", family.Metric)
+		}
+		return
+	}
+	t.Fatal("mini_modal_jobs_submitted_total was not gathered")
+}
 
 func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	ctx := context.Background()
@@ -160,7 +190,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewService(NewRuntimeState(), sqlitedb.New(db), db)
+	service := NewService(NewRuntimeState(), sqlitedb.New(db), db, newTestMetrics())
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +218,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	restarted := NewService(NewRuntimeState(), sqlitedb.New(db), db)
+	restarted := NewService(NewRuntimeState(), sqlitedb.New(db), db, newTestMetrics())
 	if err := restarted.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +340,7 @@ func TestServiceRecordsFailedJobEvent(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("claim assignment: found=%v err=%v", found, err)
 	}
-	if err := service.Fail(ctx, assignment, "executor failed"); err != nil {
+	if err := service.Fail(ctx, assignment, domain.FailureExecutionError, "executor failed"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -337,7 +367,7 @@ func TestServiceRetriesFailedJobAfterBackoff(t *testing.T) {
 		t.Fatalf("claim assignment: found=%v err=%v", found, err)
 	}
 
-	if err := service.Fail(ctx, assignment, "executor failed"); err != nil {
+	if err := service.Fail(ctx, assignment, domain.FailureExecutionError, "executor failed"); err != nil {
 		t.Fatal(err)
 	}
 	retrying, err := service.Job(ctx, assignment.JobID)
@@ -415,6 +445,10 @@ func TestServiceRecordsExpiredLeaseEvent(t *testing.T) {
 }
 
 func newTestService(t *testing.T, nodes []domain.Node) *Service {
+	return newTestServiceWithMetrics(t, nodes, newTestMetrics())
+}
+
+func newTestServiceWithMetrics(t *testing.T, nodes []domain.Node, metrics *Metrics) *Service {
 	t.Helper()
 	ctx := context.Background()
 	db, err := sqlite.Open(ctx, ":memory:")
@@ -423,7 +457,7 @@ func newTestService(t *testing.T, nodes []domain.Node) *Service {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	service := NewService(NewRuntimeState(), sqlitedb.New(db), db)
+	service := NewService(NewRuntimeState(), sqlitedb.New(db), db, metrics)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -433,6 +467,10 @@ func newTestService(t *testing.T, nodes []domain.Node) *Service {
 		}
 	}
 	return service
+}
+
+func newTestMetrics() *Metrics {
+	return NewMetrics(prometheus.NewRegistry())
 }
 
 func listTestJobEvents(t *testing.T, service *Service, jobID string, attempt int64) []sqlitedb.JobEvent {

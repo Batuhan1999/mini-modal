@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -32,6 +33,8 @@ func main() {
 	totalGPUs := flag.Int64("gpus", 0, "number of GPUs exposed by this node")
 	totalCPUs := flag.Int64("cpus", 8, "number of CPU cores exposed by this node")
 	totalMemoryGB := flag.Int64("memory-gb", 16, "memory in GB exposed by this node")
+	executorName := flag.String("executor", "fake", "executor implementation: fake, process, or docker")
+	dockerBinary := flag.String("docker-binary", "docker", "Docker CLI path when using the docker executor")
 
 	flag.Parse()
 	*nodeID = strings.TrimSpace(*nodeID)
@@ -46,6 +49,10 @@ func main() {
 	}
 	if *totalMemoryGB <= 0 {
 		log.Fatal("-memory-gb must be greater than zero")
+	}
+	selectedExecutor, err := selectExecutor(*executorName, *dockerBinary)
+	if err != nil {
+		log.Fatal(err)
 	}
 	log.SetPrefix("agent " + *nodeID + ": ")
 
@@ -83,7 +90,7 @@ func main() {
 	agent := agent.New(
 		*nodeID,
 		client,
-		executor.DockerExecutor{},
+		selectedExecutor,
 		250*time.Millisecond,
 	)
 
@@ -111,4 +118,17 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("agent stopped")
+}
+
+func selectExecutor(name, dockerBinary string) (executor.Executor, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "fake":
+		return executor.Fake{}, nil
+	case "process":
+		return executor.ProcessExecutor{}, nil
+	case "docker":
+		return executor.DockerExecutor{Binary: strings.TrimSpace(dockerBinary)}, nil
+	default:
+		return nil, fmt.Errorf("unknown executor %q: use fake, process, or docker", name)
+	}
 }

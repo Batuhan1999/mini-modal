@@ -21,6 +21,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type FailureReason int32
+
+const (
+	FailureReason_FAILURE_REASON_UNSPECIFIED     FailureReason = 0
+	FailureReason_FAILURE_REASON_EXECUTION_ERROR FailureReason = 1
+	FailureReason_FAILURE_REASON_TIMEOUT         FailureReason = 2
+)
+
+// Enum value maps for FailureReason.
+var (
+	FailureReason_name = map[int32]string{
+		0: "FAILURE_REASON_UNSPECIFIED",
+		1: "FAILURE_REASON_EXECUTION_ERROR",
+		2: "FAILURE_REASON_TIMEOUT",
+	}
+	FailureReason_value = map[string]int32{
+		"FAILURE_REASON_UNSPECIFIED":     0,
+		"FAILURE_REASON_EXECUTION_ERROR": 1,
+		"FAILURE_REASON_TIMEOUT":         2,
+	}
+)
+
+func (x FailureReason) Enum() *FailureReason {
+	p := new(FailureReason)
+	*p = x
+	return p
+}
+
+func (x FailureReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FailureReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_agent_v1_agent_proto_enumTypes[0].Descriptor()
+}
+
+func (FailureReason) Type() protoreflect.EnumType {
+	return &file_agent_v1_agent_proto_enumTypes[0]
+}
+
+func (x FailureReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FailureReason.Descriptor instead.
+func (FailureReason) EnumDescriptor() ([]byte, []int) {
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+}
+
 type LogSource int32
 
 const (
@@ -57,11 +106,11 @@ func (x LogSource) String() string {
 }
 
 func (LogSource) Descriptor() protoreflect.EnumDescriptor {
-	return file_agent_v1_agent_proto_enumTypes[0].Descriptor()
+	return file_agent_v1_agent_proto_enumTypes[1].Descriptor()
 }
 
 func (LogSource) Type() protoreflect.EnumType {
-	return &file_agent_v1_agent_proto_enumTypes[0]
+	return &file_agent_v1_agent_proto_enumTypes[1]
 }
 
 func (x LogSource) Number() protoreflect.EnumNumber {
@@ -70,7 +119,7 @@ func (x LogSource) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LogSource.Descriptor instead.
 func (LogSource) EnumDescriptor() ([]byte, []int) {
-	return file_agent_v1_agent_proto_rawDescGZIP(), []int{0}
+	return file_agent_v1_agent_proto_rawDescGZIP(), []int{1}
 }
 
 type Assignment struct {
@@ -362,6 +411,7 @@ type FailRequest struct {
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	Attempt       int64                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
 	LastError     string                 `protobuf:"bytes,3,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	Reason        FailureReason          `protobuf:"varint,4,opt,name=reason,proto3,enum=minimodal.agent.v1.FailureReason" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -415,6 +465,13 @@ func (x *FailRequest) GetLastError() string {
 		return x.LastError
 	}
 	return ""
+}
+
+func (x *FailRequest) GetReason() FailureReason {
+	if x != nil {
+		return x.Reason
+	}
+	return FailureReason_FAILURE_REASON_UNSPECIFIED
 }
 
 type FailResponse struct {
@@ -974,12 +1031,13 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x0fCompleteRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\"\x12\n" +
-	"\x10CompleteResponse\"]\n" +
+	"\x10CompleteResponse\"\x98\x01\n" +
 	"\vFailRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\x12\x1d\n" +
 	"\n" +
-	"last_error\x18\x03 \x01(\tR\tlastError\"\x0e\n" +
+	"last_error\x18\x03 \x01(\tR\tlastError\x129\n" +
+	"\x06reason\x18\x04 \x01(\x0e2!.minimodal.agent.v1.FailureReasonR\x06reason\"\x0e\n" +
 	"\fFailResponse\"=\n" +
 	"\x12StreamLogsResponse\x12'\n" +
 	"\x0fchunks_received\x18\x01 \x01(\x03R\x0echunksReceived\"\xd8\x01\n" +
@@ -1011,7 +1069,11 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\rshould_cancel\x18\x01 \x01(\bR\fshouldCancel\"+\n" +
 	"\x10HeartbeatRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x13\n" +
-	"\x11HeartbeatResponse*l\n" +
+	"\x11HeartbeatResponse*o\n" +
+	"\rFailureReason\x12\x1e\n" +
+	"\x1aFAILURE_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eFAILURE_REASON_EXECUTION_ERROR\x10\x01\x12\x1a\n" +
+	"\x16FAILURE_REASON_TIMEOUT\x10\x02*l\n" +
 	"\tLogSource\x12\x1a\n" +
 	"\x16LOG_SOURCE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_SOURCE_STDOUT\x10\x01\x12\x15\n" +
@@ -1040,53 +1102,55 @@ func file_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_agent_v1_agent_proto_rawDescData
 }
 
-var file_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_agent_v1_agent_proto_goTypes = []any{
-	(LogSource)(0),                  // 0: minimodal.agent.v1.LogSource
-	(*Assignment)(nil),              // 1: minimodal.agent.v1.Assignment
-	(*ClaimRequest)(nil),            // 2: minimodal.agent.v1.ClaimRequest
-	(*ClaimResponse)(nil),           // 3: minimodal.agent.v1.ClaimResponse
-	(*CompleteRequest)(nil),         // 4: minimodal.agent.v1.CompleteRequest
-	(*CompleteResponse)(nil),        // 5: minimodal.agent.v1.CompleteResponse
-	(*FailRequest)(nil),             // 6: minimodal.agent.v1.FailRequest
-	(*FailResponse)(nil),            // 7: minimodal.agent.v1.FailResponse
-	(*StreamLogsResponse)(nil),      // 8: minimodal.agent.v1.StreamLogsResponse
-	(*StreamLogsRequest)(nil),       // 9: minimodal.agent.v1.StreamLogsRequest
-	(*CancelRequest)(nil),           // 10: minimodal.agent.v1.CancelRequest
-	(*CancelResponse)(nil),          // 11: minimodal.agent.v1.CancelResponse
-	(*RegisterNodeRequest)(nil),     // 12: minimodal.agent.v1.RegisterNodeRequest
-	(*RegisterNodeResponse)(nil),    // 13: minimodal.agent.v1.RegisterNodeResponse
-	(*RenewAssignmentRequest)(nil),  // 14: minimodal.agent.v1.RenewAssignmentRequest
-	(*RenewAssignmentResponse)(nil), // 15: minimodal.agent.v1.RenewAssignmentResponse
-	(*HeartbeatRequest)(nil),        // 16: minimodal.agent.v1.HeartbeatRequest
-	(*HeartbeatResponse)(nil),       // 17: minimodal.agent.v1.HeartbeatResponse
+	(FailureReason)(0),              // 0: minimodal.agent.v1.FailureReason
+	(LogSource)(0),                  // 1: minimodal.agent.v1.LogSource
+	(*Assignment)(nil),              // 2: minimodal.agent.v1.Assignment
+	(*ClaimRequest)(nil),            // 3: minimodal.agent.v1.ClaimRequest
+	(*ClaimResponse)(nil),           // 4: minimodal.agent.v1.ClaimResponse
+	(*CompleteRequest)(nil),         // 5: minimodal.agent.v1.CompleteRequest
+	(*CompleteResponse)(nil),        // 6: minimodal.agent.v1.CompleteResponse
+	(*FailRequest)(nil),             // 7: minimodal.agent.v1.FailRequest
+	(*FailResponse)(nil),            // 8: minimodal.agent.v1.FailResponse
+	(*StreamLogsResponse)(nil),      // 9: minimodal.agent.v1.StreamLogsResponse
+	(*StreamLogsRequest)(nil),       // 10: minimodal.agent.v1.StreamLogsRequest
+	(*CancelRequest)(nil),           // 11: minimodal.agent.v1.CancelRequest
+	(*CancelResponse)(nil),          // 12: minimodal.agent.v1.CancelResponse
+	(*RegisterNodeRequest)(nil),     // 13: minimodal.agent.v1.RegisterNodeRequest
+	(*RegisterNodeResponse)(nil),    // 14: minimodal.agent.v1.RegisterNodeResponse
+	(*RenewAssignmentRequest)(nil),  // 15: minimodal.agent.v1.RenewAssignmentRequest
+	(*RenewAssignmentResponse)(nil), // 16: minimodal.agent.v1.RenewAssignmentResponse
+	(*HeartbeatRequest)(nil),        // 17: minimodal.agent.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil),       // 18: minimodal.agent.v1.HeartbeatResponse
 }
 var file_agent_v1_agent_proto_depIdxs = []int32{
-	1,  // 0: minimodal.agent.v1.ClaimResponse.assignment:type_name -> minimodal.agent.v1.Assignment
-	0,  // 1: minimodal.agent.v1.StreamLogsRequest.source:type_name -> minimodal.agent.v1.LogSource
-	1,  // 2: minimodal.agent.v1.RenewAssignmentRequest.assignment:type_name -> minimodal.agent.v1.Assignment
-	2,  // 3: minimodal.agent.v1.AgentService.Claim:input_type -> minimodal.agent.v1.ClaimRequest
-	4,  // 4: minimodal.agent.v1.AgentService.Complete:input_type -> minimodal.agent.v1.CompleteRequest
-	6,  // 5: minimodal.agent.v1.AgentService.Fail:input_type -> minimodal.agent.v1.FailRequest
-	10, // 6: minimodal.agent.v1.AgentService.Cancel:input_type -> minimodal.agent.v1.CancelRequest
-	12, // 7: minimodal.agent.v1.AgentService.RegisterNode:input_type -> minimodal.agent.v1.RegisterNodeRequest
-	16, // 8: minimodal.agent.v1.AgentService.Heartbeat:input_type -> minimodal.agent.v1.HeartbeatRequest
-	14, // 9: minimodal.agent.v1.AgentService.RenewAssignment:input_type -> minimodal.agent.v1.RenewAssignmentRequest
-	9,  // 10: minimodal.agent.v1.AgentService.StreamLogs:input_type -> minimodal.agent.v1.StreamLogsRequest
-	3,  // 11: minimodal.agent.v1.AgentService.Claim:output_type -> minimodal.agent.v1.ClaimResponse
-	5,  // 12: minimodal.agent.v1.AgentService.Complete:output_type -> minimodal.agent.v1.CompleteResponse
-	7,  // 13: minimodal.agent.v1.AgentService.Fail:output_type -> minimodal.agent.v1.FailResponse
-	11, // 14: minimodal.agent.v1.AgentService.Cancel:output_type -> minimodal.agent.v1.CancelResponse
-	13, // 15: minimodal.agent.v1.AgentService.RegisterNode:output_type -> minimodal.agent.v1.RegisterNodeResponse
-	17, // 16: minimodal.agent.v1.AgentService.Heartbeat:output_type -> minimodal.agent.v1.HeartbeatResponse
-	15, // 17: minimodal.agent.v1.AgentService.RenewAssignment:output_type -> minimodal.agent.v1.RenewAssignmentResponse
-	8,  // 18: minimodal.agent.v1.AgentService.StreamLogs:output_type -> minimodal.agent.v1.StreamLogsResponse
-	11, // [11:19] is the sub-list for method output_type
-	3,  // [3:11] is the sub-list for method input_type
-	3,  // [3:3] is the sub-list for extension type_name
-	3,  // [3:3] is the sub-list for extension extendee
-	0,  // [0:3] is the sub-list for field type_name
+	2,  // 0: minimodal.agent.v1.ClaimResponse.assignment:type_name -> minimodal.agent.v1.Assignment
+	0,  // 1: minimodal.agent.v1.FailRequest.reason:type_name -> minimodal.agent.v1.FailureReason
+	1,  // 2: minimodal.agent.v1.StreamLogsRequest.source:type_name -> minimodal.agent.v1.LogSource
+	2,  // 3: minimodal.agent.v1.RenewAssignmentRequest.assignment:type_name -> minimodal.agent.v1.Assignment
+	3,  // 4: minimodal.agent.v1.AgentService.Claim:input_type -> minimodal.agent.v1.ClaimRequest
+	5,  // 5: minimodal.agent.v1.AgentService.Complete:input_type -> minimodal.agent.v1.CompleteRequest
+	7,  // 6: minimodal.agent.v1.AgentService.Fail:input_type -> minimodal.agent.v1.FailRequest
+	11, // 7: minimodal.agent.v1.AgentService.Cancel:input_type -> minimodal.agent.v1.CancelRequest
+	13, // 8: minimodal.agent.v1.AgentService.RegisterNode:input_type -> minimodal.agent.v1.RegisterNodeRequest
+	17, // 9: minimodal.agent.v1.AgentService.Heartbeat:input_type -> minimodal.agent.v1.HeartbeatRequest
+	15, // 10: minimodal.agent.v1.AgentService.RenewAssignment:input_type -> minimodal.agent.v1.RenewAssignmentRequest
+	10, // 11: minimodal.agent.v1.AgentService.StreamLogs:input_type -> minimodal.agent.v1.StreamLogsRequest
+	4,  // 12: minimodal.agent.v1.AgentService.Claim:output_type -> minimodal.agent.v1.ClaimResponse
+	6,  // 13: minimodal.agent.v1.AgentService.Complete:output_type -> minimodal.agent.v1.CompleteResponse
+	8,  // 14: minimodal.agent.v1.AgentService.Fail:output_type -> minimodal.agent.v1.FailResponse
+	12, // 15: minimodal.agent.v1.AgentService.Cancel:output_type -> minimodal.agent.v1.CancelResponse
+	14, // 16: minimodal.agent.v1.AgentService.RegisterNode:output_type -> minimodal.agent.v1.RegisterNodeResponse
+	18, // 17: minimodal.agent.v1.AgentService.Heartbeat:output_type -> minimodal.agent.v1.HeartbeatResponse
+	16, // 18: minimodal.agent.v1.AgentService.RenewAssignment:output_type -> minimodal.agent.v1.RenewAssignmentResponse
+	9,  // 19: minimodal.agent.v1.AgentService.StreamLogs:output_type -> minimodal.agent.v1.StreamLogsResponse
+	12, // [12:20] is the sub-list for method output_type
+	4,  // [4:12] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_agent_v1_agent_proto_init() }
@@ -1099,7 +1163,7 @@ func file_agent_v1_agent_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agent_v1_agent_proto_rawDesc), len(file_agent_v1_agent_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,

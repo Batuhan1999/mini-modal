@@ -7,9 +7,10 @@ milestone to official architecture documentation, engineering articles, videos,
 open-source implementations and distributed-systems material.
 
 The current version has a SQLite-backed control plane, a public HTTP API, gRPC
-communication with polling node agents, durable assignment leases, a fake
-executor, and a browser dashboard with a local development-agent launcher.
-There is no container runtime or real GPU execution yet.
+communication with polling node agents, durable assignment leases, retries,
+cancellation, streamed logs, a Docker executor, Prometheus metrics, and a
+browser dashboard with a local development-agent launcher. There is no real
+GPU execution yet.
 
 ## Run it
 
@@ -39,17 +40,80 @@ Air watches Go and embedded web source files, rebuilds both executables, and
 restarts `cmd/controlplane` after a change. It is a development tool and is not
 used in production.
 
+### Resource-limited development box
+
+To develop and benchmark inside a fixed 4-CPU, 6-GiB, 1,024-PID Linux
+environment:
+
+```bash
+make box-build
+make box-up
+make box-limits
+make box-dev
+```
+
+Run `make box-dev` in one terminal and use `make box-shell` from another. Cursor
+can also reopen the repository through `.devcontainer/devcontainer.json`.
+Configuration and benchmark methodology are documented in
+[docs/benchmarking.md](docs/benchmarking.md).
+
 The API listens on `http://localhost:8080`:
 
 ```text
 POST /v1/jobs
 GET  /v1/jobs
 GET  /v1/jobs/{id}
+POST /v1/jobs/{id}/cancel
+GET  /v1/jobs/{id}/logs
+GET  /v1/jobs/{id}/events
 GET  /v1/nodes
 GET  /v1/dev/nodes
 PUT  /v1/dev/nodes
 DELETE /v1/dev/nodes
+GET  /metrics
 ```
+
+## Run a workload simulation
+
+The simulator is an HTTP client, not an in-process fake. Start the control
+plane and enough agents first, then run:
+
+```bash
+go run ./cmd/simulator -jobs 100 -rate 10 -failure-fraction 0.1 -timeout-fraction 0.1
+```
+
+`-rate 0` submits the workload as a burst. The seed is deterministic, and the
+simulator waits for its jobs to reach a terminal state before printing a
+summary. Under heavier local Docker load, increase `-timeout-headroom` so
+container startup does not turn intended successes into timeouts. See every
+option with `go run ./cmd/simulator -help`.
+
+For admission-only measurements, use concurrent submitters without retaining
+or polling every job:
+
+```bash
+go run ./cmd/simulator -jobs 10000 -rate 0 -concurrency 32 -submit-only
+```
+
+## Observe it with Prometheus and Grafana
+
+The control plane exports process, Go runtime, scheduler, queue, job, retry,
+lease, log, node-health, and resource metrics at
+[http://localhost:8080/metrics](http://localhost:8080/metrics).
+
+With the control plane running on the host, start the local observability
+stack:
+
+```bash
+docker compose -f compose.observability.yml up -d
+```
+
+- Prometheus: [http://localhost:9091](http://localhost:9091)
+- Grafana: [http://localhost:3000](http://localhost:3000)
+
+Grafana starts with an anonymous read-only login, the Prometheus data source,
+and the **Mini Modal Overview** dashboard already provisioned. Stop the stack
+with `docker compose -f compose.observability.yml down`.
 
 ## Test it
 
@@ -83,9 +147,13 @@ The project currently:
 - lets node agents claim assigned work;
 - stores jobs, nodes, attempts, and assignment leases in SQLite;
 - connects agent processes to the control plane over gRPC;
-- runs assignments with a fake executor before reporting completion or failure;
+- runs assignments in Docker containers with CPU and memory limits;
+- streams stdout, stderr, and system logs to the control plane;
+- retries failed or lease-expired attempts with configurable backoff;
+- supports execution timeouts and cancellation;
 - requeues work after an assignment lease expires; and
-- provides a dashboard and a local development-agent process manager.
+- provides a dashboard, a local development-agent process manager, a public
+  workload simulator, and Prometheus/Grafana observability.
 
 The current request path is:
 
@@ -93,38 +161,33 @@ The current request path is:
 dashboard / HTTP API -> control-plane service -> SQLite -> scheduler
                               ^                         |
                               |                         v
-node agent -> gRPC -> claim -> fake executor -> completion or failure
+node agent -> gRPC -> claim -> Docker executor -> completion or failure
                               ^
 locally launched agent -------+
 ```
 
 ## Suggested milestones
 
-### 1. Scheduler core
+### 1. Load and reliability
 
-- Add FCFS, priority, bin-packing, and spreading policies.
-- Add job completion and resource release.
-- Add a deterministic simulator that generates workloads.
-- Benchmark scheduling latency and decisions per second.
+- Add named simulator scenarios and machine-readable result reports.
+- Measure scheduler throughput and HTTP/gRPC latency under increasing load.
+- Exercise agent loss, control-plane restart, and slow log-upload scenarios.
 
-### 2. Control plane
+### 2. Production persistence
 
-- Extend the HTTP API with cancellation and internal agent operations.
-- Add PostgreSQL persistence and migrations.
-- Add job state transitions and idempotency keys.
+- Move from SQLite to PostgreSQL when multiple control-plane replicas are
+  needed.
+- Add idempotency keys for submission and durable node-heartbeat ownership.
 
-### 3. Data plane
+### 3. Isolation and images
 
-- Move the node agent into its own process and connect it over an internal API.
-- Add heartbeats and leases.
-- Replace fake execution with local Docker containers.
-- Stream logs and collect exit codes.
+- Add image caching and warm container pools.
+- Add stronger sandboxing with a microVM runtime.
+- Add network, filesystem, and execution-policy controls.
 
-### 4. Distributed systems
+### 4. Distributed scheduling
 
 - Add scheduler leader election.
-- Recover assignments after scheduler or node failure.
 - Add multiple queues, quotas, fairness, preemption, and gang scheduling.
 - Add an autoscaler and warm worker pools.
-
-Do not add these pieces until the scheduler core is understandable and tested.

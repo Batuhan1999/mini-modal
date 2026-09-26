@@ -27,14 +27,15 @@ func (f *fakeControlPlane) RenewAssignment(
 }
 
 type fakeControlPlane struct {
-	mu            sync.Mutex
-	claims        []claimResponse
-	completed     chan domain.Assignment
-	failed        chan domain.Assignment
-	failureErrors chan string
-	cancelled     chan domain.Assignment
-	logs          chan domain.LogStream
-	shouldCancel  bool
+	mu             sync.Mutex
+	claims         []claimResponse
+	completed      chan domain.Assignment
+	failed         chan domain.Assignment
+	failureErrors  chan string
+	failureReasons chan domain.FailureReason
+	cancelled      chan domain.Assignment
+	logs           chan domain.LogStream
+	shouldCancel   bool
 }
 
 func (f *fakeControlPlane) Claim(ctx context.Context, nodeID string) (domain.Assignment, bool, error) {
@@ -55,8 +56,16 @@ func (f *fakeControlPlane) Complete(ctx context.Context, assignment domain.Assig
 	return nil
 }
 
-func (f *fakeControlPlane) Fail(ctx context.Context, assignment domain.Assignment, lastError string) error {
+func (f *fakeControlPlane) Fail(
+	ctx context.Context,
+	assignment domain.Assignment,
+	reason domain.FailureReason,
+	lastError string,
+) error {
 	f.failed <- assignment
+	if f.failureReasons != nil {
+		f.failureReasons <- reason
+	}
 	if f.failureErrors != nil {
 		f.failureErrors <- lastError
 	}
@@ -156,10 +165,11 @@ func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
 func TestAgentReportsExecutionFailure(t *testing.T) {
 	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 1}
 	controlPlane := &fakeControlPlane{
-		claims:        []claimResponse{{assignment: assignment, found: true}},
-		completed:     make(chan domain.Assignment, 1),
-		failed:        make(chan domain.Assignment, 1),
-		failureErrors: make(chan string, 1),
+		claims:         []claimResponse{{assignment: assignment, found: true}},
+		completed:      make(chan domain.Assignment, 1),
+		failed:         make(chan domain.Assignment, 1),
+		failureErrors:  make(chan string, 1),
+		failureReasons: make(chan domain.FailureReason, 1),
 	}
 	agent := New("node-a", controlPlane, fakeExecutor{err: errors.New("executor failed")}, time.Millisecond)
 
@@ -185,6 +195,14 @@ func TestAgentReportsExecutionFailure(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for execution error")
+	}
+	select {
+	case reason := <-controlPlane.failureReasons:
+		if reason != domain.FailureExecutionError {
+			t.Fatalf("failure reason = %q, want %q", reason, domain.FailureExecutionError)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for failure reason")
 	}
 
 	cancel()

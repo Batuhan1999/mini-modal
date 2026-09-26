@@ -38,6 +38,13 @@ type Assignment struct {
 	DurationSeconds int64
 }
 
+type FailureReason string
+
+const (
+	FailureExecutionError FailureReason = "execution_error"
+	FailureTimeout        FailureReason = "timeout"
+)
+
 func (n Node) CanRun(job sqlitedb.Job) bool {
 	return (job.GpuType == "" || job.GpuType == n.GPUType) &&
 		job.Gpus <= n.AvailableGPUs &&

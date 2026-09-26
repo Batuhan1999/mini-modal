@@ -123,13 +123,30 @@ func (c *Client) Cancel(ctx context.Context, assignment domain.Assignment) error
 	return err
 }
 
-func (c *Client) Fail(ctx context.Context, assignment domain.Assignment, lastError string) error {
+func (c *Client) Fail(
+	ctx context.Context,
+	assignment domain.Assignment,
+	reason domain.FailureReason,
+	lastError string,
+) error {
 	_, err := c.client.Fail(ctx, &agentv1.FailRequest{
 		JobId:     assignment.JobID,
 		Attempt:   assignment.Attempt,
 		LastError: lastError,
+		Reason:    failureReasonToProto(reason),
 	})
 	return err
+}
+
+func failureReasonToProto(reason domain.FailureReason) agentv1.FailureReason {
+	switch reason {
+	case domain.FailureExecutionError:
+		return agentv1.FailureReason_FAILURE_REASON_EXECUTION_ERROR
+	case domain.FailureTimeout:
+		return agentv1.FailureReason_FAILURE_REASON_TIMEOUT
+	default:
+		return agentv1.FailureReason_FAILURE_REASON_UNSPECIFIED
+	}
 }
 
 func (c *Client) RegisterNode(ctx context.Context, node domain.Node) error {

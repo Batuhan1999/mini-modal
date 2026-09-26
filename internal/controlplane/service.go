@@ -32,20 +32,23 @@ type Service struct {
 	queries sqlitedb.Querier
 	policy  *scheduler.Policy
 	db      *sql.DB
+	metrics *Metrics
 }
 
-func NewService(runtime *RuntimeState, queries sqlitedb.Querier, db *sql.DB) *Service {
+func NewService(runtime *RuntimeState, queries sqlitedb.Querier, db *sql.DB, metrics *Metrics) *Service {
 	return &Service{
 		runtime: runtime,
 		queries: queries,
 		db:      db,
 		policy:  scheduler.NewFirstFitPolicy(),
+		metrics: metrics,
 	}
 }
 
 func (s *Service) Initialize(ctx context.Context) error {
-	_ = ctx
-	return nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.refreshMetricsLocked(ctx)
 }
 
 func (s *Service) Cancel(ctx context.Context, assignment domain.Assignment) error {
@@ -94,6 +97,8 @@ func (s *Service) Cancel(ctx context.Context, assignment domain.Assignment) erro
 	if err != nil {
 		return fmt.Errorf("acknowledge cancellation for job %q: %w", assignment.JobID, err)
 	}
+	s.metrics.RecordAttemptFinished(job.ID, job.Attempt, "cancelled", now)
+	s.metrics.RecordJobFinished(job.ID, string(jobmodel.Cancelled), now)
 	if err := s.scheduleLocked(ctx); err != nil {
 		log.Printf("job %q was cancelled but scheduling failed: %v", job.ID, err)
 	}
@@ -127,6 +132,9 @@ func (s *Service) Run(ctx context.Context) {
 			if err := s.scheduleLocked(ctx); err != nil {
 				log.Printf("failed to schedule jobs: %v", err)
 			}
+			if err := s.refreshMetricsLocked(ctx); err != nil {
+				log.Printf("failed to refresh metrics: %v", err)
+			}
 			s.mu.Unlock()
 		}
 	}
@@ -138,6 +146,7 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 
 	type cancellationResult struct {
 		schedule bool
+		terminal bool
 	}
 
 	now := time.Now()
@@ -178,7 +187,7 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 			); err != nil {
 				return cancellationResult{}, err
 			}
-			return cancellationResult{schedule: true}, nil
+			return cancellationResult{schedule: true, terminal: true}, nil
 
 		case jobmodel.Cancelling:
 			updated, err := queries.StartCancelJob(ctx, jobID)
@@ -209,6 +218,9 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 	}
 	if err != nil {
 		return err
+	}
+	if result.terminal {
+		s.metrics.RecordJobFinished(jobID, string(jobmodel.Cancelled), now)
 	}
 	if result.schedule {
 		return s.scheduleLocked(ctx)
@@ -281,6 +293,8 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 	if err != nil {
 		return sqlitedb.Job{}, fmt.Errorf("create job %q: %w", params.ID, err)
 	}
+
+	s.metrics.RecordJobSubmitted(params.ID, now)
 	if err := s.scheduleLocked(ctx); err != nil {
 		log.Printf("job %q was stored but could not be scheduled: %v", params.ID, err)
 		return created, nil
@@ -355,19 +369,31 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 	if err != nil {
 		return domain.Assignment{}, false, fmt.Errorf("claim job for node %q: %w", nodeID, err)
 	}
+	s.metrics.RecordAttemptStarted(assignment.JobID, assignment.Attempt, now)
 
 	return assignment, true, nil
 }
 
 func (s *Service) Complete(ctx context.Context, assignment domain.Assignment) error {
-	return s.finish(ctx, assignment, jobmodel.EventComplete, "")
+	return s.finish(ctx, assignment, jobmodel.EventComplete, "", "")
 }
 
-func (s *Service) Fail(ctx context.Context, assignment domain.Assignment, lastError string) error {
-	return s.finish(ctx, assignment, jobmodel.EventFail, lastError)
+func (s *Service) Fail(
+	ctx context.Context,
+	assignment domain.Assignment,
+	reason domain.FailureReason,
+	lastError string,
+) error {
+	return s.finish(ctx, assignment, jobmodel.EventFail, reason, lastError)
 }
 
-func (s *Service) finish(ctx context.Context, assignment domain.Assignment, event jobmodel.Event, lastError string) error {
+func (s *Service) finish(
+	ctx context.Context,
+	assignment domain.Assignment,
+	event jobmodel.Event,
+	failureReason domain.FailureReason,
+	lastError string,
+) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -447,6 +473,17 @@ func (s *Service) finish(ctx context.Context, assignment domain.Assignment, even
 	}
 	if err != nil {
 		return fmt.Errorf("finish job %q: %w", assignment.JobID, err)
+	}
+	result := string(jobmodel.Succeeded)
+	if event == jobmodel.EventScheduleRetry {
+		result = string(failureReason)
+		s.metrics.RecordRetryScheduled(result)
+	} else if event == jobmodel.EventFail {
+		result = string(failureReason)
+	}
+	s.metrics.RecordAttemptFinished(job.ID, assignment.Attempt, result, now)
+	if jobmodel.Status(job.Status).Terminal() {
+		s.metrics.RecordJobFinished(job.ID, job.Status, now)
 	}
 
 	if err := s.scheduleLocked(ctx); err != nil {
@@ -562,7 +599,10 @@ func (s *Service) NodeHealthy(nodeID string) bool {
 	return s.runtime.NodeHealthy(nodeID, time.Now())
 }
 
-func (s *Service) scheduleLocked(ctx context.Context) error {
+func (s *Service) scheduleLocked(ctx context.Context) (err error) {
+	startedAt := time.Now()
+	defer func() { s.metrics.RecordSchedulerRun(startedAt, err) }()
+
 	jobs, err := s.queries.ListPendingJobs(ctx)
 	if err != nil {
 		return fmt.Errorf("list pending jobs: %w", err)
@@ -676,7 +716,13 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 		failed    int
 		cancelled int
 	}
+	type expiredJobs struct {
+		retrying  []sqlitedb.Job
+		failed    []sqlitedb.Job
+		cancelled []sqlitedb.Job
+	}
 
+	jobsResult := expiredJobs{}
 	result, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (expirationResult, error) {
 		active, err := queries.ListActiveJobs(ctx)
 		if err != nil {
@@ -748,6 +794,7 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 			}
 		}
 
+		jobsResult = expiredJobs{retrying: retrying, failed: failed, cancelled: cancelled}
 		return expirationResult{
 			retrying:  len(retrying),
 			failed:    len(failed),
@@ -756,6 +803,21 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 	})
 	if err != nil {
 		return 0, err
+	}
+	for _, job := range jobsResult.retrying {
+		s.metrics.RecordLeaseExpiration()
+		s.metrics.RecordAttemptFinished(job.ID, job.Attempt, "lease_expired", now)
+		s.metrics.RecordRetryScheduled("lease_expired")
+	}
+	for _, job := range jobsResult.failed {
+		s.metrics.RecordLeaseExpiration()
+		s.metrics.RecordAttemptFinished(job.ID, job.Attempt, "lease_expired", now)
+		s.metrics.RecordJobFinished(job.ID, string(jobmodel.Failed), now)
+	}
+	for _, job := range jobsResult.cancelled {
+		s.metrics.RecordLeaseExpiration()
+		s.metrics.RecordAttemptFinished(job.ID, job.Attempt, "cancelled", now)
+		s.metrics.RecordJobFinished(job.ID, string(jobmodel.Cancelled), now)
 	}
 	return result.retrying + result.failed + result.cancelled, nil
 }
@@ -782,6 +844,9 @@ func (s *Service) releaseDueRetriesLocked(ctx context.Context, now time.Time) (i
 	})
 	if err != nil {
 		return 0, err
+	}
+	for _, job := range released {
+		s.metrics.RecordRetryReady(job.ID, now)
 	}
 	return len(released), nil
 }
@@ -874,6 +939,20 @@ func (s *Service) CreateJobLog(ctx context.Context, logStream domain.LogStream) 
 	if err != nil {
 		return fmt.Errorf("create job log: %w", err)
 	}
+	s.metrics.RecordLogBytes(source, len(logStream.Data))
+	return nil
+}
+
+func (s *Service) refreshMetricsLocked(ctx context.Context) error {
+	jobs, err := s.queries.ListJobs(ctx)
+	if err != nil {
+		return fmt.Errorf("list jobs for metrics: %w", err)
+	}
+	nodes, _, err := s.capacityNodesLocked(ctx, time.Now())
+	if err != nil {
+		return fmt.Errorf("list nodes for metrics: %w", err)
+	}
+	s.metrics.Refresh(jobs, nodes, s.NodeHealthy)
 	return nil
 }
 

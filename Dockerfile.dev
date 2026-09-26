@@ -1,0 +1,33 @@
+FROM golang:1.27-bookworm
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        make \
+        procps \
+        protobuf-compiler \
+        sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG USERNAME=developer
+ARG USER_UID=1000
+ARG USER_GID=1000
+
+RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
+    && useradd --uid "${USER_UID}" --gid "${USER_GID}" --create-home "${USERNAME}" \
+    && mkdir -p /workspace /home/${USERNAME}/go/pkg/mod /home/${USERNAME}/.cache/go-build \
+    && chown -R "${USERNAME}:${USERNAME}" /workspace /home/${USERNAME}
+
+ENV GOMODCACHE=/home/${USERNAME}/go/pkg/mod
+ENV GOCACHE=/home/${USERNAME}/.cache/go-build
+
+WORKDIR /workspace
+USER ${USERNAME}
+
+COPY --chown=${USERNAME}:${USERNAME} go.mod go.sum /tmp/mini-modal-deps/
+RUN cd /tmp/mini-modal-deps && go mod download
+
+CMD ["sleep", "infinity"]

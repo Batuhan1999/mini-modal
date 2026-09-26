@@ -2,6 +2,7 @@ package agentgrpc
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -228,15 +229,30 @@ func (s *Server) Fail(ctx context.Context, req *agentv1.FailRequest) (*agentv1.F
 	if attempt <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "attempt must be greater than 0")
 	}
+	reason, err := failureReasonFromProto(req.GetReason())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 
 	if err := s.service.Fail(ctx, domain.Assignment{
 		JobID:   jobID,
 		Attempt: attempt,
-	}, req.GetLastError()); err != nil {
+	}, reason, req.GetLastError()); err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "failed to fail job: %v", err)
 	}
 
 	return &agentv1.FailResponse{}, nil
+}
+
+func failureReasonFromProto(reason agentv1.FailureReason) (domain.FailureReason, error) {
+	switch reason {
+	case agentv1.FailureReason_FAILURE_REASON_EXECUTION_ERROR:
+		return domain.FailureExecutionError, nil
+	case agentv1.FailureReason_FAILURE_REASON_TIMEOUT:
+		return domain.FailureTimeout, nil
+	default:
+		return "", fmt.Errorf("failure reason is required")
+	}
 }
 
 func (s *Server) RegisterNode(ctx context.Context, req *agentv1.RegisterNodeRequest) (*agentv1.RegisterNodeResponse, error) {

@@ -16,6 +16,8 @@ import (
 	jobmodel "mini-modal/internal/job"
 	"mini-modal/internal/store/sqlite"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func TestJobEndpoints(t *testing.T) {
@@ -124,6 +126,21 @@ func TestJobEndpoints(t *testing.T) {
 	if len(logs) != 2 || logs[0].Data != "hello from the executor\n" || logs[0].Source != "stdout" ||
 		logs[1].Data != "pulling image\n" || logs[1].Source != "system" {
 		t.Fatalf("logs = %+v, want stdout and system chunks", logs)
+	}
+}
+
+func TestMetricsEndpoint(t *testing.T) {
+	server := newTestServer(t)
+	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	response := httptest.NewRecorder()
+
+	server.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("metrics status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if body := response.Body.String(); !strings.Contains(body, "mini_modal_jobs_submitted_total") {
+		t.Fatalf("metrics response does not contain mini-modal metrics: %s", body)
 	}
 }
 
@@ -303,7 +320,9 @@ func newTestServer(t *testing.T) *Server {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	service := controlplane.NewService(controlplane.NewRuntimeState(), sqlitedb.New(db), db)
+	registry := prometheus.NewRegistry()
+	metrics := controlplane.NewMetrics(registry)
+	service := controlplane.NewService(controlplane.NewRuntimeState(), sqlitedb.New(db), db, metrics)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +332,7 @@ func newTestServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 
-	return NewServer(service, &fakeDevNodeManager{})
+	return NewServer(service, &fakeDevNodeManager{}, registry)
 }
 
 type fakeDevNodeManager struct {

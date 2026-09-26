@@ -35,9 +35,16 @@ message FailRequest {
   string job_id = 1;
   int64 attempt = 2;
   string last_error = 3;
+  FailureReason reason = 4;
 }
 
 message FailResponse {}
+
+enum FailureReason {
+  FAILURE_REASON_UNSPECIFIED = 0;
+  FAILURE_REASON_EXECUTION_ERROR = 1;
+  FAILURE_REASON_TIMEOUT = 2;
+}
 
 enum LogSource {
   LOG_SOURCE_UNSPECIFIED = 0;

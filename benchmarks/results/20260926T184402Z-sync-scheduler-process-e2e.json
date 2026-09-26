@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260926T184402Z",
+  "benchmark_label": "sync-scheduler",
+  "scenario": "process-e2e",
+  "git_commit": "6657746",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "4294967296",
+    "pids": "1024"
+  },
+  "workload": {
+    "jobs": 128,
+    "concurrency": 16,
+    "agents": 4,
+    "executor": "process"
+  },
+  "storage": {
+    "database_bytes": 294912,
+    "jobs": 128
+  },
+  "result": {
+    "submitted": 128,
+    "submission_errors": 0,
+    "statuses": {
+      "succeeded": 128
+    },
+    "submission_elapsed_ns": 276616542,
+    "elapsed_ns": 9285069588,
+    "submission_latency_p50_ns": 29375292,
+    "submission_latency_p95_ns": 49552792,
+    "submission_latency_p99_ns": 55516375
+  }
+}

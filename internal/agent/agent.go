@@ -18,7 +18,7 @@ import (
 type ControlPlane interface {
 	Claim(ctx context.Context, nodeID string) (domain.Assignment, bool, error)
 	Complete(ctx context.Context, assignment domain.Assignment) error
-	Fail(ctx context.Context, assignment domain.Assignment, lastError string) error
+	Fail(ctx context.Context, assignment domain.Assignment, reason domain.FailureReason, lastError string) error
 	RenewAssignment(ctx context.Context, assignment domain.Assignment) (bool, error)
 	Cancel(ctx context.Context, assignment domain.Assignment) error
 	StreamLogs(ctx context.Context, chunks <-chan domain.LogStream) error
@@ -174,7 +174,7 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 			assignment,
 			"timeout",
 			func(ctx context.Context, assignment domain.Assignment) error {
-				return a.controlPlane.Fail(ctx, assignment, failureMessage)
+				return a.controlPlane.Fail(ctx, assignment, domain.FailureTimeout, failureMessage)
 			},
 		)
 		return
@@ -188,7 +188,7 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment)
 			assignment,
 			"failure",
 			func(ctx context.Context, assignment domain.Assignment) error {
-				return a.controlPlane.Fail(ctx, assignment, failureMessage)
+				return a.controlPlane.Fail(ctx, assignment, domain.FailureExecutionError, failureMessage)
 			},
 		)
 		return
