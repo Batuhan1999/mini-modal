@@ -46,6 +46,10 @@ time-varying host load is still a confounder. An alternating A/B run with host
 CPU and disk measurements would be the next diagnostic if the serial gap
 matters to a future optimization decision.
 
+Follow-up: the [alternating serial diagnostic](006-interleaved-serial-diagnostic.md)
+averaged 385.9 jobs/s before and 386.1 jobs/s after. The earlier 7.4% gap did
+not reproduce when the versions were interleaved.
+
 ## Raw data
 
 The previous version's three runs per scenario use the
