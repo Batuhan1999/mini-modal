@@ -41,6 +41,7 @@ func TestClaimAndComplete(t *testing.T) {
 	if _, err := service.Submit(context.Background(), job); err != nil {
 		t.Fatalf("submit job: %v", err)
 	}
+	scheduleTestJobs(t, service)
 
 	claimResponse, err := server.Claim(
 		context.Background(),
@@ -88,6 +89,7 @@ func TestRenewAndAcknowledgeCancellation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	scheduleTestJobs(t, service)
 	claim, err := server.Claim(ctx, &agentv1.ClaimRequest{NodeId: "node-a"})
 	if err != nil {
 		t.Fatal(err)
@@ -190,4 +192,13 @@ func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 	}
 
 	return NewServer(service), service
+}
+
+func scheduleTestJobs(t *testing.T, service *controlplane.Service) {
+	t.Helper()
+	if err := service.RegisterNode(context.Background(), domain.Node{
+		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
+	}); err != nil {
+		t.Fatal(err)
+	}
 }

@@ -270,7 +270,7 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	created, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+	_, err = withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
 		job, err := queries.CreateJob(ctx, params)
 		if err != nil {
 			return sqlitedb.Job{}, err
@@ -295,10 +295,6 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 	}
 
 	s.metrics.RecordJobSubmitted(params.ID, now)
-	if err := s.scheduleLocked(ctx); err != nil {
-		log.Printf("job %q was stored but could not be scheduled: %v", params.ID, err)
-		return created, nil
-	}
 
 	return s.queries.GetJob(ctx, params.ID)
 }

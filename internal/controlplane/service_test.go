@@ -55,6 +55,11 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	scheduleTestJobs(t, service, ctx)
+	job, err = service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if jobmodel.Status(job.Status) != jobmodel.Assigned {
 		t.Fatalf("got status %q after scheduling, want %q", job.Status, jobmodel.Assigned)
 	}
@@ -202,6 +207,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	scheduleTestJobs(t, service, ctx)
 	firstAssignment, found, err := service.Claim(ctx, node.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -259,6 +265,7 @@ func TestServiceCancelsRunningAssignment(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	scheduleTestJobs(t, service, ctx)
 	assignment, found, err := service.Claim(ctx, "node-a")
 	if err != nil || !found {
 		t.Fatalf("claim assignment: found=%v err=%v", found, err)
@@ -336,6 +343,7 @@ func TestServiceRecordsFailedJobEvent(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	scheduleTestJobs(t, service, ctx)
 	assignment, found, err := service.Claim(ctx, "node-a")
 	if err != nil || !found {
 		t.Fatalf("claim assignment: found=%v err=%v", found, err)
@@ -362,6 +370,7 @@ func TestServiceRetriesFailedJobAfterBackoff(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	scheduleTestJobs(t, service, ctx)
 	assignment, found, err := service.Claim(ctx, "node-a")
 	if err != nil || !found {
 		t.Fatalf("claim assignment: found=%v err=%v", found, err)
@@ -420,6 +429,7 @@ func TestServiceRecordsExpiredLeaseEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	scheduleTestJobs(t, service, ctx)
 
 	expired, err := service.expireAssignmentsLocked(ctx, time.Now().Add(assignmentLeaseDuration+time.Second))
 	if err != nil {
@@ -446,6 +456,15 @@ func TestServiceRecordsExpiredLeaseEvent(t *testing.T) {
 
 func newTestService(t *testing.T, nodes []domain.Node) *Service {
 	return newTestServiceWithMetrics(t, nodes, newTestMetrics())
+}
+
+func scheduleTestJobs(t *testing.T, service *Service, ctx context.Context) {
+	t.Helper()
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if err := service.scheduleLocked(ctx); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func newTestServiceWithMetrics(t *testing.T, nodes []domain.Node, metrics *Metrics) *Service {

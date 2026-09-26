@@ -45,7 +45,13 @@ esac
 
 commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 git_dirty=false
-if [ -n "$(git status --porcelain 2>/dev/null || true)" ]; then
+untracked_source_files="$(
+    git ls-files --others --exclude-standard 2>/dev/null |
+        grep -Ev '^benchmarks/results/[^/]+\.(json|prom)$' || true
+)"
+if ! git diff --quiet 2>/dev/null ||
+    ! git diff --cached --quiet 2>/dev/null ||
+    [ -n "${untracked_source_files}" ]; then
     git_dirty=true
 fi
 

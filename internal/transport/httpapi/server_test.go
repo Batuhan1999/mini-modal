@@ -49,8 +49,18 @@ func TestJobEndpoints(t *testing.T) {
 	if err := json.NewDecoder(submitResponse.Body).Decode(&submitted); err != nil {
 		t.Fatalf("decode submit response: %v", err)
 	}
-	if submitted.ID != "job-1" || jobmodel.Status(submitted.Status) != jobmodel.Assigned || submitted.Image != "alpine:3.20" {
-		t.Fatalf("submitted job = %+v, want ID job-1 with assigned status", submitted)
+	if submitted.ID != "job-1" || jobmodel.Status(submitted.Status) != jobmodel.Pending || submitted.Image != "alpine:3.20" {
+		t.Fatalf("submitted job = %+v, want ID job-1 with pending status", submitted)
+	}
+
+	if err := server.service.RegisterNode(context.Background(), domain.Node{
+		ID: "node-a", TotalCPUs: 8, TotalMemoryGB: 16,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	scheduled, err := server.service.Job(context.Background(), submitted.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	getRequest := httptest.NewRequest(http.MethodGet, "/v1/jobs/job-1", nil)
@@ -93,7 +103,7 @@ func TestJobEndpoints(t *testing.T) {
 
 	if err := server.service.CreateJobLog(context.Background(), domain.LogStream{
 		JobID:     "job-1",
-		Attempt:   submitted.Attempt,
+		Attempt:   scheduled.Attempt,
 		Sequence:  0,
 		Source:    agentv1.LogSource_LOG_SOURCE_STDOUT,
 		Data:      []byte("hello from the executor\n"),
@@ -103,7 +113,7 @@ func TestJobEndpoints(t *testing.T) {
 	}
 	if err := server.service.CreateJobLog(context.Background(), domain.LogStream{
 		JobID:     "job-1",
-		Attempt:   submitted.Attempt,
+		Attempt:   scheduled.Attempt,
 		Sequence:  1,
 		Source:    agentv1.LogSource_LOG_SOURCE_SYSTEM,
 		Data:      []byte("pulling image\n"),
