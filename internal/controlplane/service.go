@@ -33,15 +33,18 @@ type Service struct {
 	policy  *scheduler.Policy
 	db      *sql.DB
 	metrics *Metrics
+	wakeup  chan struct{}
 }
 
 func NewService(runtime *RuntimeState, queries sqlitedb.Querier, db *sql.DB, metrics *Metrics) *Service {
+	wakeup := make(chan struct{}, 1)
 	return &Service{
 		runtime: runtime,
 		queries: queries,
 		db:      db,
 		policy:  scheduler.NewFirstFitPolicy(),
 		metrics: metrics,
+		wakeup:  wakeup,
 	}
 }
 
@@ -134,6 +137,29 @@ func (s *Service) Run(ctx context.Context) {
 			}
 			if err := s.refreshMetricsLocked(ctx); err != nil {
 				log.Printf("failed to refresh metrics: %v", err)
+			}
+			s.mu.Unlock()
+		case <-s.wakeup:
+
+			batchTimer := time.NewTimer(5 * time.Millisecond)
+
+			select {
+			case <-ctx.Done():
+				batchTimer.Stop()
+				return
+
+			case <-batchTimer.C:
+				// Batching window finished.
+			}
+			s.mu.Lock()
+			select {
+			case <-s.wakeup:
+				// Coalesced notification consumed.
+			default:
+			}
+
+			if err := s.scheduleLocked(ctx); err != nil {
+				log.Printf("failed to schedule jobs: %v", err)
 			}
 			s.mu.Unlock()
 		}
@@ -295,7 +321,12 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 	}
 
 	s.metrics.RecordJobSubmitted(params.ID, now)
-
+	select {
+	case s.wakeup <- struct{}{}:
+		// Notification was queued.
+	default:
+		// Channel is already full; a notification is already pending.
+	}
 	return s.queries.GetJob(ctx, params.ID)
 }
 
