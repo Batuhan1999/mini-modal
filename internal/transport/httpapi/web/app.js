@@ -52,6 +52,7 @@ const elements = {
 
 const state = {
   jobs: [],
+  totalJobs: 0,
   nodes: [],
   previousJobStates: new Map(),
   hasSnapshot: false,
@@ -112,14 +113,16 @@ async function refreshDashboard() {
 
   state.refreshing = true;
   try {
-    const [jobs, nodes, devCluster] = await Promise.all([
-      fetchJSON("/v1/jobs"),
+    const [jobs, jobCount, nodes, devCluster] = await Promise.all([
+      fetchJSON("/v1/jobs?limit=100"),
+      fetchJSON("/v1/jobs/count"),
       fetchJSON("/v1/nodes"),
       fetchJSON("/v1/dev/nodes"),
     ]);
 
     const changedJobs = trackJobTransitions(jobs);
     state.jobs = jobs;
+    state.totalJobs = Number(jobCount.count || 0);
     state.nodes = nodes;
     renderMetrics();
     renderResources();
@@ -209,7 +212,7 @@ function renderMetrics() {
   const count = (statuses) => state.jobs.filter((job) => statuses.includes(job.status)).length;
   const healthyNodes = state.nodes.filter((node) => node.healthy).length;
 
-  elements.metricTotal.textContent = formatNumber(state.jobs.length);
+  elements.metricTotal.textContent = formatNumber(state.totalJobs);
   elements.metricActive.textContent = formatNumber(count(["assigned", "running", "cancelling"]));
   elements.metricWaiting.textContent = formatNumber(count(["pending", "retrying", "unschedulable"]));
   elements.metricNodes.textContent = `${healthyNodes} / ${state.nodes.length}`;
@@ -280,7 +283,9 @@ function renderJobs(changedJobs = new Set()) {
         || left.id.localeCompare(right.id);
     });
 
-  elements.jobsCount.textContent = String(jobs.length);
+  elements.jobsCount.textContent = query || selectedStatus !== "all"
+    ? String(jobs.length)
+    : formatNumber(state.totalJobs);
   elements.jobsEmpty.hidden = jobs.length > 0;
   elements.jobsEmptyCopy.textContent = state.jobs.length === 0
     ? "Submit a job through this dashboard or the API to see the scheduler place it."

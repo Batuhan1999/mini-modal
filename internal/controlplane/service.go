@@ -552,6 +552,25 @@ func (s *Service) Jobs(ctx context.Context) ([]sqlitedb.Job, error) {
 	return jobs, nil
 }
 
+func (s *Service) JobCount(ctx context.Context) (int64, error) {
+	count, err := s.queries.CountJobs(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count jobs: %w", err)
+	}
+	return count, nil
+}
+
+func (s *Service) RecentJobs(ctx context.Context, limit int64) ([]sqlitedb.Job, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("job list limit must be greater than zero")
+	}
+	jobs, err := s.queries.ListRecentJobs(ctx, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs: %w", err)
+	}
+	return jobs, nil
+}
+
 func (s *Service) JobLogs(ctx context.Context, jobID string, attempt int64) ([]sqlitedb.JobLog, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return nil, fmt.Errorf("job ID is required")

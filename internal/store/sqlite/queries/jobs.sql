@@ -52,6 +52,16 @@ SELECT *
 FROM jobs
 ORDER BY updated_at DESC, id;
 
+-- name: CountJobs :one
+SELECT COUNT(*)
+FROM jobs;
+
+-- name: ListRecentJobs :many
+SELECT *
+FROM jobs
+ORDER BY updated_at DESC, id
+LIMIT ?;
+
 -- name: ListPendingJobs :many
 SELECT *
 FROM jobs

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -136,6 +137,62 @@ func TestJobEndpoints(t *testing.T) {
 	if len(logs) != 2 || logs[0].Data != "hello from the executor\n" || logs[0].Source != "stdout" ||
 		logs[1].Data != "pulling image\n" || logs[1].Source != "system" {
 		t.Fatalf("logs = %+v, want stdout and system chunks", logs)
+	}
+}
+
+func TestListJobsOnlyLimitsResponseWhenRequested(t *testing.T) {
+	server := newTestServer(t)
+	ctx := context.Background()
+
+	for index := 0; index < 105; index++ {
+		if _, err := server.service.Submit(ctx, jobmodel.Spec{
+			ID:       fmt.Sprintf("job-%03d", index),
+			CPUs:     1,
+			MemoryGB: 1,
+			Image:    "alpine:3.20",
+			Command:  "echo",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	unboundedRequest := httptest.NewRequest(http.MethodGet, "/v1/jobs", nil)
+	unboundedResponse := httptest.NewRecorder()
+	server.ServeHTTP(unboundedResponse, unboundedRequest)
+
+	var allJobs []sqlitedb.Job
+	if err := json.NewDecoder(unboundedResponse.Body).Decode(&allJobs); err != nil {
+		t.Fatal(err)
+	}
+	if len(allJobs) != 105 {
+		t.Fatalf("unbounded jobs = %d, want 105", len(allJobs))
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/jobs?limit=100", nil)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var jobs []sqlitedb.Job
+	if err := json.NewDecoder(response.Body).Decode(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 100 {
+		t.Fatalf("listed jobs = %d, want 100", len(jobs))
+	}
+
+	countRequest := httptest.NewRequest(http.MethodGet, "/v1/jobs/count", nil)
+	countResponse := httptest.NewRecorder()
+	server.ServeHTTP(countResponse, countRequest)
+
+	var count jobCountResponse
+	if err := json.NewDecoder(countResponse.Body).Decode(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count.Count != 105 {
+		t.Fatalf("job count = %d, want 105", count.Count)
 	}
 }
 

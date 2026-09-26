@@ -27,6 +27,10 @@ type submitJobRequest struct {
 	RetryBackoffSeconds int64    `json:"retry_backoff_seconds"`
 }
 
+type jobCountResponse struct {
+	Count int64 `json:"count"`
+}
+
 func (r submitJobRequest) spec() jobmodel.Spec {
 	return jobmodel.Spec{
 		ID:                  r.ID,
@@ -68,7 +72,21 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
-	jobs, err := s.service.Jobs(r.Context())
+	var (
+		jobs []sqlitedb.Job
+		err  error
+	)
+	limitValue := r.URL.Query().Get("limit")
+	if limitValue == "" {
+		jobs, err = s.service.Jobs(r.Context())
+	} else {
+		limit, parseErr := strconv.ParseInt(limitValue, 10, 64)
+		if parseErr != nil || limit <= 0 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive integer")
+			return
+		}
+		jobs, err = s.service.RecentJobs(r.Context(), limit)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -78,6 +96,15 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, jobs)
+}
+
+func (s *Server) countJobs(w http.ResponseWriter, r *http.Request) {
+	count, err := s.service.JobCount(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, jobCountResponse{Count: count})
 }
 
 func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {

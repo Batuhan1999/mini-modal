@@ -48,6 +48,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("GET /metrics", s.metrics)
 	s.mux.HandleFunc("POST /v1/jobs", s.submitJob)
 	s.mux.HandleFunc("GET /v1/jobs", s.listJobs)
+	s.mux.HandleFunc("GET /v1/jobs/count", s.countJobs)
 	s.mux.HandleFunc("GET /v1/jobs/{id}", s.getJob)
 	s.mux.HandleFunc("POST /v1/jobs/{id}/cancel", s.cancelJob)
 	s.mux.HandleFunc("GET /v1/jobs/{id}/logs", s.listJobLogs)

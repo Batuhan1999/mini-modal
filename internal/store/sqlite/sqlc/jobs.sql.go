@@ -262,6 +262,18 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 	return i, err
 }
 
+const countJobs = `-- name: CountJobs :one
+SELECT COUNT(*)
+FROM jobs
+`
+
+func (q *Queries) CountJobs(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countJobs)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (
     id,
@@ -586,6 +598,56 @@ ORDER BY priority DESC, id
 
 func (q *Queries) ListPendingJobs(ctx context.Context) ([]Job, error) {
 	rows, err := q.db.QueryContext(ctx, listPendingJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Job
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.Priority,
+			&i.GpuType,
+			&i.Gpus,
+			&i.Cpus,
+			&i.MemoryGb,
+			&i.DurationSeconds,
+			&i.Status,
+			&i.NodeID,
+			&i.Attempt,
+			&i.LeaseExpiresAt,
+			&i.Command,
+			&i.Args,
+			&i.UpdatedAt,
+			&i.Image,
+			&i.MaxAttempts,
+			&i.RetryBackoffSeconds,
+			&i.NextAttemptAt,
+			&i.LastError,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentJobs = `-- name: ListRecentJobs :many
+SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error
+FROM jobs
+ORDER BY updated_at DESC, id
+LIMIT ?
+`
+
+func (q *Queries) ListRecentJobs(ctx context.Context, limit int64) ([]Job, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentJobs, limit)
 	if err != nil {
 		return nil, err
 	}
