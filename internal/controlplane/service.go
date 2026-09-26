@@ -102,8 +102,11 @@ func (s *Service) Cancel(ctx context.Context, assignment domain.Assignment) erro
 	}
 	s.metrics.RecordAttemptFinished(job.ID, job.Attempt, "cancelled", now)
 	s.metrics.RecordJobFinished(job.ID, string(jobmodel.Cancelled), now)
-	if err := s.scheduleLocked(ctx); err != nil {
-		log.Printf("job %q was cancelled but scheduling failed: %v", job.ID, err)
+	select {
+	case s.wakeup <- struct{}{}:
+		// Notification was queued.
+	default:
+		// Channel is already full; a notification is already pending.
 	}
 	return nil
 }
@@ -249,7 +252,13 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 		s.metrics.RecordJobFinished(jobID, string(jobmodel.Cancelled), now)
 	}
 	if result.schedule {
-		return s.scheduleLocked(ctx)
+		select {
+		case s.wakeup <- struct{}{}:
+			// Notification was queued.
+		default:
+			// Channel is already full; a notification is already pending.
+		}
+		return nil
 	}
 	return nil
 }
@@ -276,7 +285,13 @@ func (s *Service) RegisterNode(ctx context.Context, node domain.Node) error {
 	if _, err := s.queries.RequeueUnschedulableJobs(ctx); err != nil {
 		return fmt.Errorf("requeue unschedulable jobs: %w", err)
 	}
-	return s.scheduleLocked(ctx)
+	select {
+	case s.wakeup <- struct{}{}:
+		// Notification was queued.
+	default:
+		// Channel is already full; a notification is already pending.
+	}
+	return nil
 }
 
 func (s *Service) Heartbeat(nodeID string) error {
@@ -513,8 +528,11 @@ func (s *Service) finish(
 		s.metrics.RecordJobFinished(job.ID, job.Status, now)
 	}
 
-	if err := s.scheduleLocked(ctx); err != nil {
-		log.Printf("job %q finished but scheduling failed: %v", job.ID, err)
+	select {
+	case s.wakeup <- struct{}{}:
+		// Notification was queued.
+	default:
+		// Channel is already full; a notification is already pending.
 	}
 	return nil
 }

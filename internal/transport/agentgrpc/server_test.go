@@ -3,6 +3,7 @@ package agentgrpc
 import (
 	"context"
 	"testing"
+	"time"
 
 	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/controlplane"
@@ -41,7 +42,7 @@ func TestClaimAndComplete(t *testing.T) {
 	if _, err := service.Submit(context.Background(), job); err != nil {
 		t.Fatalf("submit job: %v", err)
 	}
-	scheduleTestJobs(t, service)
+	scheduleTestJobs(t, service, job.ID)
 
 	claimResponse, err := server.Claim(
 		context.Background(),
@@ -89,7 +90,7 @@ func TestRenewAndAcknowledgeCancellation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	scheduleTestJobs(t, service)
+	scheduleTestJobs(t, service, "job-1")
 	claim, err := server.Claim(ctx, &agentv1.ClaimRequest{NodeId: "node-a"})
 	if err != nil {
 		t.Fatal(err)
@@ -194,11 +195,35 @@ func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 	return NewServer(service), service
 }
 
-func scheduleTestJobs(t *testing.T, service *controlplane.Service) {
+func scheduleTestJobs(t *testing.T, service *controlplane.Service, jobID string) {
 	t.Helper()
-	if err := service.RegisterNode(context.Background(), domain.Node{
-		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
-	}); err != nil {
-		t.Fatal(err)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		service.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(2 * time.Second)
+	defer timeout.Stop()
+	for {
+		job, err := service.Job(ctx, jobID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if jobmodel.Status(job.Status) == jobmodel.Assigned {
+			return
+		}
+		select {
+		case <-ticker.C:
+		case <-timeout.C:
+			t.Fatalf("job %q stayed in status %q instead of becoming assigned", jobID, job.Status)
+		}
 	}
 }

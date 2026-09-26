@@ -54,10 +54,34 @@ func TestJobEndpoints(t *testing.T) {
 		t.Fatalf("submitted job = %+v, want ID job-1 with pending status", submitted)
 	}
 
-	if err := server.service.RegisterNode(context.Background(), domain.Node{
-		ID: "node-a", TotalCPUs: 8, TotalMemoryGB: 16,
-	}); err != nil {
-		t.Fatal(err)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.service.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(2 * time.Second)
+	defer timeout.Stop()
+	for {
+		job, err := server.service.Job(ctx, submitted.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if jobmodel.Status(job.Status) == jobmodel.Assigned {
+			break
+		}
+		select {
+		case <-ticker.C:
+		case <-timeout.C:
+			t.Fatalf("job %q stayed in status %q instead of becoming assigned", submitted.ID, job.Status)
+		}
 	}
 	scheduled, err := server.service.Job(context.Background(), submitted.ID)
 	if err != nil {
