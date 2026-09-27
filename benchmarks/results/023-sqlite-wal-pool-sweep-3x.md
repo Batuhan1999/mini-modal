@@ -1,0 +1,17 @@
+# SQLite WAL connection-pool sweep: concurrent admission
+
+Run on 2026-09-27 from an isolated worktree at historical SQLite commit `22e992f485cd866a019f113d50632729d456bdda`. This follows the [journal-mode A/B](021-sqlite-wal-admission-ab-3x.md) and tests whether a larger SQLite pool closes the remaining admission gap. The scratch-only code exposed `BENCHMARK_SQLITE_POOL` to set `sql.DB.SetMaxOpenConns` to 1, 2, or 4, and moved `busy_timeout=5000` and `foreign_keys=on` into the SQLite driver DSN so each newly opened connection received those settings. The benchmark script initialized each fresh database in WAL mode before the control plane opened it, recorded the observed `journal_mode`, pool size, and verified host source commit in each result. These temporary code changes were **not** applied to the production repository.
+
+Each run submitted 10,000 jobs via 32 concurrent clients at unlimited target rate, seed 1, with no agents. The application and database shared one 4-CPU / 6-GiB / 1,024-PID container. Every run used a fresh file-backed SQLite database. To reduce order effects, the three rounds used pool orders 1→2→4, 4→1→2, and 2→4→1. All nine runs confirmed `journal_mode=wal`, stored 10,000 jobs, and had zero submission errors and zero OOM kills.
+
+| SQLite WAL pool | Runs | Mean submissions/s | Run rates/s | Mean p50 | Mean p95 | Mean p99 |
+| --- | ---: | ---: | --- | ---: | ---: | ---: |
+| 1 connection | 3 | 2,088 | 2,091 / 2,180 / 1,994 | 9.33 ms | 47.87 ms | 76.41 ms |
+| 2 connections | 3 | **2,231** | 2,281 / 2,237 / 2,176 | 9.38 ms | 43.14 ms | **66.71 ms** |
+| 4 connections | 3 | 2,231 | 2,345 / 2,084 / 2,264 | 8.98 ms | 40.23 ms | 66.82 ms |
+
+Two connections improved mean admission by **6.9%** over one and reduced mean per-run p99 by about **12.7%**. Four connections had essentially the same mean throughput and p99 as two; the run-to-run spread is larger than the mean pool-2 versus pool-4 difference. These are arithmetic means of run-level rates and percentiles, not pooled request percentiles. This evidence supports a small pool benefit followed by a plateau for **this submission-heavy workload**, not a universal optimum pool size. With WAL, SQLite still has one writer at a time; additional connections can overlap reads and waiting but do not create parallel writers.
+
+The fresh one-connection WAL control (2,088/s) is consistent with the earlier one-connection WAL result (2,025/s), but the earlier run used the original connection-level PRAGMAs rather than the DSN settings here, so this report uses its own one-connection control for the pool-size effect. For context, the [PostgreSQL pool A/B](022-postgres-one-connection-decomposition-3x.md) measured 2,252/s at pool 1 and 11,789/s at pool 20. The SQLite and PostgreSQL figures are **not an engine-only comparison**: they used different code revisions and container topologies, and PostgreSQL had a separate 4-CPU database container. The PostgreSQL pool-1 and SQLite WAL pool-2 rates being close is descriptive, not proof of equal engine performance. A mixed workload with agents, claims, renewals, and completions could favor a different SQLite pool size.
+
+The 18 raw JSON/Prometheus files in this directory use labels `sqlite-wal-pool{1,2,4}-10k-r{1,2,3}-admission-concurrent`. Each JSON records `git_commit=22e992f485cd866a019f113d50632729d456bdda` and `git_dirty=true` because the isolated worktree had only the temporary pool/benchmark changes described above. The host worktree and Docker resources were used only for this experiment.
