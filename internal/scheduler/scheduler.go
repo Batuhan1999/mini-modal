@@ -1,8 +1,6 @@
 package scheduler
 
 import (
-	"sort"
-
 	"mini-modal/internal/domain"
 	postgresdb "mini-modal/internal/store/postgres/sqlc"
 )
@@ -17,9 +15,6 @@ func NewFirstFitPolicy() *Policy {
 // Schedule assigns higher-priority jobs first using a deterministic first-fit
 // policy. Jobs that do not currently fit remain pending.
 func (p *Policy) Schedule(jobs []postgresdb.Job, nodes []domain.Node) ([]domain.Assignment, []postgresdb.Job, []postgresdb.Job) {
-	sort.SliceStable(jobs, func(i, j int) bool {
-		return jobs[i].Priority > jobs[j].Priority
-	})
 
 	assignments := make([]domain.Assignment, 0, len(jobs))
 	pending := make([]postgresdb.Job, 0)

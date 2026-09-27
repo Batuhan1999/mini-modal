@@ -1,0 +1,14 @@
+# Go scheduler sort removal: 100k admission A/B
+
+Run on 2026-09-27. The baseline was an isolated worktree at commit `343f967854131468d907b42335e1f0de874967ed`, which still calls `sort.SliceStable` in `scheduler.Policy.Schedule`. The variant was the same source with only that sort and its import removed in the user's working tree. The main worktree was not committed for this comparison. Baseline result JSON says `git_commit=unknown` because the worktree's `.git` metadata was outside the Docker bind mount; the host revision above was verified. Variant JSON records the same commit and `git_dirty=true`, reflecting the one source edit.
+
+Each run submitted 100,000 jobs through 32 concurrent clients at unlimited target rate, with no agents and a PostgreSQL pool of 20. The application had a 4-CPU / 6-GiB limit and the separate PostgreSQL 15 container had a 4-CPU / 4-GiB limit. The benchmark database was recreated before every run. Three rounds alternated sort-on → sort-off, sort-off → sort-on, and sort-on → sort-off. All six runs submitted and stored 100,000 jobs with zero submission errors or OOM kills.
+
+| Variant | Rates (jobs/s) | Mean jobs/s | Mean p99 | Mean app CPU time | Mean app memory peak | Mean scheduler-call time |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Go sort retained | 12,778 / 13,053 / 12,844 | 12,891 | 8.99 ms | 20.88 s | 323 MiB | 6.71 s |
+| Go sort removed | 13,027 / 13,044 / 13,440 | 13,170 | 8.06 ms | 20.45 s | 325 MiB | 6.68 s |
+
+Removing the Go sort raised mean admission throughput by **2.2%** in these runs. The paired differences were about +2.0%, −0.1%, and +4.6%, so the result is small relative to run-to-run variability and does **not** establish a large or reliable throughput gain. Mean p99 was about 10% lower, but this should likewise be treated as suggestive rather than conclusive with only three runs. The mean summed duration of scheduler calls was essentially unchanged (6.71 versus 6.68 seconds); the peak application memory did not fall. These whole-container CPU/memory metrics include the control plane and simulator and do not isolate the sort's own cost.
+
+The main benefit of the edit is eliminating duplicate work in the current service path: `ListPendingJobs` already orders by `priority DESC, id`. The scheduler policy now assumes its caller supplies ordered jobs. Its existing unit test passes unsorted jobs and therefore fails; that contract/test needs resolving before merging the edit. This A/B tested an intentionally backlogged **no-agent** admission workload, not mixed scheduling with live agents. The four raw JSON, Prometheus, application-resource, and PostgreSQL-resource files for each run are labeled `sort-on-r{1,2,3}-100k` and `sort-off-r{1,2,3}-100k` in this directory. Results are arithmetic means of run-level values, not pooled request percentiles.
