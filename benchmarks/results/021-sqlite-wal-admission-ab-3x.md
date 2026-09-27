@@ -1,0 +1,16 @@
+# SQLite WAL versus rollback journal: concurrent admission A/B
+
+Run on 2026-09-27 from an isolated worktree at historical commit `22e992f485cd866a019f113d50632729d456bdda`. The only benchmark behavior change was a conditional `PRAGMA journal_mode=WAL` on each fresh, file-backed benchmark database **before** the control plane opened it; with the switch off, the historical setup was left unchanged. The harness queried and saved the actual `journal_mode` in every JSON result: `delete` for the control runs and `wal` for the WAL runs. SQLite's application pool remained at **one connection** in both groups. No production Postgres code was changed.
+
+Each run submitted 10,000 jobs through 32 concurrent clients at unlimited target rate, seed 1, with no agents. A fresh, short-lived benchmark container and database were used each time, with the same 4-CPU, 6-GiB, 1,024-PID limits. The order was DELETE→WAL in round 1, WAL→DELETE in round 2, and DELETE→WAL in round 3. Both groups submitted all 30,000 jobs with zero submission errors and zero OOM kills; each run stored exactly 10,000 jobs.
+
+| Journal mode | Runs | Mean submissions/s | Range | Mean p50 | Mean p95 | Mean p99 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| DELETE | 3 | 662 | 637–693/s | 33.23 ms | 141.49 ms | 217.34 ms |
+| WAL | 3 | **2,025** | 1,936–2,166/s | **9.52 ms** | **50.06 ms** | **80.03 ms** |
+
+WAL improved this submission workload by **3.06×** and reduced the mean per-run p99 by **63.2%**. Rates and percentiles are arithmetic means of the three run-level values, not pooled request percentiles. This is a controlled journal-mode comparison on the same historical application and container budget; it supports the hypothesis that the non-WAL SQLite setup materially understated SQLite's admission performance. WAL did not change the one-connection application cap or make SQLite a multi-writer database. Because the pool had only one connection, improved read/write concurrency cannot explain this particular admission result. SQLite [documents](https://www.sqlite.org/wal.html) a more sequential, append-oriented WAL write path and fewer sync operations than rollback journaling; that is a plausible mechanism, but this experiment did not count syncs or isolate filesystem effects.
+
+For scale, the separate 10k Postgres sweep measured about 13,679 submissions/s at pool 20. That descriptive gap shrinks from about 20.7× versus this DELETE baseline to about 6.8× versus WAL. **It is not an engine-only comparison:** Postgres had a 20-connection pool and its own additional four-CPU container, and the application code evolved between revisions. A fair SQLite-versus-Postgres claim needs matched resource budgets and separately tuned pools.
+
+The 12 JSON/Prometheus files use labels `sqlite-delete-10k-r1`–`r3` and `sqlite-wal-10k-r1`–`r3`. The raw JSON records `git_commit=unknown` because the detached worktree's `.git` metadata lived outside the Docker bind mount, and `git_dirty=true` because the temporary benchmark script was modified. The host worktree revision was verified as `22e992f485cd866a019f113d50632729d456bdda`; the only temporary script additions were the WAL toggle before startup and the journal-mode field in the result JSON. The temporary worktree and container resources were not included in the application repository.

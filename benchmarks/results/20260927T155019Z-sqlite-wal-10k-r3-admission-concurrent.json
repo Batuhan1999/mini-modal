@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260927T155019Z",
+  "benchmark_label": "sqlite-wal-10k-r3",
+  "scenario": "admission-concurrent",
+  "git_commit": "unknown",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 5598930,
+    "memory_peak_bytes": 180903936,
+    "pids_peak": 21,
+    "oom_kills": 0
+  },
+  "workload": {
+    "jobs": 10000,
+    "concurrency": 32,
+    "agents": 0,
+    "executor": "fake"
+  },
+  "storage": {
+    "database_bytes": 5832704,
+    "jobs": 10000,
+    "journal_mode": "wal"
+  },
+  "result": {
+    "submitted": 10000,
+    "submission_errors": 0,
+    "statuses": {},
+    "submission_elapsed_ns": 4617557919,
+    "elapsed_ns": 4617557919,
+    "submission_latency_p50_ns": 8830042,
+    "submission_latency_p95_ns": 47130333,
+    "submission_latency_p99_ns": 72073334
+  }
+}

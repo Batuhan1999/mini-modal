@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260927T154947Z",
+  "benchmark_label": "sqlite-delete-10k-r2",
+  "scenario": "admission-concurrent",
+  "git_commit": "unknown",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 7977661,
+    "memory_peak_bytes": 175603712,
+    "pids_peak": 21,
+    "oom_kills": 0
+  },
+  "workload": {
+    "jobs": 10000,
+    "concurrency": 32,
+    "agents": 0,
+    "executor": "fake"
+  },
+  "storage": {
+    "database_bytes": 5857280,
+    "jobs": 10000,
+    "journal_mode": "delete"
+  },
+  "result": {
+    "submitted": 10000,
+    "submission_errors": 0,
+    "statuses": {},
+    "submission_elapsed_ns": 15253812924,
+    "elapsed_ns": 15253812924,
+    "submission_latency_p50_ns": 33121792,
+    "submission_latency_p95_ns": 142804583,
+    "submission_latency_p99_ns": 224355958
+  }
+}
