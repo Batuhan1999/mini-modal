@@ -6,20 +6,20 @@ import (
 	"time"
 
 	jobmodel "mini-modal/internal/job"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 
 	"github.com/google/uuid"
 )
 
 func recordJobEvent(
 	ctx context.Context,
-	queries *sqlitedb.Queries,
-	job sqlitedb.Job,
+	queries *postgresdb.Queries,
+	job postgresdb.Job,
 	event jobmodel.HistoryEvent,
 	message string,
 	createdAt time.Time,
 ) error {
-	if _, err := queries.CreateJobEvent(ctx, sqlitedb.CreateJobEventParams{
+	if _, err := queries.CreateJobEvent(ctx, postgresdb.CreateJobEventParams{
 		ID:        uuid.NewString(),
 		JobID:     job.ID,
 		Attempt:   job.Attempt,

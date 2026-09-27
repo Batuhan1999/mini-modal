@@ -17,29 +17,36 @@ import (
 var migrations embed.FS
 
 func Open(ctx context.Context, path string) (*sql.DB, error) {
+	return OpenWithPool(ctx, path, 1)
+}
+
+func OpenWithPool(ctx context.Context, path string, maxOpenConns int) (*sql.DB, error) {
+	if maxOpenConns < 1 {
+		return nil, fmt.Errorf("SQLite max open connections must be positive")
+	}
+	if path == ":memory:" && maxOpenConns > 1 {
+		return nil, fmt.Errorf("SQLite :memory: databases cannot use multiple connections")
+	}
 	if !strings.HasPrefix(path, "file:") && path != ":memory:" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, fmt.Errorf("create database directory: %w", err)
 		}
 	}
 
-	db, err := sql.Open("sqlite", path)
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	dsn := path + separator + "_busy_timeout=5000&_foreign_keys=on"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open SQLite database: %w", err)
 	}
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(maxOpenConns)
 
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("connect to SQLite database: %w", err)
-	}
-	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("enable SQLite foreign keys: %w", err)
-	}
-	if _, err := db.ExecContext(ctx, "PRAGMA busy_timeout = 5000"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("configure SQLite busy timeout: %w", err)
 	}
 	if err := migrate(ctx, db); err != nil {
 		db.Close()

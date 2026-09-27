@@ -6,7 +6,7 @@ The curated [learning roadmap](docs/learning-roadmap.md) connects each project
 milestone to official architecture documentation, engineering articles, videos,
 open-source implementations and distributed-systems material.
 
-The current version has a SQLite-backed control plane, a public HTTP API, gRPC
+The current version has a PostgreSQL-backed control plane, a public HTTP API, gRPC
 communication with polling node agents, durable assignment leases, retries,
 cancellation, streamed logs, a Docker executor, Prometheus metrics, and a
 browser dashboard with a local development-agent launcher. There is no real
@@ -15,9 +15,17 @@ GPU execution yet.
 ## Run it
 
 ```bash
-go build -o ./tmp/agent ./cmd/agent
-go run ./cmd/controlplane
+docker compose -f compose.dev.yml up -d --wait postgres
+cp -n .env.example .env
+go tool air
 ```
+
+The local Compose file starts only Postgres. The Go control plane and agents run
+on your Mac. Air and `go run ./cmd/controlplane` read `DATABASE_URL` from
+`.env`; the file is ignored by Git. Existing SQLite jobs are not copied to
+Postgres. The named Docker volume persists data across `docker compose down`;
+stop the database with
+`docker compose -f compose.dev.yml down` when finished.
 
 Open [http://localhost:8080](http://localhost:8080) to use the dashboard. From
 there you can launch local agent processes, submit jobs, and watch scheduling,
@@ -42,8 +50,9 @@ used in production.
 
 ### Resource-limited benchmarks
 
-Develop locally using `go tool air`. Benchmarks run in short-lived Docker
-containers with a fixed 4-CPU, 6-GiB, 1,024-PID limit:
+Develop locally using `go tool air`. Benchmarks use a short-lived application
+container (4 CPU, 6 GiB, 1,024 PIDs) and a reusable PostgreSQL container with
+its own 4-CPU / 4-GiB limit:
 
 ```bash
 make benchmark-limits
@@ -53,8 +62,10 @@ make benchmark-fake
 make benchmark-process
 ```
 
-Each run starts its own control plane, agents when needed, and temporary SQLite
-database. No persistent development container is required. See
+Each run starts its own control plane and agents when needed. The benchmark
+database is recreated before every run; the dedicated PostgreSQL container
+stays up between runs and can be stopped with `make benchmark-postgres-stop`.
+No persistent development container is required. See
 [docs/benchmarking.md](docs/benchmarking.md) for the methodology.
 
 The API listens on `http://localhost:8080`:
@@ -118,9 +129,13 @@ with `docker compose -f compose.observability.yml down`.
 ## Test it
 
 ```bash
-go test ./...
-go test -race ./...
+MINI_MODAL_TEST_DATABASE_URL='postgres://mini_modal:mini_modal@localhost:5432/mini_modal?sslmode=disable' go test ./...
+MINI_MODAL_TEST_DATABASE_URL='postgres://mini_modal:mini_modal@localhost:5432/mini_modal?sslmode=disable' go test -race ./...
 ```
+
+Integration tests create and remove their own Postgres schemas; they do not
+delete your development jobs. Without `MINI_MODAL_TEST_DATABASE_URL`, the
+Postgres-dependent tests are skipped.
 
 ## Useful Go commands
 
@@ -145,7 +160,7 @@ The project currently:
 - distinguishes temporarily pending jobs from unschedulable jobs;
 - exposes job submission and inspection through JSON over HTTP;
 - lets node agents claim assigned work;
-- stores jobs, nodes, attempts, and assignment leases in SQLite;
+- stores jobs, nodes, attempts, and assignment leases in PostgreSQL;
 - connects agent processes to the control plane over gRPC;
 - runs assignments in Docker containers with CPU and memory limits;
 - streams stdout, stderr, and system logs to the control plane;
@@ -158,7 +173,7 @@ The project currently:
 The current request path is:
 
 ```text
-dashboard / HTTP API -> control-plane service -> SQLite -> scheduler
+dashboard / HTTP API -> control-plane service -> PostgreSQL -> scheduler
                               ^                         |
                               |                         v
 node agent -> gRPC -> claim -> Docker executor -> completion or failure
@@ -176,8 +191,7 @@ locally launched agent -------+
 
 ### 2. Production persistence
 
-- Move from SQLite to PostgreSQL when multiple control-plane replicas are
-  needed.
+- Evaluate contention and correctness with multiple control-plane replicas.
 - Add idempotency keys for submission and durable node-heartbeat ownership.
 
 ### 3. Isolation and images

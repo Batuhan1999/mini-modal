@@ -1,0 +1,21 @@
+name: mini-modal-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: mini_modal
+      POSTGRES_PASSWORD: mini_modal
+      POSTGRES_DB: mini_modal
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mini_modal -d mini_modal"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  postgres-data:

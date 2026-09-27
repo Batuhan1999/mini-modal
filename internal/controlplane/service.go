@@ -15,28 +15,30 @@ import (
 	"mini-modal/internal/domain"
 	jobmodel "mini-modal/internal/job"
 	"mini-modal/internal/scheduler"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 
 	"github.com/google/uuid"
 )
 
 const (
-	assignmentLeaseDuration    = 15 * time.Second
+	assignmentLeaseDuration    = 30 * time.Second
 	defaultMaxAttempts         = 3
 	defaultRetryBackoffSeconds = 1
 )
 
+var ErrStaleAssignment = errors.New("stale assignment")
+
 type Service struct {
 	mu      sync.Mutex
 	runtime *RuntimeState
-	queries sqlitedb.Querier
+	queries postgresdb.Querier
 	policy  *scheduler.Policy
 	db      *sql.DB
 	metrics *Metrics
 	wakeup  chan struct{}
 }
 
-func NewService(runtime *RuntimeState, queries sqlitedb.Querier, db *sql.DB, metrics *Metrics) *Service {
+func NewService(runtime *RuntimeState, queries postgresdb.Querier, db *sql.DB, metrics *Metrics) *Service {
 	wakeup := make(chan struct{}, 1)
 	return &Service{
 		runtime: runtime,
@@ -59,28 +61,31 @@ func (s *Service) Cancel(ctx context.Context, assignment domain.Assignment) erro
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	job, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+	job, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) (postgresdb.Job, error) {
 		stored, err := queries.GetJob(ctx, assignment.JobID)
 		if err != nil {
-			return sqlitedb.Job{}, err
+			if errors.Is(err, sql.ErrNoRows) {
+				return postgresdb.Job{}, fmt.Errorf("%w: job %q not found", ErrStaleAssignment, assignment.JobID)
+			}
+			return postgresdb.Job{}, err
 		}
 		if stored.Attempt != assignment.Attempt {
-			return sqlitedb.Job{}, fmt.Errorf("job %q is not at attempt %d", assignment.JobID, assignment.Attempt)
+			return postgresdb.Job{}, fmt.Errorf("%w: job %q is not at attempt %d", ErrStaleAssignment, assignment.JobID, assignment.Attempt)
 		}
 		status, err := jobmodel.ParseStatus(stored.Status)
 		if err != nil {
-			return sqlitedb.Job{}, err
+			return postgresdb.Job{}, err
 		}
 		if _, err := status.Next(jobmodel.EventAcknowledgeCancellation); err != nil {
-			return sqlitedb.Job{}, fmt.Errorf("acknowledge cancellation for job %q: %w", assignment.JobID, err)
+			return postgresdb.Job{}, fmt.Errorf("%w: acknowledge cancellation for job %q: %v", ErrStaleAssignment, assignment.JobID, err)
 		}
 
-		cancelled, err := queries.AcknowledgeCancelledJob(ctx, sqlitedb.AcknowledgeCancelledJobParams{
+		cancelled, err := queries.AcknowledgeCancelledJob(ctx, postgresdb.AcknowledgeCancelledJobParams{
 			JobID:             assignment.JobID,
 			AssignmentAttempt: assignment.Attempt,
 		})
 		if err != nil {
-			return sqlitedb.Job{}, err
+			return postgresdb.Job{}, err
 		}
 		if err := recordJobEvent(
 			ctx,
@@ -90,12 +95,12 @@ func (s *Service) Cancel(ctx context.Context, assignment domain.Assignment) erro
 			"Job cancellation acknowledged by node "+stored.NodeID,
 			now,
 		); err != nil {
-			return sqlitedb.Job{}, err
+			return postgresdb.Job{}, err
 		}
 		return cancelled, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("job %q is not cancelling with attempt %d", assignment.JobID, assignment.Attempt)
+		return fmt.Errorf("%w: job %q is not cancelling with attempt %d", ErrStaleAssignment, assignment.JobID, assignment.Attempt)
 	}
 	if err != nil {
 		return fmt.Errorf("acknowledge cancellation for job %q: %w", assignment.JobID, err)
@@ -179,7 +184,7 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 	}
 
 	now := time.Now()
-	result, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (cancellationResult, error) {
+	result, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) (cancellationResult, error) {
 		job, err := queries.GetJob(ctx, jobID)
 		if err != nil {
 			return cancellationResult{}, err
@@ -271,7 +276,7 @@ func (s *Service) RegisterNode(ctx context.Context, node domain.Node) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, err := s.queries.UpsertNode(ctx, sqlitedb.UpsertNodeParams{
+	if _, err := s.queries.UpsertNode(ctx, postgresdb.UpsertNodeParams{
 		ID:            node.ID,
 		GpuType:       node.GPUType,
 		TotalGpus:     node.TotalGPUs,
@@ -298,20 +303,20 @@ func (s *Service) Heartbeat(nodeID string) error {
 	return s.runtime.Heartbeat(nodeID, time.Now())
 }
 
-func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job, error) {
+func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (postgresdb.Job, error) {
 	if err := spec.Validate(); err != nil {
-		return sqlitedb.Job{}, err
+		return postgresdb.Job{}, err
 	}
 	params, err := createJobParams(spec)
 	if err != nil {
-		return sqlitedb.Job{}, err
+		return postgresdb.Job{}, err
 	}
 
 	now := time.Now()
-	job, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+	job, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) (postgresdb.Job, error) {
 		job, err := queries.CreateJob(ctx, params)
 		if err != nil {
-			return sqlitedb.Job{}, err
+			return postgresdb.Job{}, err
 		}
 		if err := recordJobEvent(
 			ctx,
@@ -321,22 +326,22 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 			"Job submitted",
 			now,
 		); err != nil {
-			return sqlitedb.Job{}, err
+			return postgresdb.Job{}, err
 		}
 		return job, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		exists, err := s.queries.GetJob(ctx, params.ID)
 		if err != nil {
-			return sqlitedb.Job{}, fmt.Errorf("get job %q: %w", params.ID, err)
+			return postgresdb.Job{}, fmt.Errorf("get job %q: %w", params.ID, err)
 		}
 		if !sameSubmission(exists, params) {
-			return sqlitedb.Job{}, fmt.Errorf("%w: job %q has a different specification", ErrSubmissionConflict, params.ID)
+			return postgresdb.Job{}, fmt.Errorf("%w: job %q has a different specification", ErrSubmissionConflict, params.ID)
 		}
 		return exists, nil
 	}
 	if err != nil {
-		return sqlitedb.Job{}, fmt.Errorf("create job %q: %w", params.ID, err)
+		return postgresdb.Job{}, fmt.Errorf("create job %q: %w", params.ID, err)
 	}
 
 	s.metrics.RecordJobSubmitted(params.ID, now)
@@ -361,8 +366,8 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 		return domain.Assignment{}, false, nil
 	}
 	now := time.Now()
-	assignment, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (domain.Assignment, error) {
-		job, err := queries.ClaimJob(ctx, sqlitedb.ClaimJobParams{
+	assignment, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) (domain.Assignment, error) {
+		job, err := queries.ClaimJob(ctx, postgresdb.ClaimJobParams{
 			LeaseExpiresAt: now.Add(assignmentLeaseDuration).UnixMilli(),
 			ClaimNodeID:    nodeID,
 		})
@@ -444,30 +449,33 @@ func (s *Service) finish(
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	job, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+	job, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) (postgresdb.Job, error) {
 		stored, err := queries.GetJob(ctx, assignment.JobID)
 		if err != nil {
-			return sqlitedb.Job{}, err
+			if errors.Is(err, sql.ErrNoRows) {
+				return postgresdb.Job{}, fmt.Errorf("%w: job %q not found", ErrStaleAssignment, assignment.JobID)
+			}
+			return postgresdb.Job{}, err
 		}
 		if stored.Attempt != assignment.Attempt {
-			return sqlitedb.Job{}, fmt.Errorf("job %q is not at attempt %d", assignment.JobID, assignment.Attempt)
+			return postgresdb.Job{}, fmt.Errorf("%w: job %q is not at attempt %d", ErrStaleAssignment, assignment.JobID, assignment.Attempt)
 		}
 		current, err := jobmodel.ParseStatus(stored.Status)
 		if err != nil {
-			return sqlitedb.Job{}, err
+			return postgresdb.Job{}, err
 		}
 		if event == jobmodel.EventFail && stored.Attempt < stored.MaxAttempts {
 			event = jobmodel.EventScheduleRetry
 		}
 		next, err := current.Next(event)
 		if err != nil {
-			return sqlitedb.Job{}, fmt.Errorf("finish job %q: %w", assignment.JobID, err)
+			return postgresdb.Job{}, fmt.Errorf("%w: finish job %q: %v", ErrStaleAssignment, assignment.JobID, err)
 		}
 
-		var finished sqlitedb.Job
+		var finished postgresdb.Job
 		switch next {
 		case jobmodel.Succeeded:
-			finished, err = queries.CompleteJob(ctx, sqlitedb.CompleteJobParams{
+			finished, err = queries.CompleteJob(ctx, postgresdb.CompleteJobParams{
 				JobID:             assignment.JobID,
 				AssignmentAttempt: assignment.Attempt,
 			})
@@ -475,7 +483,7 @@ func (s *Service) finish(
 				err = recordJobEvent(ctx, queries, finished, jobmodel.HistoryCompleted, "Job completed successfully", now)
 			}
 		case jobmodel.Failed:
-			finished, err = queries.FailJob(ctx, sqlitedb.FailJobParams{
+			finished, err = queries.FailJob(ctx, postgresdb.FailJobParams{
 				JobID:             assignment.JobID,
 				AssignmentAttempt: assignment.Attempt,
 				LastError:         lastError,
@@ -485,7 +493,7 @@ func (s *Service) finish(
 			}
 		case jobmodel.Retrying:
 			retryBackoff := time.Duration(stored.RetryBackoffSeconds) * time.Second
-			finished, err = queries.RetryJob(ctx, sqlitedb.RetryJobParams{
+			finished, err = queries.RetryJob(ctx, postgresdb.RetryJobParams{
 				JobID:             assignment.JobID,
 				AssignmentAttempt: assignment.Attempt,
 				NextAttemptAt:     now.Add(retryBackoff).UnixMilli(),
@@ -507,15 +515,15 @@ func (s *Service) finish(
 				}
 			}
 		default:
-			return sqlitedb.Job{}, fmt.Errorf("unsupported terminal job status %q", next)
+			return postgresdb.Job{}, fmt.Errorf("unsupported terminal job status %q", next)
 		}
 		if err != nil {
-			return sqlitedb.Job{}, err
+			return postgresdb.Job{}, err
 		}
 		return finished, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("job %q is not running with attempt %d", assignment.JobID, assignment.Attempt)
+		return fmt.Errorf("%w: job %q is not running with attempt %d", ErrStaleAssignment, assignment.JobID, assignment.Attempt)
 	}
 	if err != nil {
 		return fmt.Errorf("finish job %q: %w", assignment.JobID, err)
@@ -571,7 +579,7 @@ func (s *Service) RenewAssignment(ctx context.Context, assignment domain.Assignm
 		return false, fmt.Errorf("job %q is not running", assignment.JobID)
 	}
 
-	updated, err := s.queries.RenewAssignment(ctx, sqlitedb.RenewAssignmentParams{
+	updated, err := s.queries.RenewAssignment(ctx, postgresdb.RenewAssignmentParams{
 		LeaseExpiresAt:    time.Now().Add(assignmentLeaseDuration).UnixMilli(),
 		JobID:             assignment.JobID,
 		AssignmentNodeID:  assignment.NodeID,
@@ -586,18 +594,18 @@ func (s *Service) RenewAssignment(ctx context.Context, assignment domain.Assignm
 	return false, nil
 }
 
-func (s *Service) Job(ctx context.Context, jobID string) (sqlitedb.Job, error) {
+func (s *Service) Job(ctx context.Context, jobID string) (postgresdb.Job, error) {
 	job, err := s.queries.GetJob(ctx, jobID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return sqlitedb.Job{}, fmt.Errorf("job %q not found", jobID)
+		return postgresdb.Job{}, fmt.Errorf("job %q not found", jobID)
 	}
 	if err != nil {
-		return sqlitedb.Job{}, fmt.Errorf("get job %q: %w", jobID, err)
+		return postgresdb.Job{}, fmt.Errorf("get job %q: %w", jobID, err)
 	}
 	return job, nil
 }
 
-func (s *Service) Jobs(ctx context.Context) ([]sqlitedb.Job, error) {
+func (s *Service) Jobs(ctx context.Context) ([]postgresdb.Job, error) {
 	jobs, err := s.queries.ListJobs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list jobs: %w", err)
@@ -613,7 +621,7 @@ func (s *Service) JobCount(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-func (s *Service) RecentJobs(ctx context.Context, limit int64) ([]sqlitedb.Job, error) {
+func (s *Service) RecentJobs(ctx context.Context, limit int64) ([]postgresdb.Job, error) {
 	if limit <= 0 {
 		return nil, fmt.Errorf("job list limit must be greater than zero")
 	}
@@ -624,7 +632,7 @@ func (s *Service) RecentJobs(ctx context.Context, limit int64) ([]sqlitedb.Job, 
 	return jobs, nil
 }
 
-func (s *Service) JobLogs(ctx context.Context, jobID string, attempt int64) ([]sqlitedb.JobLog, error) {
+func (s *Service) JobLogs(ctx context.Context, jobID string, attempt int64) ([]postgresdb.JobLog, error) {
 	if strings.TrimSpace(jobID) == "" {
 		return nil, fmt.Errorf("job ID is required")
 	}
@@ -632,7 +640,7 @@ func (s *Service) JobLogs(ctx context.Context, jobID string, attempt int64) ([]s
 		return nil, fmt.Errorf("attempt must be greater than 0")
 	}
 
-	logs, err := s.queries.ListJobLogs(ctx, sqlitedb.ListJobLogsParams{
+	logs, err := s.queries.ListJobLogs(ctx, postgresdb.ListJobLogsParams{
 		JobID:   jobID,
 		Attempt: attempt,
 	})
@@ -642,7 +650,7 @@ func (s *Service) JobLogs(ctx context.Context, jobID string, attempt int64) ([]s
 	return logs, nil
 }
 
-func (s *Service) JobEvents(ctx context.Context, jobID string) ([]sqlitedb.JobEvent, error) {
+func (s *Service) JobEvents(ctx context.Context, jobID string) ([]postgresdb.JobEvent, error) {
 	jobID = strings.TrimSpace(jobID)
 	if jobID == "" {
 		return nil, fmt.Errorf("job ID is required")
@@ -687,14 +695,14 @@ func (s *Service) scheduleLocked(ctx context.Context) (err error) {
 	assignments, _, possiblyUnschedulable := s.policy.Schedule(jobs, healthyNodes)
 
 	for _, assignment := range assignments {
-		_, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
-			job, err := queries.AssignJob(ctx, sqlitedb.AssignJobParams{
+		_, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) (postgresdb.Job, error) {
+			job, err := queries.AssignJob(ctx, postgresdb.AssignJobParams{
 				TargetNodeID:   assignment.NodeID,
 				LeaseExpiresAt: now.Add(assignmentLeaseDuration).UnixMilli(),
 				JobID:          assignment.JobID,
 			})
 			if err != nil {
-				return sqlitedb.Job{}, err
+				return postgresdb.Job{}, err
 			}
 			if err := recordJobEvent(
 				ctx,
@@ -704,7 +712,7 @@ func (s *Service) scheduleLocked(ctx context.Context) (err error) {
 				"Job assigned to node "+assignment.NodeID,
 				now,
 			); err != nil {
-				return sqlitedb.Job{}, err
+				return postgresdb.Job{}, err
 			}
 			return job, nil
 		})
@@ -785,13 +793,13 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 		cancelled int
 	}
 	type expiredJobs struct {
-		retrying  []sqlitedb.Job
-		failed    []sqlitedb.Job
-		cancelled []sqlitedb.Job
+		retrying  []postgresdb.Job
+		failed    []postgresdb.Job
+		cancelled []postgresdb.Job
 	}
 
 	jobsResult := expiredJobs{}
-	result, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (expirationResult, error) {
+	result, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) (expirationResult, error) {
 		active, err := queries.ListActiveJobs(ctx)
 		if err != nil {
 			return expirationResult{}, fmt.Errorf("list active jobs before lease expiration: %w", err)
@@ -891,7 +899,7 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 }
 
 func (s *Service) releaseDueRetriesLocked(ctx context.Context, now time.Time) (int, error) {
-	released, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) ([]sqlitedb.Job, error) {
+	released, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) ([]postgresdb.Job, error) {
 		jobs, err := queries.ReleaseDueRetries(ctx, now.UnixMilli())
 		if err != nil {
 			return nil, fmt.Errorf("release due retries: %w", err)
@@ -919,14 +927,14 @@ func (s *Service) releaseDueRetriesLocked(ctx context.Context, now time.Time) (i
 	return len(released), nil
 }
 
-func createJobParams(spec jobmodel.Spec) (sqlitedb.CreateJobParams, error) {
+func createJobParams(spec jobmodel.Spec) (postgresdb.CreateJobParams, error) {
 	args := spec.Args
 	if args == nil {
 		args = make([]string, 0)
 	}
 	encodedArgs, err := json.Marshal(args)
 	if err != nil {
-		return sqlitedb.CreateJobParams{}, fmt.Errorf("encode arguments for job %q: %w", spec.ID, err)
+		return postgresdb.CreateJobParams{}, fmt.Errorf("encode arguments for job %q: %w", spec.ID, err)
 	}
 	maxAttempts := spec.MaxAttempts
 	if maxAttempts == 0 {
@@ -936,7 +944,7 @@ func createJobParams(spec jobmodel.Spec) (sqlitedb.CreateJobParams, error) {
 	if retryBackoffSeconds == 0 {
 		retryBackoffSeconds = defaultRetryBackoffSeconds
 	}
-	return sqlitedb.CreateJobParams{
+	return postgresdb.CreateJobParams{
 		ID:                  spec.ID,
 		Priority:            spec.Priority,
 		GpuType:             spec.GPUType,
@@ -995,7 +1003,7 @@ func (s *Service) CreateJobLog(ctx context.Context, logStream domain.LogStream) 
 	if logStream.Source == agentv1.LogSource_LOG_SOURCE_SYSTEM {
 		source = "system"
 	}
-	_, err := s.queries.CreateJobLog(ctx, sqlitedb.CreateJobLogParams{
+	_, err := s.queries.CreateJobLog(ctx, postgresdb.CreateJobLogParams{
 		ID:        uuid.NewString(),
 		JobID:     logStream.JobID,
 		Attempt:   logStream.Attempt,
@@ -1040,7 +1048,7 @@ func validateNode(node domain.Node) error {
 	return nil
 }
 
-func canAnyNodePossiblyRun(nodes []domain.Node, job sqlitedb.Job) bool {
+func canAnyNodePossiblyRun(nodes []domain.Node, job postgresdb.Job) bool {
 	for _, node := range nodes {
 		if node.CanPossiblyRun(job) {
 			return true

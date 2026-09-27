@@ -2,6 +2,7 @@ package agentgrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -26,6 +27,13 @@ func NewServer(service *controlplane.Service) *Server {
 	return &Server{
 		service: service,
 	}
+}
+
+func assignmentRPCError(action string, err error) error {
+	if errors.Is(err, controlplane.ErrStaleAssignment) {
+		return status.Errorf(codes.FailedPrecondition, "failed to %s job: %v", action, err)
+	}
+	return status.Errorf(codes.Unavailable, "failed to %s job: %v", action, err)
 }
 
 var _ agentv1.AgentServiceServer = (*Server)(nil)
@@ -170,7 +178,7 @@ func (s *Server) Complete(ctx context.Context, req *agentv1.CompleteRequest) (*a
 		JobID:   jobID,
 		Attempt: attempt,
 	}); err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "failed to complete job: %v", err)
+		return nil, assignmentRPCError("complete", err)
 	}
 
 	return &agentv1.CompleteResponse{}, nil
@@ -215,7 +223,7 @@ func (s *Server) Cancel(ctx context.Context, req *agentv1.CancelRequest) (*agent
 	}
 	err := s.service.Cancel(ctx, domain.Assignment{JobID: jobID, Attempt: attempt})
 	if err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "failed to cancel job: %v", err)
+		return nil, assignmentRPCError("cancel", err)
 	}
 	return &agentv1.CancelResponse{}, nil
 }
@@ -238,7 +246,7 @@ func (s *Server) Fail(ctx context.Context, req *agentv1.FailRequest) (*agentv1.F
 		JobID:   jobID,
 		Attempt: attempt,
 	}, reason, req.GetLastError()); err != nil {
-		return nil, status.Errorf(codes.FailedPrecondition, "failed to fail job: %v", err)
+		return nil, assignmentRPCError("fail", err)
 	}
 
 	return &agentv1.FailResponse{}, nil

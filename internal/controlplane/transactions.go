@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 )
 
 func withTx[T any](
 	ctx context.Context,
 	db *sql.DB,
-	operation func(*sqlitedb.Queries) (T, error),
+	operation func(*postgresdb.Queries) (T, error),
 ) (T, error) {
 	var zero T
 
@@ -21,7 +21,7 @@ func withTx[T any](
 	}
 	defer tx.Rollback()
 
-	result, err := operation(sqlitedb.New(tx))
+	result, err := operation(postgresdb.New(tx))
 	if err != nil {
 		return zero, err
 	}

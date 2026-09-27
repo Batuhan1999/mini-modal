@@ -2,7 +2,7 @@ package domain
 
 import (
 	agentv1 "mini-modal/gen/agent/v1"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 	"time"
 )
 
@@ -45,27 +45,27 @@ const (
 	FailureTimeout        FailureReason = "timeout"
 )
 
-func (n Node) CanRun(job sqlitedb.Job) bool {
+func (n Node) CanRun(job postgresdb.Job) bool {
 	return (job.GpuType == "" || job.GpuType == n.GPUType) &&
 		job.Gpus <= n.AvailableGPUs &&
 		job.Cpus <= n.AvailableCPUs &&
 		job.MemoryGb <= n.AvailableMemoryGB
 }
 
-func (n Node) CanPossiblyRun(job sqlitedb.Job) bool {
+func (n Node) CanPossiblyRun(job postgresdb.Job) bool {
 	return (job.GpuType == "" || job.GpuType == n.GPUType) &&
 		job.Gpus <= n.TotalGPUs &&
 		job.Cpus <= n.TotalCPUs &&
 		job.MemoryGb <= n.TotalMemoryGB
 }
 
-func (n *Node) Reserve(job sqlitedb.Job) {
+func (n *Node) Reserve(job postgresdb.Job) {
 	n.AvailableGPUs -= job.Gpus
 	n.AvailableCPUs -= job.Cpus
 	n.AvailableMemoryGB -= job.MemoryGb
 }
 
-func (n *Node) Release(job sqlitedb.Job) {
+func (n *Node) Release(job postgresdb.Job) {
 	n.AvailableGPUs += job.Gpus
 	n.AvailableCPUs += job.Cpus
 	n.AvailableMemoryGB += job.MemoryGb

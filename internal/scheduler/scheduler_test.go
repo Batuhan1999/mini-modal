@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"mini-modal/internal/domain"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 )
 
 func TestSchedulePrioritizesJobsAndDoesNotOverAllocate(t *testing.T) {
@@ -21,7 +21,7 @@ func TestSchedulePrioritizesJobsAndDoesNotOverAllocate(t *testing.T) {
 		},
 	}
 
-	jobs := []sqlitedb.Job{
+	jobs := []postgresdb.Job{
 		{ID: "low", Priority: 1, GpuType: "A100", Gpus: 3, Cpus: 4, MemoryGb: 8},
 		{ID: "high", Priority: 10, GpuType: "A100", Gpus: 2, Cpus: 4, MemoryGb: 8},
 	}

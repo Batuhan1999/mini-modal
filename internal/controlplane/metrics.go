@@ -7,7 +7,7 @@ import (
 
 	"mini-modal/internal/domain"
 	jobmodel "mini-modal/internal/job"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -226,7 +226,7 @@ func (m *Metrics) RecordSchedulerRun(startedAt time.Time, err error) {
 	m.schedulerDuration.Observe(time.Since(startedAt).Seconds())
 }
 
-func (m *Metrics) Refresh(jobs []sqlitedb.Job, nodes []domain.Node, healthy func(string) bool) {
+func (m *Metrics) Refresh(jobs []postgresdb.Job, nodes []domain.Node, healthy func(string) bool) {
 	statuses := []jobmodel.Status{
 		jobmodel.Pending,
 		jobmodel.Assigned,

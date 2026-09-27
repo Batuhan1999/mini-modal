@@ -10,7 +10,7 @@ import (
 
 	"mini-modal/internal/controlplane"
 	jobmodel "mini-modal/internal/job"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 )
 
 type submitJobRequest struct {
@@ -78,7 +78,7 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 	var (
-		jobs []sqlitedb.Job
+		jobs []postgresdb.Job
 		err  error
 	)
 	limitValue := r.URL.Query().Get("limit")
@@ -97,7 +97,7 @@ func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if jobs == nil {
-		jobs = make([]sqlitedb.Job, 0)
+		jobs = make([]postgresdb.Job, 0)
 	}
 
 	writeJSON(w, http.StatusOK, jobs)
@@ -159,7 +159,7 @@ func (s *Server) listJobLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if attempt <= 0 {
-		writeJSON(w, http.StatusOK, make([]sqlitedb.JobLog, 0))
+		writeJSON(w, http.StatusOK, make([]postgresdb.JobLog, 0))
 		return
 	}
 
@@ -169,7 +169,7 @@ func (s *Server) listJobLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if logs == nil {
-		logs = make([]sqlitedb.JobLog, 0)
+		logs = make([]postgresdb.JobLog, 0)
 	}
 
 	writeJSON(w, http.StatusOK, logs)
@@ -188,7 +188,7 @@ func (s *Server) listJobEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if events == nil {
-		events = make([]sqlitedb.JobEvent, 0)
+		events = make([]postgresdb.JobEvent, 0)
 	}
 
 	writeJSON(w, http.StatusOK, events)

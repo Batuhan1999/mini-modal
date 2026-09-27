@@ -4,3 +4,4 @@
 /data/*.db-wal
 /agent
 /controlplane
+/.env

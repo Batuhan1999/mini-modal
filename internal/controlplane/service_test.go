@@ -3,14 +3,14 @@ package controlplane
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"mini-modal/internal/domain"
 	jobmodel "mini-modal/internal/job"
-	"mini-modal/internal/store/sqlite"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	"mini-modal/internal/store/postgres"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
+	"mini-modal/internal/store/postgres/testdb"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -153,8 +153,8 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if assignment.Image != "alpine:3.20" || assignment.CPUs != 4 || assignment.MemoryGB != 8 {
 		t.Fatalf("assignment runtime configuration = %#v", assignment)
 	}
-	queries := sqlitedb.New(service.db)
-	submissionEvents, err := queries.ListJobEvents(ctx, sqlitedb.ListJobEventsParams{
+	queries := postgresdb.New(service.db)
+	submissionEvents, err := queries.ListJobEvents(ctx, postgresdb.ListJobEventsParams{
 		JobID:   job.ID,
 		Attempt: 0,
 	})
@@ -164,7 +164,7 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if len(submissionEvents) != 1 || submissionEvents[0].Event != "submitted" {
 		t.Fatalf("submission events = %#v", submissionEvents)
 	}
-	events, err := queries.ListJobEvents(ctx, sqlitedb.ListJobEventsParams{
+	events, err := queries.ListJobEvents(ctx, postgresdb.ListJobEventsParams{
 		JobID:   job.ID,
 		Attempt: assignment.Attempt,
 	})
@@ -208,7 +208,7 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	if jobmodel.Status(completed.Status) != jobmodel.Succeeded {
 		t.Fatalf("got status %q, want %q", completed.Status, jobmodel.Succeeded)
 	}
-	events, err = queries.ListJobEvents(ctx, sqlitedb.ListJobEventsParams{
+	events, err = queries.ListJobEvents(ctx, postgresdb.ListJobEventsParams{
 		JobID:   job.ID,
 		Attempt: assignment.Attempt,
 	})
@@ -256,14 +256,10 @@ func TestServiceRejectsInvalidJobs(t *testing.T) {
 
 func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	ctx := context.Background()
-	databasePath := filepath.Join(t.TempDir(), "mini-modal.db")
 	node := domain.Node{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}
 
-	db, err := sqlite.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service := NewService(NewRuntimeState(), sqlitedb.New(db), db, newTestMetrics())
+	db, databaseURL := testdb.OpenWithDSN(t)
+	service := NewService(NewRuntimeState(), postgresdb.New(db), db, newTestMetrics())
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -287,12 +283,12 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, err = sqlite.Open(ctx, databasePath)
+	db, err = postgres.Open(ctx, databaseURL, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	restarted := NewService(NewRuntimeState(), sqlitedb.New(db), db, newTestMetrics())
+	restarted := NewService(NewRuntimeState(), postgresdb.New(db), db, newTestMetrics())
 	if err := restarted.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -538,13 +534,9 @@ func scheduleTestJobs(t *testing.T, service *Service, ctx context.Context) {
 func newTestServiceWithMetrics(t *testing.T, nodes []domain.Node, metrics *Metrics) *Service {
 	t.Helper()
 	ctx := context.Background()
-	db, err := sqlite.Open(ctx, ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := testdb.Open(t)
 
-	service := NewService(NewRuntimeState(), sqlitedb.New(db), db, metrics)
+	service := NewService(NewRuntimeState(), postgresdb.New(db), db, metrics)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -560,9 +552,9 @@ func newTestMetrics() *Metrics {
 	return NewMetrics(prometheus.NewRegistry())
 }
 
-func listTestJobEvents(t *testing.T, service *Service, jobID string, attempt int64) []sqlitedb.JobEvent {
+func listTestJobEvents(t *testing.T, service *Service, jobID string, attempt int64) []postgresdb.JobEvent {
 	t.Helper()
-	events, err := sqlitedb.New(service.db).ListJobEvents(context.Background(), sqlitedb.ListJobEventsParams{
+	events, err := postgresdb.New(service.db).ListJobEvents(context.Background(), postgresdb.ListJobEventsParams{
 		JobID:   jobID,
 		Attempt: attempt,
 	})

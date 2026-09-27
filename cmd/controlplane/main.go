@@ -16,18 +16,23 @@ import (
 	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/controlplane"
 	"mini-modal/internal/devcluster"
-	"mini-modal/internal/store/sqlite"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	"mini-modal/internal/store/postgres"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 	"mini-modal/internal/transport/agentgrpc"
 	"mini-modal/internal/transport/httpapi"
 
+	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"google.golang.org/grpc"
 )
 
 func main() {
-	databasePath := flag.String("db-path", "data/mini-modal.db", "path to the SQLite database")
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Fatalf("load .env: %v", err)
+	}
+	databaseURL := flag.String("database-url", os.Getenv("DATABASE_URL"), "Postgres connection URL")
+	dbMaxOpenConns := flag.Int("db-max-open-conns", 20, "maximum number of open Postgres connections")
 	agentBinary := flag.String("agent-binary", "tmp/agent", "path to the local development agent binary")
 	agentControlPlaneAddress := flag.String(
 		"agent-control-plane-address",
@@ -39,17 +44,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	db, err := sqlite.Open(ctx, *databasePath)
+	db, err := postgres.Open(ctx, *databaseURL, *dbMaxOpenConns)
 	if err != nil {
 		log.Fatalf("failed to open database: %v", err)
 	}
 	defer db.Close()
 
-	queries := sqlitedb.New(db)
+	queries := postgresdb.New(db)
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		collectors.NewDBStatsCollector(db, "mini-modal"),
 	)
 	metrics := controlplane.NewMetrics(registry)
 	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, metrics)

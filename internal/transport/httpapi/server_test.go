@@ -15,8 +15,8 @@ import (
 	"mini-modal/internal/devcluster"
 	"mini-modal/internal/domain"
 	jobmodel "mini-modal/internal/job"
-	"mini-modal/internal/store/sqlite"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
+	"mini-modal/internal/store/postgres/testdb"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -46,7 +46,7 @@ func TestJobEndpoints(t *testing.T) {
 		t.Fatalf("submit status = %d, want %d; body = %s", submitResponse.Code, http.StatusAccepted, submitResponse.Body.String())
 	}
 
-	var submitted sqlitedb.Job
+	var submitted postgresdb.Job
 	if err := json.NewDecoder(submitResponse.Body).Decode(&submitted); err != nil {
 		t.Fatalf("decode submit response: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestJobEndpoints(t *testing.T) {
 		t.Fatalf("list status = %d, want %d; body = %s", listResponse.Code, http.StatusOK, listResponse.Body.String())
 	}
 
-	var listed []sqlitedb.Job
+	var listed []postgresdb.Job
 	if err := json.NewDecoder(listResponse.Body).Decode(&listed); err != nil {
 		t.Fatalf("decode list response: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestJobEndpoints(t *testing.T) {
 	if eventsResponse.Code != http.StatusOK {
 		t.Fatalf("events status = %d, want %d; body = %s", eventsResponse.Code, http.StatusOK, eventsResponse.Body.String())
 	}
-	var events []sqlitedb.JobEvent
+	var events []postgresdb.JobEvent
 	if err := json.NewDecoder(eventsResponse.Body).Decode(&events); err != nil {
 		t.Fatalf("decode events response: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestJobEndpoints(t *testing.T) {
 		t.Fatalf("logs status = %d, want %d; body = %s", logsResponse.Code, http.StatusOK, logsResponse.Body.String())
 	}
 
-	var logs []sqlitedb.JobLog
+	var logs []postgresdb.JobLog
 	if err := json.NewDecoder(logsResponse.Body).Decode(&logs); err != nil {
 		t.Fatalf("decode logs response: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestListJobsOnlyLimitsResponseWhenRequested(t *testing.T) {
 	unboundedResponse := httptest.NewRecorder()
 	server.ServeHTTP(unboundedResponse, unboundedRequest)
 
-	var allJobs []sqlitedb.Job
+	var allJobs []postgresdb.Job
 	if err := json.NewDecoder(unboundedResponse.Body).Decode(&allJobs); err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestListJobsOnlyLimitsResponseWhenRequested(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want %d", response.Code, http.StatusOK)
 	}
-	var jobs []sqlitedb.Job
+	var jobs []postgresdb.Job
 	if err := json.NewDecoder(response.Body).Decode(&jobs); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestCancelJobEndpoint(t *testing.T) {
 		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusAccepted, response.Body.String())
 	}
 
-	var record sqlitedb.Job
+	var record postgresdb.Job
 	if err := json.NewDecoder(response.Body).Decode(&record); err != nil {
 		t.Fatal(err)
 	}
@@ -441,15 +441,11 @@ func TestDevNodeEndpoints(t *testing.T) {
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	ctx := context.Background()
-	db, err := sqlite.Open(ctx, ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := testdb.Open(t)
 
 	registry := prometheus.NewRegistry()
 	metrics := controlplane.NewMetrics(registry)
-	service := controlplane.NewService(controlplane.NewRuntimeState(), sqlitedb.New(db), db, metrics)
+	service := controlplane.NewService(controlplane.NewRuntimeState(), postgresdb.New(db), db, metrics)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

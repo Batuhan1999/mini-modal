@@ -2,6 +2,7 @@ package agentgrpc
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,8 +10,8 @@ import (
 	"mini-modal/internal/controlplane"
 	"mini-modal/internal/domain"
 	jobmodel "mini-modal/internal/job"
-	"mini-modal/internal/store/sqlite"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
+	"mini-modal/internal/store/postgres/testdb"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/codes"
@@ -78,6 +79,20 @@ func TestClaimAndComplete(t *testing.T) {
 	}
 	if jobmodel.Status(record.Status) != jobmodel.Succeeded {
 		t.Fatalf("job status = %q, want %q", record.Status, jobmodel.Succeeded)
+	}
+	if _, err := server.Complete(context.Background(), &agentv1.CompleteRequest{
+		JobId: job.ID, Attempt: assignment.GetAttempt(),
+	}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("repeat completion code = %s, want %s", status.Code(err), codes.FailedPrecondition)
+	}
+}
+
+func TestAssignmentRPCErrorClassifiesOnlyStaleAsPrecondition(t *testing.T) {
+	if code := status.Code(assignmentRPCError("complete", controlplane.ErrStaleAssignment)); code != codes.FailedPrecondition {
+		t.Fatalf("stale error code = %s, want %s", code, codes.FailedPrecondition)
+	}
+	if code := status.Code(assignmentRPCError("complete", errors.New("database is locked"))); code != codes.Unavailable {
+		t.Fatalf("storage error code = %s, want %s", code, codes.Unavailable)
 	}
 }
 
@@ -175,14 +190,10 @@ func TestRPCsRejectEmptyIdentifiers(t *testing.T) {
 func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 	t.Helper()
 	ctx := context.Background()
-	db, err := sqlite.Open(ctx, ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
+	db := testdb.Open(t)
 
 	metrics := controlplane.NewMetrics(prometheus.NewRegistry())
-	service := controlplane.NewService(controlplane.NewRuntimeState(), sqlitedb.New(db), db, metrics)
+	service := controlplane.NewService(controlplane.NewRuntimeState(), postgresdb.New(db), db, metrics)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

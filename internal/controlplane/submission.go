@@ -3,12 +3,12 @@ package controlplane
 import (
 	"errors"
 
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 )
 
 var ErrSubmissionConflict = errors.New("submission conflict")
 
-func sameSubmission(existing sqlitedb.Job, requested sqlitedb.CreateJobParams) bool {
+func sameSubmission(existing postgresdb.Job, requested postgresdb.CreateJobParams) bool {
 	return existing.ID == requested.ID &&
 		existing.Priority == requested.Priority &&
 		existing.GpuType == requested.GpuType &&

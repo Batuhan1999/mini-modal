@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	jobmodel "mini-modal/internal/job"
-	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
+	postgresdb "mini-modal/internal/store/postgres/sqlc"
 )
 
 func TestSameSubmission(t *testing.T) {
@@ -26,7 +26,7 @@ func TestSameSubmission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	existing := sqlitedb.Job{
+	existing := postgresdb.Job{
 		ID:                  params.ID,
 		Priority:            params.Priority,
 		GpuType:             params.GpuType,
@@ -50,20 +50,20 @@ func TestSameSubmission(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		change func(*sqlitedb.Job)
+		change func(*postgresdb.Job)
 	}{
-		{"id", func(j *sqlitedb.Job) { j.ID = "job-2" }},
-		{"priority", func(j *sqlitedb.Job) { j.Priority++ }},
-		{"gpu type", func(j *sqlitedb.Job) { j.GpuType = "H100" }},
-		{"gpus", func(j *sqlitedb.Job) { j.Gpus++ }},
-		{"cpus", func(j *sqlitedb.Job) { j.Cpus++ }},
-		{"memory", func(j *sqlitedb.Job) { j.MemoryGb++ }},
-		{"duration", func(j *sqlitedb.Job) { j.DurationSeconds++ }},
-		{"image", func(j *sqlitedb.Job) { j.Image = "ubuntu:latest" }},
-		{"command", func(j *sqlitedb.Job) { j.Command = "sleep" }},
-		{"args", func(j *sqlitedb.Job) { j.Args = `["different"]` }},
-		{"max attempts", func(j *sqlitedb.Job) { j.MaxAttempts++ }},
-		{"retry backoff", func(j *sqlitedb.Job) { j.RetryBackoffSeconds++ }},
+		{"id", func(j *postgresdb.Job) { j.ID = "job-2" }},
+		{"priority", func(j *postgresdb.Job) { j.Priority++ }},
+		{"gpu type", func(j *postgresdb.Job) { j.GpuType = "H100" }},
+		{"gpus", func(j *postgresdb.Job) { j.Gpus++ }},
+		{"cpus", func(j *postgresdb.Job) { j.Cpus++ }},
+		{"memory", func(j *postgresdb.Job) { j.MemoryGb++ }},
+		{"duration", func(j *postgresdb.Job) { j.DurationSeconds++ }},
+		{"image", func(j *postgresdb.Job) { j.Image = "ubuntu:latest" }},
+		{"command", func(j *postgresdb.Job) { j.Command = "sleep" }},
+		{"args", func(j *postgresdb.Job) { j.Args = `["different"]` }},
+		{"max attempts", func(j *postgresdb.Job) { j.MaxAttempts++ }},
+		{"retry backoff", func(j *postgresdb.Job) { j.RetryBackoffSeconds++ }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
