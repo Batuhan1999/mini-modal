@@ -5,7 +5,7 @@ be compared rather than accidentally measuring a different machine setup.
 
 ## Fixed environment
 
-The development container defaults to:
+Each benchmark container defaults to:
 
 - 4 CPU cores;
 - 6 GB RAM with no additional swap allowance;
@@ -15,36 +15,36 @@ The development container defaults to:
 Check the effective cgroup limits with:
 
 ```bash
-make box-limits
+make benchmark-limits
 ```
 
 Docker still runs on the Mac, but these cgroup limits bound the processes inside
-the development box. Fake and process executor benchmarks stay inside this
+each benchmark container. Fake and process executor benchmarks stay inside this
 boundary. Docker-executor benchmarks are separate because access to the host
 Docker socket would allow child containers to consume resources outside the
-development box.
+benchmark container.
 
 The optional Prometheus and Grafana containers are separately capped at 1 CPU /
-1 GiB and 0.5 CPU / 512 MiB, respectively. Docker currently exposes about
-7.75 GiB total on the development machine, so raising the benchmark box beyond
-6 GiB requires increasing the Docker or OrbStack VM memory allocation first.
+1 GiB and 0.5 CPU / 512 MiB, respectively. A benchmark container's CPU and
+memory limits are ceilings, not reservations; other host or Docker workloads
+can still affect timings.
 
-## Start the box
+## Develop locally
 
 ```bash
-make box-build
-make box-up
-make box-dev
+go tool air
 ```
 
-Run `make box-dev` in one terminal. Use another terminal for simulations:
+Run tests and generators with your local Go toolchain. When comparing versions,
+stop local development processes or keep their load consistent across both
+versions. The benchmark commands below build and remove their containers
+automatically; they do not need a long-lived development container.
+
+For a local simulation against your development control plane:
 
 ```bash
-make box-shell
 go run ./cmd/simulator -jobs 1000 -rate 0 -concurrency 1 -submit-only
 ```
-
-Cursor can also reopen the repository using `.devcontainer/devcontainer.json`.
 
 ## Measurement ladder
 
@@ -75,8 +75,8 @@ source material for graphs and the eventual blog post.
 
 ## Initial scenarios
 
-Each target stops the persistent development container, then starts a clean,
-isolated control plane and database inside one new resource-limited container:
+Each target starts a fresh resource-limited container with its own control plane
+and temporary database, then removes that container when the run finishes:
 
 ```bash
 make benchmark-admission-serial
@@ -101,5 +101,5 @@ BENCHMARK_LABEL=background-scheduler make benchmark-admission-serial
 ```
 
 Every run writes one metadata/result JSON file and one raw Prometheus snapshot
-to `benchmarks/results/`. Run `make box-up` again when you want to return to the
-long-lived development box.
+to `benchmarks/results/`. No benchmark ports are published to the host, so a
+local control plane can keep running, though its resource use may add noise.

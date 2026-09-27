@@ -1,0 +1,29 @@
+name: mini-modal-benchmark
+
+services:
+  benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile.benchmark
+    init: true
+    working_dir: /workspace
+    cpus: "${MINI_MODAL_BENCH_CPUS:-4.0}"
+    mem_limit: "${MINI_MODAL_BENCH_MEMORY:-6g}"
+    memswap_limit: "${MINI_MODAL_BENCH_MEMORY:-6g}"
+    pids_limit: ${MINI_MODAL_BENCH_PIDS:-1024}
+    shm_size: 256m
+    stop_grace_period: 10s
+    environment:
+      MINI_MODAL_ENV: benchmark-container
+      JOBS: "${JOBS:-}"
+      CONCURRENCY: "${CONCURRENCY:-}"
+      AGENTS: "${AGENTS:-}"
+      BENCHMARK_LABEL: "${BENCHMARK_LABEL:-benchmark}"
+    volumes:
+      - .:/workspace
+      - go-module-cache:/home/developer/go/pkg/mod
+      - go-build-cache:/home/developer/.cache/go-build
+
+volumes:
+  go-module-cache:
+  go-build-cache:

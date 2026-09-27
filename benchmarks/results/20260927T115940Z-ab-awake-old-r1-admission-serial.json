@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260927T115940Z",
+  "benchmark_label": "ab-awake-old-r1",
+  "scenario": "admission-serial",
+  "git_commit": "c13c6551f04fe7ed075271f1a95d812ed5f445b0",
+  "git_dirty": false,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 3117997,
+    "memory_peak_bytes": 175788032,
+    "pids_peak": 21,
+    "oom_kills": 0
+  },
+  "workload": {
+    "jobs": 1000,
+    "concurrency": 1,
+    "agents": 0,
+    "executor": "fake"
+  },
+  "storage": {
+    "database_bytes": 630784,
+    "jobs": 1000
+  },
+  "result": {
+    "submitted": 1000,
+    "submission_errors": 0,
+    "statuses": {},
+    "submission_elapsed_ns": 2633922834,
+    "elapsed_ns": 2633922834,
+    "submission_latency_p50_ns": 2046875,
+    "submission_latency_p95_ns": 5251167,
+    "submission_latency_p99_ns": 6649125
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260927T031843Z",
+  "benchmark_label": "ab-submit-new-r3",
+  "scenario": "fake-e2e",
+  "git_commit": "c13c6551f04fe7ed075271f1a95d812ed5f445b0",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 2853857,
+    "memory_peak_bytes": 182030336,
+    "pids_peak": 87,
+    "oom_kills": 0
+  },
+  "workload": {
+    "jobs": 256,
+    "concurrency": 32,
+    "agents": 8,
+    "executor": "fake"
+  },
+  "storage": {
+    "database_bytes": 401408,
+    "jobs": 256
+  },
+  "result": {
+    "submitted": 256,
+    "submission_errors": 0,
+    "statuses": {
+      "succeeded": 256
+    },
+    "submission_elapsed_ns": 483871625,
+    "elapsed_ns": 11490124214,
+    "submission_latency_p50_ns": 43354042,
+    "submission_latency_p95_ns": 137014875,
+    "submission_latency_p99_ns": 273167750
+  }
+}

@@ -40,22 +40,22 @@ Air watches Go and embedded web source files, rebuilds both executables, and
 restarts `cmd/controlplane` after a change. It is a development tool and is not
 used in production.
 
-### Resource-limited development box
+### Resource-limited benchmarks
 
-To develop and benchmark inside a fixed 4-CPU, 6-GiB, 1,024-PID Linux
-environment:
+Develop locally using `go tool air`. Benchmarks run in short-lived Docker
+containers with a fixed 4-CPU, 6-GiB, 1,024-PID limit:
 
 ```bash
-make box-build
-make box-up
-make box-limits
-make box-dev
+make benchmark-limits
+make benchmark-admission-serial
+make benchmark-admission-concurrent
+make benchmark-fake
+make benchmark-process
 ```
 
-Run `make box-dev` in one terminal and use `make box-shell` from another. Cursor
-can also reopen the repository through `.devcontainer/devcontainer.json`.
-Configuration and benchmark methodology are documented in
-[docs/benchmarking.md](docs/benchmarking.md).
+Each run starts its own control plane, agents when needed, and temporary SQLite
+database. No persistent development container is required. See
+[docs/benchmarking.md](docs/benchmarking.md) for the methodology.
 
 The API listens on `http://localhost:8080`:
 

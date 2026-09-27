@@ -6,9 +6,6 @@ RUN apt-get update \
         curl \
         git \
         jq \
-        make \
-        procps \
-        protobuf-compiler \
         sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,4 +27,4 @@ USER ${USERNAME}
 COPY --chown=${USERNAME}:${USERNAME} go.mod go.sum /tmp/mini-modal-deps/
 RUN cd /tmp/mini-modal-deps && go mod download
 
-CMD ["sleep", "infinity"]
+CMD ["/bin/false"]
