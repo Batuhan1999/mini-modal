@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"mini-modal/internal/controlplane"
 	jobmodel "mini-modal/internal/job"
 	sqlitedb "mini-modal/internal/store/sqlite/sqlc"
 )
@@ -64,6 +65,10 @@ func (s *Server) submitJob(w http.ResponseWriter, r *http.Request) {
 
 	record, err := s.service.Submit(r.Context(), request.spec())
 	if err != nil {
+		if errors.Is(err, controlplane.ErrSubmissionConflict) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

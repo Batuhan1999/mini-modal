@@ -296,6 +296,42 @@ func TestCancelMissingJobReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestSubmitIdempotentRetryAndConflict(t *testing.T) {
+	server := newTestServer(t)
+	submit := func(body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/v1/jobs", strings.NewReader(body))
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		return response
+	}
+
+	body := `{"id":"job-1","cpus":1,"memory_gb":1,"image":"alpine:3.20","command":"echo"}`
+	first := submit(body)
+	retry := submit(body)
+	if first.Code != http.StatusAccepted || retry.Code != http.StatusAccepted {
+		t.Fatalf("submit statuses = %d, %d; want %d", first.Code, retry.Code, http.StatusAccepted)
+	}
+	if first.Body.String() != retry.Body.String() {
+		t.Fatalf("retry response = %s, want %s", retry.Body.String(), first.Body.String())
+	}
+
+	conflict := submit(`{"id":"job-1","cpus":2,"memory_gb":1,"image":"alpine:3.20","command":"echo"}`)
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("conflicting submit status = %d, want %d; body = %s", conflict.Code, http.StatusConflict, conflict.Body.String())
+	}
+	if !strings.Contains(conflict.Body.String(), "different specification") {
+		t.Fatalf("conflicting submit response = %s, want specification conflict", conflict.Body.String())
+	}
+
+	count, err := server.service.JobCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("job count = %d, want 1", count)
+	}
+}
+
 func TestSubmitRejectsInvalidJSON(t *testing.T) {
 	server := newTestServer(t)
 	request := httptest.NewRequest(http.MethodPost, "/v1/jobs", strings.NewReader(`{"id":`))

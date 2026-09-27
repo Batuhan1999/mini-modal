@@ -307,11 +307,8 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 		return sqlitedb.Job{}, err
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	now := time.Now()
-	_, err = withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
+	job, err := withTx(ctx, s.db, func(queries *sqlitedb.Queries) (sqlitedb.Job, error) {
 		job, err := queries.CreateJob(ctx, params)
 		if err != nil {
 			return sqlitedb.Job{}, err
@@ -329,7 +326,14 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 		return job, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return sqlitedb.Job{}, fmt.Errorf("job %q already exists", params.ID)
+		exists, err := s.queries.GetJob(ctx, params.ID)
+		if err != nil {
+			return sqlitedb.Job{}, fmt.Errorf("get job %q: %w", params.ID, err)
+		}
+		if !sameSubmission(exists, params) {
+			return sqlitedb.Job{}, fmt.Errorf("%w: job %q has a different specification", ErrSubmissionConflict, params.ID)
+		}
+		return exists, nil
 	}
 	if err != nil {
 		return sqlitedb.Job{}, fmt.Errorf("create job %q: %w", params.ID, err)
@@ -342,7 +346,7 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (sqlitedb.Job,
 	default:
 		// Channel is already full; a notification is already pending.
 	}
-	return s.queries.GetJob(ctx, params.ID)
+	return job, nil
 }
 
 func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, bool, error) {

@@ -2,6 +2,7 @@ package controlplane
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -38,6 +39,73 @@ func TestServiceRecordsSubmittedJobMetric(t *testing.T) {
 			t.Fatalf("submitted metric = %+v, want 1", family.Metric)
 		}
 		return
+	}
+	t.Fatal("mini_modal_jobs_submitted_total was not gathered")
+}
+
+func TestServiceSubmitIdempotency(t *testing.T) {
+	ctx := context.Background()
+	registry := prometheus.NewRegistry()
+	service := newTestServiceWithMetrics(t, nil, NewMetrics(registry))
+	spec := jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "echo",
+	}
+
+	first, err := service.Submit(ctx, spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-service.wakeup:
+	default:
+		t.Fatal("new submission did not wake scheduler")
+	}
+
+	retry := spec
+	retry.Args = []string{}
+	existing, err := service.Submit(ctx, retry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if existing != first {
+		t.Fatalf("retry returned %+v, want existing job %+v", existing, first)
+	}
+
+	changed := spec
+	changed.CPUs = 2
+	if _, err := service.Submit(ctx, changed); !errors.Is(err, ErrSubmissionConflict) {
+		t.Fatalf("changed specification error = %v, want ErrSubmissionConflict", err)
+	}
+
+	select {
+	case <-service.wakeup:
+		t.Fatal("duplicate submission woke scheduler")
+	default:
+	}
+	events := listTestJobEvents(t, service, spec.ID, 0)
+	if len(events) != 1 || events[0].Event != string(jobmodel.HistorySubmitted) {
+		t.Fatalf("submission events = %+v, want one submitted event", events)
+	}
+	count, err := service.JobCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("job count = %d, want 1", count)
+	}
+
+	families, err := registry.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() == "mini_modal_jobs_submitted_total" {
+			if got := family.Metric[0].GetCounter().GetValue(); got != 1 {
+				t.Fatalf("submitted metric = %v, want 1", got)
+			}
+			return
+		}
 	}
 	t.Fatal("mini_modal_jobs_submitted_total was not gathered")
 }
