@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260927T130212Z",
+  "benchmark_label": "lease30-pool4-events",
+  "scenario": "process-e2e",
+  "git_commit": "22e992f485cd866a019f113d50632729d456bdda",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 3715026,
+    "memory_peak_bytes": 175919104,
+    "pids_peak": 113,
+    "oom_kills": 0
+  },
+  "workload": {
+    "jobs": 128,
+    "concurrency": 16,
+    "agents": 4,
+    "executor": "process",
+    "db_max_open_conns": 4
+  },
+  "storage": {
+    "database_bytes": 294912,
+    "jobs": 128,
+    "failure_reasons": [
+      {
+        "reason": "assignment lease expired",
+        "jobs": 4
+      }
+    ],
+    "failed_job_events": [
+      {
+        "job_id": "sim-1790514132078-1-000032",
+        "node_id": "benchmark-node-02",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      },
+      {
+        "job_id": "sim-1790514132078-1-000035",
+        "node_id": "benchmark-node-04",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      },
+      {
+        "job_id": "sim-1790514132078-1-000084",
+        "node_id": "benchmark-node-04",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      },
+      {
+        "job_id": "sim-1790514132078-1-000094",
+        "node_id": "benchmark-node-01",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      }
+    ]
+  },
+  "result": {
+    "submitted": 128,
+    "submission_errors": 0,
+    "statuses": {
+      "failed": 4,
+      "succeeded": 124
+    },
+    "submission_elapsed_ns": 357910083,
+    "elapsed_ns": 37363264309,
+    "submission_latency_p50_ns": 12423000,
+    "submission_latency_p95_ns": 51086958,
+    "submission_latency_p99_ns": 199035042
+  }
+}

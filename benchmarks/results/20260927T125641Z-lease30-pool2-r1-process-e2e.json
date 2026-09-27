@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260927T125641Z",
+  "benchmark_label": "lease30-pool2-r1",
+  "scenario": "process-e2e",
+  "git_commit": "22e992f485cd866a019f113d50632729d456bdda",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 3686413,
+    "memory_peak_bytes": 178683904,
+    "pids_peak": 117,
+    "oom_kills": 0
+  },
+  "workload": {
+    "jobs": 128,
+    "concurrency": 16,
+    "agents": 4,
+    "executor": "process",
+    "db_max_open_conns": 2
+  },
+  "storage": {
+    "database_bytes": 299008,
+    "jobs": 128,
+    "failure_reasons": [
+      {
+        "reason": "assignment lease expired",
+        "jobs": 3
+      }
+    ]
+  },
+  "result": {
+    "submitted": 128,
+    "submission_errors": 0,
+    "statuses": {
+      "failed": 3,
+      "succeeded": 125
+    },
+    "submission_elapsed_ns": 456886542,
+    "elapsed_ns": 37466199475,
+    "submission_latency_p50_ns": 19588416,
+    "submission_latency_p95_ns": 112391833,
+    "submission_latency_p99_ns": 182565625
+  }
+}

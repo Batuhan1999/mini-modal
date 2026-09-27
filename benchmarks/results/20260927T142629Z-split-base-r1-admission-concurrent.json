@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "timestamp": "20260927T142629Z",
+  "benchmark_label": "split-base-r1",
+  "scenario": "admission-concurrent",
+  "git_commit": "22e992f485cd866a019f113d50632729d456bdda",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 1762672,
+    "memory_peak_bytes": 186413056,
+    "pids_peak": 25,
+    "oom_kills": 0
+  },
+  "workload_usage": {
+    "started_unix_ms": 1790519192907,
+    "ended_unix_ms": 1790519193071,
+    "cpu_usage_usec": 250933,
+    "cpu_throttled_usec": 0,
+    "cpu_pressure_some_usec": 2766,
+    "memory_start_bytes": 69332992,
+    "memory_end_bytes": 76017664,
+    "memory_peak_bytes": 84725760,
+    "io_read_bytes": 0,
+    "io_write_bytes": 0,
+    "io_read_ops": 0,
+    "io_write_ops": 0,
+    "io_pressure_some_usec": 0,
+    "io_pressure_full_usec": 0,
+    "sampled_peak_cpu_millicores": 1533,
+    "sampled_peak_io_read_bytes_per_sec": 0,
+    "sampled_peak_io_write_bytes_per_sec": 0,
+    "sample_count": 3
+  },
+  "workload": {
+    "jobs": 1000,
+    "concurrency": 32,
+    "agents": 0,
+    "executor": "fake",
+    "db_max_open_conns": 4
+  },
+  "storage": {
+    "database_bytes": 9149799,
+    "jobs": 1000,
+    "failure_reasons": [],
+    "failed_job_events": []
+  },
+  "result": {
+    "submitted": 1000,
+    "submission_errors": 0,
+    "statuses": {},
+    "submission_elapsed_ns": 161513000,
+    "elapsed_ns": 161513000,
+    "submission_latency_p50_ns": 3728667,
+    "submission_latency_p95_ns": 12855959,
+    "submission_latency_p99_ns": 19599833
+  },
+  "postgres_usage": {
+    "cpu_limit": "400000 100000",
+    "memory_limit_bytes": "4294967296",
+    "cpu_usage_usec": 203771,
+    "cpu_throttled_usec": 0,
+    "memory_peak_bytes": 137617408,
+    "io_read_bytes": 0,
+    "io_write_bytes": 7970816,
+    "cpu_pressure_some_usec": 2328,
+    "io_pressure_some_usec": 9194,
+    "sample_count": 1,
+    "oom_kills": 0
+  }
+}

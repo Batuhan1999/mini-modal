@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260927T130328Z",
+  "benchmark_label": "lease30-pool4-logs",
+  "scenario": "process-e2e",
+  "git_commit": "22e992f485cd866a019f113d50632729d456bdda",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 3843292,
+    "memory_peak_bytes": 175042560,
+    "pids_peak": 117,
+    "oom_kills": 0
+  },
+  "workload": {
+    "jobs": 128,
+    "concurrency": 16,
+    "agents": 4,
+    "executor": "process",
+    "db_max_open_conns": 4
+  },
+  "storage": {
+    "database_bytes": 294912,
+    "jobs": 128,
+    "failure_reasons": [
+      {
+        "reason": "assignment lease expired",
+        "jobs": 5
+      }
+    ],
+    "failed_job_events": [
+      {
+        "job_id": "sim-1790514208096-1-000014",
+        "node_id": "benchmark-node-03",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      },
+      {
+        "job_id": "sim-1790514208096-1-000029",
+        "node_id": "benchmark-node-01",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      },
+      {
+        "job_id": "sim-1790514208096-1-000086",
+        "node_id": "benchmark-node-01",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      },
+      {
+        "job_id": "sim-1790514208096-1-000088",
+        "node_id": "benchmark-node-03",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      },
+      {
+        "job_id": "sim-1790514208096-1-000106",
+        "node_id": "benchmark-node-01",
+        "last_error": "assignment lease expired",
+        "assigned_events": 1,
+        "claimed_events": 1,
+        "log_chunks": 2
+      }
+    ]
+  },
+  "result": {
+    "submitted": 128,
+    "submission_errors": 0,
+    "statuses": {
+      "failed": 5,
+      "succeeded": 123
+    },
+    "submission_elapsed_ns": 444104959,
+    "elapsed_ns": 38449996268,
+    "submission_latency_p50_ns": 18369042,
+    "submission_latency_p95_ns": 68006750,
+    "submission_latency_p99_ns": 340649125
+  }
+}

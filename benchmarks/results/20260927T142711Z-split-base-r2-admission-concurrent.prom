@@ -1,0 +1,228 @@
+# HELP go_gc_duration_seconds A summary of the wall-time pause (stop-the-world) duration in garbage collection cycles.
+# TYPE go_gc_duration_seconds summary
+go_gc_duration_seconds{quantile="0"} 3.5917e-05
+go_gc_duration_seconds{quantile="0.25"} 0.00018075
+go_gc_duration_seconds{quantile="0.5"} 0.000497791
+go_gc_duration_seconds{quantile="0.75"} 0.000888791
+go_gc_duration_seconds{quantile="1"} 0.001975166
+go_gc_duration_seconds_sum 0.009236416
+go_gc_duration_seconds_count 13
+# HELP go_gc_gogc_percent Heap size target percentage configured by the user, otherwise 100. This value is set by the GOGC environment variable, and the runtime/debug.SetGCPercent function. Sourced from /gc/gogc:percent.
+# TYPE go_gc_gogc_percent gauge
+go_gc_gogc_percent 100
+# HELP go_gc_gomemlimit_bytes Go runtime memory limit configured by the user, otherwise math.MaxInt64. This value is set by the GOMEMLIMIT environment variable, and the runtime/debug.SetMemoryLimit function. Sourced from /gc/gomemlimit:bytes.
+# TYPE go_gc_gomemlimit_bytes gauge
+go_gc_gomemlimit_bytes 9.223372036854776e+18
+# HELP go_goroutines Number of goroutines that currently exist.
+# TYPE go_goroutines gauge
+go_goroutines 12
+# HELP go_info Information about the Go environment.
+# TYPE go_info gauge
+go_info{version="go1.27.1"} 1
+# HELP go_memstats_alloc_bytes Number of bytes allocated in heap and currently in use. Equals to /memory/classes/heap/objects:bytes.
+# TYPE go_memstats_alloc_bytes gauge
+go_memstats_alloc_bytes 3.387744e+06
+# HELP go_memstats_alloc_bytes_total Total number of bytes allocated in heap until now, even if released already. Equals to /gc/heap/allocs:bytes.
+# TYPE go_memstats_alloc_bytes_total counter
+go_memstats_alloc_bytes_total 2.6346272e+07
+# HELP go_memstats_buck_hash_sys_bytes Number of bytes used by the profiling bucket hash table. Equals to /memory/classes/profiling/buckets:bytes.
+# TYPE go_memstats_buck_hash_sys_bytes gauge
+go_memstats_buck_hash_sys_bytes 1.445315e+06
+# HELP go_memstats_frees_total Total number of heap objects frees. Equals to /gc/heap/frees:objects + /gc/heap/tiny/allocs:objects.
+# TYPE go_memstats_frees_total counter
+go_memstats_frees_total 259665
+# HELP go_memstats_gc_sys_bytes Number of bytes used for garbage collection system metadata. Equals to /memory/classes/metadata/other:bytes.
+# TYPE go_memstats_gc_sys_bytes gauge
+go_memstats_gc_sys_bytes 3.114736e+06
+# HELP go_memstats_heap_alloc_bytes Number of heap bytes allocated and currently in use, same as go_memstats_alloc_bytes. Equals to /memory/classes/heap/objects:bytes.
+# TYPE go_memstats_heap_alloc_bytes gauge
+go_memstats_heap_alloc_bytes 3.387744e+06
+# HELP go_memstats_heap_idle_bytes Number of heap bytes waiting to be used. Equals to /memory/classes/heap/released:bytes + /memory/classes/heap/free:bytes.
+# TYPE go_memstats_heap_idle_bytes gauge
+go_memstats_heap_idle_bytes 6.10304e+06
+# HELP go_memstats_heap_inuse_bytes Number of heap bytes that are in use. Equals to /memory/classes/heap/objects:bytes + /memory/classes/heap/unused:bytes
+# TYPE go_memstats_heap_inuse_bytes gauge
+go_memstats_heap_inuse_bytes 5.496832e+06
+# HELP go_memstats_heap_objects Number of currently allocated objects. Equals to /gc/heap/objects:objects.
+# TYPE go_memstats_heap_objects gauge
+go_memstats_heap_objects 11537
+# HELP go_memstats_heap_released_bytes Number of heap bytes released to OS. Equals to /memory/classes/heap/released:bytes.
+# TYPE go_memstats_heap_released_bytes gauge
+go_memstats_heap_released_bytes 5.414912e+06
+# HELP go_memstats_heap_sys_bytes Number of heap bytes obtained from system. Equals to /memory/classes/heap/objects:bytes + /memory/classes/heap/unused:bytes + /memory/classes/heap/released:bytes + /memory/classes/heap/free:bytes.
+# TYPE go_memstats_heap_sys_bytes gauge
+go_memstats_heap_sys_bytes 1.1599872e+07
+# HELP go_memstats_last_gc_time_seconds Number of seconds since 1970 of last garbage collection.
+# TYPE go_memstats_last_gc_time_seconds gauge
+go_memstats_last_gc_time_seconds 1.7905192350792382e+09
+# HELP go_memstats_mallocs_total Total number of heap objects allocated, both live and gc-ed. Semantically a counter version for go_memstats_heap_objects gauge. Equals to /gc/heap/allocs:objects + /gc/heap/tiny/allocs:objects.
+# TYPE go_memstats_mallocs_total counter
+go_memstats_mallocs_total 271202
+# HELP go_memstats_mcache_inuse_bytes Number of bytes in use by mcache structures. Equals to /memory/classes/metadata/mcache/inuse:bytes.
+# TYPE go_memstats_mcache_inuse_bytes gauge
+go_memstats_mcache_inuse_bytes 9184
+# HELP go_memstats_mcache_sys_bytes Number of bytes used for mcache structures obtained from system. Equals to /memory/classes/metadata/mcache/inuse:bytes + /memory/classes/metadata/mcache/free:bytes.
+# TYPE go_memstats_mcache_sys_bytes gauge
+go_memstats_mcache_sys_bytes 16072
+# HELP go_memstats_mspan_inuse_bytes Number of bytes in use by mspan structures. Equals to /memory/classes/metadata/mspan/inuse:bytes.
+# TYPE go_memstats_mspan_inuse_bytes gauge
+go_memstats_mspan_inuse_bytes 119520
+# HELP go_memstats_mspan_sys_bytes Number of bytes used for mspan structures obtained from system. Equals to /memory/classes/metadata/mspan/inuse:bytes + /memory/classes/metadata/mspan/free:bytes.
+# TYPE go_memstats_mspan_sys_bytes gauge
+go_memstats_mspan_sys_bytes 146880
+# HELP go_memstats_next_gc_bytes Number of heap bytes when next garbage collection will take place. Equals to /gc/heap/goal:bytes.
+# TYPE go_memstats_next_gc_bytes gauge
+go_memstats_next_gc_bytes 4.562778e+06
+# HELP go_memstats_other_sys_bytes Number of bytes used for other system allocations. Equals to /memory/classes/other:bytes.
+# TYPE go_memstats_other_sys_bytes gauge
+go_memstats_other_sys_bytes 903117
+# HELP go_memstats_stack_inuse_bytes Number of bytes obtained from system for stack allocator in non-CGO environments. Equals to /memory/classes/heap/stacks:bytes.
+# TYPE go_memstats_stack_inuse_bytes gauge
+go_memstats_stack_inuse_bytes 983040
+# HELP go_memstats_stack_sys_bytes Number of bytes obtained from system for stack allocator. Equals to /memory/classes/heap/stacks:bytes + /memory/classes/os-stacks:bytes.
+# TYPE go_memstats_stack_sys_bytes gauge
+go_memstats_stack_sys_bytes 983040
+# HELP go_memstats_sys_bytes Number of bytes obtained from system. Equals to /memory/classes/total:byte.
+# TYPE go_memstats_sys_bytes gauge
+go_memstats_sys_bytes 1.8209032e+07
+# HELP go_sched_gomaxprocs_threads The current runtime.GOMAXPROCS setting, or the number of operating system threads that can execute user-level Go code simultaneously. Sourced from /sched/gomaxprocs:threads.
+# TYPE go_sched_gomaxprocs_threads gauge
+go_sched_gomaxprocs_threads 4
+# HELP go_sql_idle_connections The number of idle connections.
+# TYPE go_sql_idle_connections gauge
+go_sql_idle_connections{db_name="mini-modal"} 4
+# HELP go_sql_in_use_connections The number of connections currently in use.
+# TYPE go_sql_in_use_connections gauge
+go_sql_in_use_connections{db_name="mini-modal"} 0
+# HELP go_sql_max_idle_closed_total The total number of connections closed due to SetMaxIdleConns.
+# TYPE go_sql_max_idle_closed_total counter
+go_sql_max_idle_closed_total{db_name="mini-modal"} 0
+# HELP go_sql_max_idle_time_closed_total The total number of connections closed due to SetConnMaxIdleTime.
+# TYPE go_sql_max_idle_time_closed_total counter
+go_sql_max_idle_time_closed_total{db_name="mini-modal"} 0
+# HELP go_sql_max_lifetime_closed_total The total number of connections closed due to SetConnMaxLifetime.
+# TYPE go_sql_max_lifetime_closed_total counter
+go_sql_max_lifetime_closed_total{db_name="mini-modal"} 0
+# HELP go_sql_max_open_connections Maximum number of open connections to the database.
+# TYPE go_sql_max_open_connections gauge
+go_sql_max_open_connections{db_name="mini-modal"} 4
+# HELP go_sql_open_connections The number of established connections both in use and idle.
+# TYPE go_sql_open_connections gauge
+go_sql_open_connections{db_name="mini-modal"} 4
+# HELP go_sql_wait_count_total The total number of connections waited for.
+# TYPE go_sql_wait_count_total counter
+go_sql_wait_count_total{db_name="mini-modal"} 1017
+# HELP go_sql_wait_duration_seconds_total The total time blocked waiting for a new connection.
+# TYPE go_sql_wait_duration_seconds_total counter
+go_sql_wait_duration_seconds_total{db_name="mini-modal"} 4.062792839
+# HELP go_threads Number of OS threads created.
+# TYPE go_threads gauge
+go_threads 10
+# HELP mini_modal_assignment_lease_expirations_total Total number of expired assignment leases.
+# TYPE mini_modal_assignment_lease_expirations_total counter
+mini_modal_assignment_lease_expirations_total 0
+# HELP mini_modal_job_attempts_started_total Total number of job attempts claimed by agents.
+# TYPE mini_modal_job_attempts_started_total counter
+mini_modal_job_attempts_started_total 0
+# HELP mini_modal_job_cancellations_total Total number of jobs successfully cancelled.
+# TYPE mini_modal_job_cancellations_total counter
+mini_modal_job_cancellations_total 0
+# HELP mini_modal_job_queue_wait_seconds Time from entering the pending queue until an agent claims the attempt.
+# TYPE mini_modal_job_queue_wait_seconds histogram
+mini_modal_job_queue_wait_seconds_bucket{le="0.01"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="0.02"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="0.04"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="0.08"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="0.16"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="0.32"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="0.64"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="1.28"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="2.56"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="5.12"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="10.24"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="20.48"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="40.96"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="81.92"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="163.84"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="327.68"} 0
+mini_modal_job_queue_wait_seconds_bucket{le="+Inf"} 0
+mini_modal_job_queue_wait_seconds_sum 0
+mini_modal_job_queue_wait_seconds_count 0
+# HELP mini_modal_jobs_current Current number of jobs by status.
+# TYPE mini_modal_jobs_current gauge
+mini_modal_jobs_current{status="assigned"} 0
+mini_modal_jobs_current{status="cancelled"} 0
+mini_modal_jobs_current{status="cancelling"} 0
+mini_modal_jobs_current{status="failed"} 0
+mini_modal_jobs_current{status="pending"} 0
+mini_modal_jobs_current{status="retrying"} 0
+mini_modal_jobs_current{status="running"} 0
+mini_modal_jobs_current{status="succeeded"} 0
+mini_modal_jobs_current{status="unschedulable"} 0
+# HELP mini_modal_jobs_submitted_total Total number of jobs successfully submitted.
+# TYPE mini_modal_jobs_submitted_total counter
+mini_modal_jobs_submitted_total 1000
+# HELP mini_modal_node_resources_free Currently free capacity on healthy nodes by resource.
+# TYPE mini_modal_node_resources_free gauge
+mini_modal_node_resources_free{resource="cpu"} 0
+mini_modal_node_resources_free{resource="gpu"} 0
+mini_modal_node_resources_free{resource="memory_gb"} 0
+# HELP mini_modal_node_resources_total Total registered node capacity by resource.
+# TYPE mini_modal_node_resources_total gauge
+mini_modal_node_resources_total{resource="cpu"} 0
+mini_modal_node_resources_total{resource="gpu"} 0
+mini_modal_node_resources_total{resource="memory_gb"} 0
+# HELP mini_modal_nodes_current Current number of registered nodes by health.
+# TYPE mini_modal_nodes_current gauge
+mini_modal_nodes_current{health="healthy"} 0
+mini_modal_nodes_current{health="unhealthy"} 0
+# HELP mini_modal_scheduler_duration_seconds Duration of scheduler runs.
+# TYPE mini_modal_scheduler_duration_seconds histogram
+mini_modal_scheduler_duration_seconds_bucket{le="0.0001"} 0
+mini_modal_scheduler_duration_seconds_bucket{le="0.0002"} 0
+mini_modal_scheduler_duration_seconds_bucket{le="0.0004"} 0
+mini_modal_scheduler_duration_seconds_bucket{le="0.0008"} 0
+mini_modal_scheduler_duration_seconds_bucket{le="0.0016"} 0
+mini_modal_scheduler_duration_seconds_bucket{le="0.0032"} 1
+mini_modal_scheduler_duration_seconds_bucket{le="0.0064"} 2
+mini_modal_scheduler_duration_seconds_bucket{le="0.0128"} 4
+mini_modal_scheduler_duration_seconds_bucket{le="0.0256"} 7
+mini_modal_scheduler_duration_seconds_bucket{le="0.0512"} 8
+mini_modal_scheduler_duration_seconds_bucket{le="0.1024"} 8
+mini_modal_scheduler_duration_seconds_bucket{le="0.2048"} 8
+mini_modal_scheduler_duration_seconds_bucket{le="0.4096"} 8
+mini_modal_scheduler_duration_seconds_bucket{le="0.8192"} 8
+mini_modal_scheduler_duration_seconds_bucket{le="1.6384"} 8
+mini_modal_scheduler_duration_seconds_bucket{le="+Inf"} 8
+mini_modal_scheduler_duration_seconds_sum 0.10933866499999997
+mini_modal_scheduler_duration_seconds_count 8
+# HELP mini_modal_scheduler_runs_total Total number of scheduler runs by result.
+# TYPE mini_modal_scheduler_runs_total counter
+mini_modal_scheduler_runs_total{result="success"} 8
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 0.16
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1.048576e+06
+# HELP process_network_receive_bytes_total Number of bytes received by the process over the network.
+# TYPE process_network_receive_bytes_total counter
+process_network_receive_bytes_total 2.224101e+06
+# HELP process_network_transmit_bytes_total Number of bytes sent by the process over the network.
+# TYPE process_network_transmit_bytes_total counter
+process_network_transmit_bytes_total 932148
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 13
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 2.6476544e+07
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.790519234e+09
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 1.914535936e+09
+# HELP process_virtual_memory_max_bytes Maximum amount of virtual memory available in bytes.
+# TYPE process_virtual_memory_max_bytes gauge
+process_virtual_memory_max_bytes 1.8446744073709552e+19

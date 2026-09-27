@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "timestamp": "20260927T124407Z",
+  "benchmark_label": "dbpool2-r1",
+  "scenario": "process-e2e",
+  "git_commit": "22e992f485cd866a019f113d50632729d456bdda",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 3079729,
+    "memory_peak_bytes": 178409472,
+    "pids_peak": 118,
+    "oom_kills": 0
+  },
+  "workload": {
+    "jobs": 128,
+    "concurrency": 16,
+    "agents": 4,
+    "executor": "process",
+    "db_max_open_conns": 2
+  },
+  "storage": {
+    "database_bytes": 299008,
+    "jobs": 128
+  },
+  "result": {
+    "submitted": 128,
+    "submission_errors": 0,
+    "statuses": {
+      "succeeded": 128
+    },
+    "submission_elapsed_ns": 326388584,
+    "elapsed_ns": 9335093213,
+    "submission_latency_p50_ns": 21885041,
+    "submission_latency_p95_ns": 79709167,
+    "submission_latency_p99_ns": 113957583
+  }
+}

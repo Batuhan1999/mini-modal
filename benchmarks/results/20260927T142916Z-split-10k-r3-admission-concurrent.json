@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "timestamp": "20260927T142916Z",
+  "benchmark_label": "split-10k-r3",
+  "scenario": "admission-concurrent",
+  "git_commit": "22e992f485cd866a019f113d50632729d456bdda",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 4214294,
+    "memory_peak_bytes": 187813888,
+    "pids_peak": 27,
+    "oom_kills": 0
+  },
+  "workload_usage": {
+    "started_unix_ms": 1790519360103,
+    "ended_unix_ms": 1790519361749,
+    "cpu_usage_usec": 2619210,
+    "cpu_throttled_usec": 0,
+    "cpu_pressure_some_usec": 22151,
+    "memory_start_bytes": 69255168,
+    "memory_end_bytes": 105467904,
+    "memory_peak_bytes": 106700800,
+    "io_read_bytes": 0,
+    "io_write_bytes": 0,
+    "io_read_ops": 0,
+    "io_write_ops": 0,
+    "io_pressure_some_usec": 0,
+    "io_pressure_full_usec": 0,
+    "sampled_peak_cpu_millicores": 1732,
+    "sampled_peak_io_read_bytes_per_sec": 0,
+    "sampled_peak_io_write_bytes_per_sec": 0,
+    "sample_count": 18
+  },
+  "workload": {
+    "jobs": 10000,
+    "concurrency": 32,
+    "agents": 0,
+    "executor": "fake",
+    "db_max_open_conns": 4
+  },
+  "storage": {
+    "database_bytes": 17243495,
+    "jobs": 10000,
+    "failure_reasons": [],
+    "failed_job_events": []
+  },
+  "result": {
+    "submitted": 10000,
+    "submission_errors": 0,
+    "statuses": {},
+    "submission_elapsed_ns": 1642824876,
+    "elapsed_ns": 1642824876,
+    "submission_latency_p50_ns": 3805209,
+    "submission_latency_p95_ns": 14458042,
+    "submission_latency_p99_ns": 22215917
+  },
+  "postgres_usage": {
+    "cpu_limit": "400000 100000",
+    "memory_limit_bytes": "4294967296",
+    "cpu_usage_usec": 2379912,
+    "cpu_throttled_usec": 0,
+    "memory_peak_bytes": 155746304,
+    "io_read_bytes": 0,
+    "io_write_bytes": 85483520,
+    "cpu_pressure_some_usec": 22193,
+    "io_pressure_some_usec": 93052,
+    "sample_count": 16,
+    "oom_kills": 0
+  }
+}

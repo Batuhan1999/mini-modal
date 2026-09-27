@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "timestamp": "20260927T142706Z",
+  "benchmark_label": "split-base-r2",
+  "scenario": "admission-serial",
+  "git_commit": "22e992f485cd866a019f113d50632729d456bdda",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 1861603,
+    "memory_peak_bytes": 185380864,
+    "pids_peak": 24,
+    "oom_kills": 0
+  },
+  "workload_usage": {
+    "started_unix_ms": 1790519230572,
+    "ended_unix_ms": 1790519230975,
+    "cpu_usage_usec": 265172,
+    "cpu_throttled_usec": 0,
+    "cpu_pressure_some_usec": 3428,
+    "memory_start_bytes": 69636096,
+    "memory_end_bytes": 75403264,
+    "memory_peak_bytes": 82837504,
+    "io_read_bytes": 0,
+    "io_write_bytes": 0,
+    "io_read_ops": 0,
+    "io_write_ops": 0,
+    "io_pressure_some_usec": 0,
+    "io_pressure_full_usec": 0,
+    "sampled_peak_cpu_millicores": 713,
+    "sampled_peak_io_read_bytes_per_sec": 0,
+    "sampled_peak_io_write_bytes_per_sec": 0,
+    "sample_count": 5
+  },
+  "workload": {
+    "jobs": 1000,
+    "concurrency": 1,
+    "agents": 0,
+    "executor": "fake",
+    "db_max_open_conns": 4
+  },
+  "storage": {
+    "database_bytes": 8969575,
+    "jobs": 1000,
+    "failure_reasons": [],
+    "failed_job_events": []
+  },
+  "result": {
+    "submitted": 1000,
+    "submission_errors": 0,
+    "statuses": {},
+    "submission_elapsed_ns": 401118834,
+    "elapsed_ns": 401118834,
+    "submission_latency_p50_ns": 325417,
+    "submission_latency_p95_ns": 691208,
+    "submission_latency_p99_ns": 1723125
+  },
+  "postgres_usage": {
+    "cpu_limit": "400000 100000",
+    "memory_limit_bytes": "4294967296",
+    "cpu_usage_usec": 189860,
+    "cpu_throttled_usec": 0,
+    "memory_peak_bytes": 133550080,
+    "io_read_bytes": 0,
+    "io_write_bytes": 9519104,
+    "cpu_pressure_some_usec": 6933,
+    "io_pressure_some_usec": 40666,
+    "sample_count": 4,
+    "oom_kills": 0
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": 3,
+  "timestamp": "20260927T143338Z",
+  "benchmark_label": "split-pool9-100k-r2",
+  "scenario": "admission-concurrent",
+  "git_commit": "22e992f485cd866a019f113d50632729d456bdda",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 27089820,
+    "memory_peak_bytes": 360529920,
+    "pids_peak": 27,
+    "oom_kills": 0
+  },
+  "workload_usage": {
+    "started_unix_ms": 1790519621692,
+    "ended_unix_ms": 1790519632352,
+    "cpu_usage_usec": 25533981,
+    "cpu_throttled_usec": 0,
+    "cpu_pressure_some_usec": 263319,
+    "memory_start_bytes": 67149824,
+    "memory_end_bytes": 264757248,
+    "memory_peak_bytes": 340426752,
+    "io_read_bytes": 0,
+    "io_write_bytes": 0,
+    "io_read_ops": 0,
+    "io_write_ops": 0,
+    "io_pressure_some_usec": 0,
+    "io_pressure_full_usec": 0,
+    "sampled_peak_cpu_millicores": 2890,
+    "sampled_peak_io_read_bytes_per_sec": 0,
+    "sampled_peak_io_write_bytes_per_sec": 0,
+    "sample_count": 105
+  },
+  "workload": {
+    "jobs": 100000,
+    "concurrency": 32,
+    "agents": 0,
+    "executor": "fake",
+    "db_max_open_conns": 9
+  },
+  "storage": {
+    "database_bytes": 99048807,
+    "jobs": 100000,
+    "failure_reasons": [],
+    "failed_job_events": []
+  },
+  "result": {
+    "submitted": 100000,
+    "submission_errors": 0,
+    "statuses": {},
+    "submission_elapsed_ns": 10647924172,
+    "elapsed_ns": 10647924172,
+    "submission_latency_p50_ns": 2617000,
+    "submission_latency_p95_ns": 8401041,
+    "submission_latency_p99_ns": 13494000
+  },
+  "postgres_usage": {
+    "cpu_limit": "400000 100000",
+    "memory_limit_bytes": "4294967296",
+    "cpu_usage_usec": 29321074,
+    "cpu_throttled_usec": 0,
+    "memory_peak_bytes": 491012096,
+    "io_read_bytes": 0,
+    "io_write_bytes": 508624896,
+    "cpu_pressure_some_usec": 357755,
+    "io_pressure_some_usec": 483597,
+    "sample_count": 101,
+    "oom_kills": 0
+  }
+}

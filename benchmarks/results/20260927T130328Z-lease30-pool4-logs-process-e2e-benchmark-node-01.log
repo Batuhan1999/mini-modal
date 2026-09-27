@@ -1,0 +1,4 @@
+agent benchmark-node-01: 2026/09/27 13:03:26 node registered
+agent benchmark-node-01: 2026/09/27 13:03:29 agent "benchmark-node-01" discarded stale completion for job "sim-1790514208096-1-000029" attempt 1: rpc error: code = FailedPrecondition desc = failed to complete job: finish job "sim-1790514208096-1-000029": database is locked (5) (SQLITE_BUSY)
+agent benchmark-node-01: 2026/09/27 13:03:32 agent "benchmark-node-01" discarded stale completion for job "sim-1790514208096-1-000106" attempt 1: rpc error: code = FailedPrecondition desc = failed to complete job: finish job "sim-1790514208096-1-000106": database is locked (5) (SQLITE_BUSY)
+agent benchmark-node-01: 2026/09/27 13:03:36 agent "benchmark-node-01" discarded stale completion for job "sim-1790514208096-1-000086" attempt 1: rpc error: code = FailedPrecondition desc = failed to complete job: finish job "sim-1790514208096-1-000086": database is locked (5) (SQLITE_BUSY)
