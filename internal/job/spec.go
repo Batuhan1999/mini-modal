@@ -7,6 +7,7 @@ import (
 
 type Spec struct {
 	ID                  string
+	FunctionVersionID   string
 	Priority            int64
 	GPUType             string
 	GPUs                int64

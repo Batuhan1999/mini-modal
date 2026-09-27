@@ -133,6 +133,7 @@ type Assignment struct {
 	Cpus            int64                  `protobuf:"varint,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
 	MemoryGb        int64                  `protobuf:"varint,8,opt,name=memory_gb,json=memoryGb,proto3" json:"memory_gb,omitempty"`
 	DurationSeconds int64                  `protobuf:"varint,9,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
+	ArtifactKey     string                 `protobuf:"bytes,10,opt,name=artifact_key,json=artifactKey,proto3" json:"artifact_key,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -228,6 +229,13 @@ func (x *Assignment) GetDurationSeconds() int64 {
 		return x.DurationSeconds
 	}
 	return 0
+}
+
+func (x *Assignment) GetArtifactKey() string {
+	if x != nil {
+		return x.ArtifactKey
+	}
+	return ""
 }
 
 type ClaimRequest struct {
@@ -1026,7 +1034,7 @@ var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\xf6\x01\n" +
+	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\x99\x02\n" +
 	"\n" +
 	"Assignment\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
@@ -1037,7 +1045,9 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x05image\x18\x06 \x01(\tR\x05image\x12\x12\n" +
 	"\x04cpus\x18\a \x01(\x03R\x04cpus\x12\x1b\n" +
 	"\tmemory_gb\x18\b \x01(\x03R\bmemoryGb\x12)\n" +
-	"\x10duration_seconds\x18\t \x01(\x03R\x0fdurationSeconds\"'\n" +
+	"\x10duration_seconds\x18\t \x01(\x03R\x0fdurationSeconds\x12!\n" +
+	"\fartifact_key\x18\n" +
+	" \x01(\tR\vartifactKey\"'\n" +
 	"\fClaimRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"O\n" +
 	"\rClaimResponse\x12>\n" +

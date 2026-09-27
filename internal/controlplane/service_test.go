@@ -20,7 +20,7 @@ func TestServiceRecordsSubmittedJobMetric(t *testing.T) {
 	metrics := NewMetrics(registry)
 	service := newTestServiceWithMetrics(t, nil, metrics)
 
-	if _, err := service.Submit(context.Background(), jobmodel.Spec{
+	if _, err := service.Submit(context.Background(), jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "echo",
 	}); err != nil {
@@ -47,7 +47,7 @@ func TestServiceSubmitIdempotency(t *testing.T) {
 	ctx := context.Background()
 	registry := prometheus.NewRegistry()
 	service := newTestServiceWithMetrics(t, nil, NewMetrics(registry))
-	spec := jobmodel.Spec{
+	spec := jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "echo",
 	}
@@ -116,7 +116,7 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 		{ID: "node-a", GPUType: "A100", TotalGPUs: 2, TotalCPUs: 16, TotalMemoryGB: 64},
 	})
 
-	job, err := service.Submit(ctx, jobmodel.Spec{
+	job, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", GPUType: "A100", GPUs: 2, CPUs: 4, MemoryGB: 8,
 		Image: "alpine:3.20", Command: "echo",
 	})
@@ -238,7 +238,7 @@ func TestDrainingNodeRemainsVisibleButDoesNotReceiveWork(t *testing.T) {
 		t.Fatalf("visible nodes = %+v, want both nodes", nodes)
 	}
 
-	job, err := service.Submit(ctx, jobmodel.Spec{
+	job, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "gpu-job", GPUType: "A100", GPUs: 1, CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "echo",
 	})
@@ -261,7 +261,7 @@ func TestDrainingNodeImmediatelyRequeuesUnclaimedAssignment(t *testing.T) {
 		{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8},
 		{ID: "node-b", TotalCPUs: 4, TotalMemoryGB: 8},
 	})
-	job, err := service.Submit(ctx, jobmodel.Spec{
+	job, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo",
 		MaxAttempts: 1, RetryBackoffSeconds: 1,
 	})
@@ -317,7 +317,7 @@ func TestDrainingNodeImmediatelyRequeuesUnclaimedAssignment(t *testing.T) {
 func TestClaimRejectsAlreadyAssignedWorkOnDrainingNode(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t, []domain.Node{{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}})
-	job, err := service.Submit(ctx, jobmodel.Spec{
+	job, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo",
 	})
 	if err != nil {
@@ -345,7 +345,7 @@ func TestClaimRejectsAlreadyAssignedWorkOnDrainingNode(t *testing.T) {
 func TestDrainingNodeLetsRunningAssignmentComplete(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t, []domain.Node{{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}})
-	job, err := service.Submit(ctx, jobmodel.Spec{
+	job, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo",
 	})
 	if err != nil {
@@ -384,7 +384,7 @@ func TestFailureBudgetCountsExecutionsNotPlacements(t *testing.T) {
 		{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8},
 		{ID: "node-b", TotalCPUs: 4, TotalMemoryGB: 8},
 	})
-	job, err := service.Submit(ctx, jobmodel.Spec{
+	job, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "false",
 		MaxAttempts: 2,
 	})
@@ -445,14 +445,15 @@ func TestServiceRejectsInvalidJobs(t *testing.T) {
 		name string
 		job  jobmodel.Spec
 	}{
-		{name: "missing ID", job: jobmodel.Spec{CPUs: 1, MemoryGB: 1}},
-		{name: "blank ID", job: jobmodel.Spec{ID: "   ", CPUs: 1, MemoryGB: 1}},
-		{name: "zero CPUs", job: jobmodel.Spec{ID: "job-1", MemoryGB: 1}},
-		{name: "zero memory", job: jobmodel.Spec{ID: "job-1", CPUs: 1}},
-		{name: "negative GPUs", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, GPUs: -1}},
-		{name: "negative duration", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, DurationSeconds: -1}},
-		{name: "missing image", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, Command: "echo"}},
-		{name: "blank image", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, Command: "echo", Image: "   "}},
+		{name: "missing ID", job: jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, CPUs: 1, MemoryGB: 1}},
+		{name: "blank ID", job: jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: "   ", CPUs: 1, MemoryGB: 1}},
+		{name: "zero CPUs", job: jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: "job-1", MemoryGB: 1}},
+		{name: "zero memory", job: jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: "job-1", CPUs: 1}},
+		{name: "negative GPUs", job: jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: "job-1", CPUs: 1, MemoryGB: 1, GPUs: -1}},
+		{name: "negative duration", job: jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: "job-1", CPUs: 1, MemoryGB: 1, DurationSeconds: -1}},
+		{name: "missing image", job: jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: "job-1", CPUs: 1, MemoryGB: 1, Command: "echo"}},
+		{name: "blank image", job: jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: "job-1", CPUs: 1, MemoryGB: 1, Command: "echo", Image: "   "}},
+		{name: "missing function version", job: jobmodel.Spec{ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo"}},
 	}
 
 	for _, test := range tests {
@@ -479,14 +480,15 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	node := domain.Node{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}
 
 	db, databaseURL := testdb.OpenWithDSN(t)
-	service := NewService(NewRuntimeState(), postgresdb.New(db), db, newTestMetrics())
+	testdb.SeedFunctionVersion(t, db)
+	service := NewService(NewRuntimeState(), postgresdb.New(db), db, newTestMetrics(), nil)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.RegisterNode(ctx, node); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Submit(ctx, jobmodel.Spec{
+	if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo",
 	}); err != nil {
 		t.Fatal(err)
@@ -508,7 +510,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	restarted := NewService(NewRuntimeState(), postgresdb.New(db), db, newTestMetrics())
+	restarted := NewService(NewRuntimeState(), postgresdb.New(db), db, newTestMetrics(), nil)
 	if err := restarted.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +545,7 @@ func TestServiceCancelsRunningAssignment(t *testing.T) {
 	service := newTestService(t, []domain.Node{{
 		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
 	}})
-	if _, err := service.Submit(ctx, jobmodel.Spec{
+	if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "sleep", Args: []string{"30"},
 	}); err != nil {
@@ -594,7 +596,7 @@ func TestServiceCancelsRunningAssignment(t *testing.T) {
 func TestServiceCancelsPendingJobImmediately(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t, nil)
-	if _, err := service.Submit(ctx, jobmodel.Spec{
+	if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "echo",
 	}); err != nil {
@@ -621,7 +623,7 @@ func TestServiceRecordsFailedJobEvent(t *testing.T) {
 	service := newTestService(t, []domain.Node{{
 		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
 	}})
-	if _, err := service.Submit(ctx, jobmodel.Spec{
+	if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "false", MaxAttempts: 1,
 	}); err != nil {
@@ -647,7 +649,7 @@ func TestServiceRetriesFailedJobAfterBackoff(t *testing.T) {
 	service := newTestService(t, []domain.Node{{
 		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
 	}})
-	if _, err := service.Submit(ctx, jobmodel.Spec{
+	if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "false",
 		MaxAttempts: 2, RetryBackoffSeconds: 1,
@@ -706,7 +708,7 @@ func TestUnclaimedAssignmentLeaseExpiryRequeuesWithoutRetry(t *testing.T) {
 	service := newTestService(t, []domain.Node{{
 		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
 	}})
-	job, err := service.Submit(ctx, jobmodel.Spec{
+	job, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "sleep", MaxAttempts: 1,
 	})
@@ -758,7 +760,7 @@ func TestRunningLeaseExpiryUsesExecutionRetryBudget(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
 			service := newTestService(t, []domain.Node{{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}})
-			job, err := service.Submit(ctx, jobmodel.Spec{
+			job, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 				ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "sleep",
 				MaxAttempts: test.maxAttempts,
 			})
@@ -807,8 +809,9 @@ func newTestServiceWithMetrics(t *testing.T, nodes []domain.Node, metrics *Metri
 	t.Helper()
 	ctx := context.Background()
 	db := testdb.Open(t)
+	testdb.SeedFunctionVersion(t, db)
 
-	service := NewService(NewRuntimeState(), postgresdb.New(db), db, metrics)
+	service := NewService(NewRuntimeState(), postgresdb.New(db), db, metrics, nil)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

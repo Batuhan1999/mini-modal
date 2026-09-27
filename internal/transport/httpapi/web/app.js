@@ -25,6 +25,26 @@ const elements = {
   submitJob: document.querySelector("#submit-job"),
   randomJob: document.querySelector("#random-job"),
   jobFormResult: document.querySelector("#job-form-result"),
+  functionsCount: document.querySelector("#functions-count"),
+  functionsList: document.querySelector("#functions-list"),
+  functionVersionList: document.querySelector("#function-version-list"),
+  functionVersionDetail: document.querySelector("#function-version-detail"),
+  functionVersionsFor: document.querySelector("#function-versions-for"),
+  functionUploadForm: document.querySelector("#function-upload-form"),
+  functionUploadButton: document.querySelector("#function-upload-button"),
+  functionUploadResult: document.querySelector("#function-upload-result"),
+  functionID: document.querySelector("#function-id"),
+  functionFile: document.querySelector("#function-file"),
+  functionDeployForm: document.querySelector("#function-deploy-form"),
+  functionDeployButton: document.querySelector("#function-deploy-button"),
+  functionDeployResult: document.querySelector("#function-deploy-result"),
+  functionArtifactKey: document.querySelector("#function-artifact-key"),
+  functionArgs: document.querySelector("#function-args"),
+  functionInvokeForm: document.querySelector("#function-invoke-form"),
+  functionInvokeButton: document.querySelector("#function-invoke-button"),
+  functionInvokeResult: document.querySelector("#function-invoke-result"),
+  functionVersionSelect: document.querySelector("#function-version-select"),
+  functionJobID: document.querySelector("#function-job-id"),
   devClusterForm: document.querySelector("#dev-cluster-form"),
   devClusterState: document.querySelector("#dev-cluster-state"),
   devClusterResult: document.querySelector("#dev-cluster-result"),
@@ -68,6 +88,10 @@ const state = {
   detailLogs: new Map(),
   detailEvents: [],
   cancellingJobIDs: new Set(),
+  functions: [],
+  functionVersions: [],
+  selectedFunctionID: "",
+  selectedVersionID: "",
 };
 
 if (state.detailJobID) {
@@ -85,8 +109,20 @@ if (state.detailJobID) {
   elements.statusFilter.addEventListener("change", renderJobs);
   elements.jobForm.addEventListener("submit", submitJob);
   elements.randomJob.addEventListener("click", submitRandomJob);
+  elements.functionJobID.value = nextJobID();
+  elements.functionUploadForm.addEventListener("submit", uploadFunction);
+  elements.functionDeployForm.addEventListener("submit", deployFunction);
+  elements.functionInvokeForm.addEventListener("submit", invokeFunction);
+  elements.functionID.addEventListener("change", () => void selectFunction(elements.functionID.value.trim()));
+  elements.functionFile.addEventListener("change", () => {
+    const file = elements.functionFile.files?.[0];
+    if (file?.name.endsWith(".py")) {
+      elements.functionArgs.value = JSON.stringify([file.name, "world"]);
+    }
+  });
   elements.devClusterForm.addEventListener("submit", startDevCluster);
   elements.stopDevCluster.addEventListener("click", stopDevCluster);
+  void refreshFunctions();
 }
 
 document.addEventListener("visibilitychange", () => {
@@ -167,9 +203,9 @@ async function refreshDetail() {
   }
 }
 
-async function fetchJSON(url, options = {}) {
+async function fetchJSON(url, options = {}, timeoutMs = 4000) {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 4000);
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {
       cache: "no-store",
@@ -487,6 +523,7 @@ function renderDetailFields(job) {
   const groups = [
     ["Identity", [
       ["Job ID", job.id],
+      ["Function version", job.function_version_id],
       ["Status", job.status],
       ["Priority", String(job.priority)],
       ["Updated at", formatTimestamp(job.updated_at)],
@@ -989,11 +1026,252 @@ function trackJobTransitions(jobs) {
   return changed;
 }
 
+async function refreshFunctions() {
+  try {
+    state.functions = await fetchJSON("/v1/functions");
+    elements.functionsCount.textContent = `${state.functions.length}${state.functions.length === 100 ? "+" : ""}`;
+    if (!state.selectedFunctionID && state.functions.length > 0) {
+      await selectFunction(state.functions[0].id);
+    } else {
+      renderFunctionList();
+      if (state.selectedFunctionID) {
+        await loadFunctionVersions(state.selectedFunctionID);
+      }
+    }
+  } catch (error) {
+    setFormResult(elements.functionUploadResult, `Could not load functions: ${error.message}`, "error");
+  }
+}
+
+function renderFunctionList() {
+  if (state.functions.length === 0) {
+    elements.functionsList.replaceChildren(createElement("p", "function-empty", "No functions deployed yet."));
+    return;
+  }
+  const buttons = state.functions.map((fn) => {
+    const button = createElement("button", "function-list-item");
+    button.type = "button";
+    button.dataset.selected = String(fn.id === state.selectedFunctionID);
+    button.setAttribute("aria-pressed", String(fn.id === state.selectedFunctionID));
+    button.append(
+      createElement("span", "function-item-title", fn.id),
+      createElement("span", "function-item-meta", `${fn.version_count} version${fn.version_count === 1 ? "" : "s"} · ${formatFunctionDate(fn.updated_at)}`),
+    );
+    button.addEventListener("click", () => void selectFunction(fn.id));
+    return button;
+  });
+  elements.functionsList.replaceChildren(...buttons);
+}
+
+async function selectFunction(functionID) {
+  const changed = functionID !== state.selectedFunctionID;
+  state.selectedFunctionID = functionID;
+  elements.functionID.value = functionID;
+  if (changed) {
+    state.selectedVersionID = "";
+    state.functionVersions = [];
+    elements.functionArtifactKey.value = "";
+    setFormResult(elements.functionDeployResult, "", "");
+    setFormResult(elements.functionInvokeResult, "", "");
+  }
+  renderFunctionList();
+  await loadFunctionVersions(functionID);
+}
+
+async function loadFunctionVersions(functionID) {
+  elements.functionVersionsFor.textContent = functionID || "Select a function";
+  if (!functionID) {
+    state.functionVersions = [];
+    state.selectedVersionID = "";
+    renderFunctionVersions();
+    return;
+  }
+  try {
+    const versions = await fetchJSON(`/v1/functions/${encodeURIComponent(functionID)}/versions`);
+    if (state.selectedFunctionID !== functionID) {
+      return;
+    }
+    state.functionVersions = versions;
+    if (!versions.some((version) => version.id === state.selectedVersionID)) {
+      state.selectedVersionID = versions[0]?.id || "";
+    }
+    const jobVersionField = elements.jobForm.elements.namedItem("function_version_id");
+    if (jobVersionField instanceof HTMLInputElement && !jobVersionField.value) {
+      jobVersionField.value = state.selectedVersionID;
+    }
+    renderFunctionVersions();
+  } catch (error) {
+    elements.functionVersionList.replaceChildren(createElement("p", "function-empty", `Could not load versions: ${error.message}`));
+  }
+}
+
+function renderFunctionVersions() {
+  const versions = state.functionVersions;
+  if (versions.length === 0) {
+    elements.functionVersionList.replaceChildren(createElement("p", "function-empty", "No versions for this function yet."));
+    elements.functionVersionSelect.replaceChildren(new Option("Deploy a version first", ""));
+    elements.functionVersionDetail.hidden = true;
+    return;
+  }
+  const cards = versions.map((version) => {
+    const button = createElement("button", "function-version-item");
+    button.type = "button";
+    button.dataset.selected = String(version.id === state.selectedVersionID);
+    button.setAttribute("aria-pressed", String(version.id === state.selectedVersionID));
+    button.append(
+      createElement("span", "function-item-title", version.id),
+      createElement("span", "function-item-meta", `${formatFunctionDate(version.created_at)} · ${version.image} · ${version.cpus} CPU / ${version.memory_gb} GB`),
+      createElement("span", "function-item-key", version.artifact_key || "No artifact"),
+    );
+    button.addEventListener("click", () => {
+      state.selectedVersionID = version.id;
+      elements.functionArtifactKey.value = version.artifact_key;
+      elements.jobForm.elements.namedItem("function_version_id").value = version.id;
+      renderFunctionVersions();
+    });
+    return button;
+  });
+  elements.functionVersionList.replaceChildren(...cards);
+  const options = versions.map((version) => new Option(`${version.id.slice(0, 8)} · ${formatFunctionDate(version.created_at)}`, version.id));
+  elements.functionVersionSelect.replaceChildren(...options);
+  elements.functionVersionSelect.value = state.selectedVersionID;
+  const selected = versions.find((version) => version.id === state.selectedVersionID);
+  const details = [
+    ["Version ID", selected.id],
+    ["Created", formatFunctionDate(selected.created_at)],
+    ["Artifact key", selected.artifact_key || "None"],
+    ["Image", selected.image],
+    ["Command", `${selected.command} ${selected.args}`],
+    ["Resources", `${selected.cpus} CPU · ${selected.memory_gb} GB memory · ${selected.gpus} GPU`],
+    ["Timeout", `${selected.duration_seconds}s`],
+    ["Retries", `${selected.max_attempts} max attempts · ${selected.retry_backoff_seconds}s backoff`],
+  ];
+  const list = createElement("dl", "function-version-fields");
+  for (const [label, value] of details) {
+    const row = document.createElement("div");
+    row.append(createElement("dt", "", label), createElement("dd", "", String(value)));
+    list.append(row);
+  }
+  elements.functionVersionDetail.replaceChildren(createElement("h4", "", "Selected version"), list);
+  elements.functionVersionDetail.hidden = false;
+}
+
+async function uploadFunction(event) {
+  event.preventDefault();
+  const functionID = elements.functionID.value.trim();
+  const file = elements.functionFile.files?.[0];
+  setBusy(elements.functionUploadButton, true, "Uploading");
+  setFormResult(elements.functionUploadResult, "", "");
+  try {
+    if (!file) {
+      throw new Error("Choose a .py or .tar.gz file");
+    }
+    if (file.size > 32 * 1024 * 1024) {
+      throw new Error("File exceeds the 32 MiB upload limit");
+    }
+    const pythonFile = file.name.endsWith(".py");
+    if (!pythonFile && !file.name.endsWith(".tar.gz")) {
+      throw new Error("Choose a .py or .tar.gz file");
+    }
+    await selectFunction(functionID);
+    const path = `/v1/functions/${encodeURIComponent(functionID)}/artifacts${pythonFile ? `?filename=${encodeURIComponent(file.name)}` : ""}`;
+    const uploaded = await fetchJSON(path, {
+      method: "POST",
+      headers: { "Content-Type": pythonFile ? "text/x-python" : "application/gzip" },
+      body: file,
+    }, 60000);
+    elements.functionArtifactKey.value = uploaded.artifact_key;
+    setFormResult(elements.functionUploadResult, `${file.name} stored (${formatNumber(uploaded.size_bytes)} bytes). Deploy a version next.`, "success");
+    addActivity(`${functionID}: uploaded ${file.name}`);
+  } catch (error) {
+    setFormResult(elements.functionUploadResult, error.message, "error");
+  } finally {
+    setBusy(elements.functionUploadButton, false, "Upload artifact");
+  }
+}
+
+async function deployFunction(event) {
+  event.preventDefault();
+  const functionID = elements.functionID.value.trim();
+  const form = new FormData(elements.functionDeployForm);
+  setBusy(elements.functionDeployButton, true, "Deploying");
+  setFormResult(elements.functionDeployResult, "", "");
+  try {
+    const args = JSON.parse(String(form.get("args") || "[]"));
+    if (!Array.isArray(args) || args.some((value) => typeof value !== "string")) {
+      throw new Error("Arguments must be a JSON array of strings");
+    }
+    await selectFunction(functionID);
+    const version = await fetchJSON(`/v1/functions/${encodeURIComponent(functionID)}/versions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        artifact_key: String(form.get("artifact_key") || "").trim(),
+        image: String(form.get("image") || "").trim(),
+        command: String(form.get("command") || "").trim(),
+        args,
+        cpus: Number(form.get("cpus")),
+        memory_gb: Number(form.get("memory_gb")),
+        duration_seconds: Number(form.get("duration_seconds")),
+        max_attempts: Number(form.get("max_attempts")),
+      }),
+    }, 10000);
+    state.selectedVersionID = version.id;
+    elements.jobForm.elements.namedItem("function_version_id").value = version.id;
+    setFormResult(elements.functionDeployResult, `Version ${version.id} deployed. You can create a job now.`, "success");
+    addActivity(`${functionID}: deployed version ${version.id.slice(0, 8)}`);
+    await refreshFunctions();
+  } catch (error) {
+    setFormResult(elements.functionDeployResult, error.message, "error");
+  } finally {
+    setBusy(elements.functionDeployButton, false, "Deploy version");
+  }
+}
+
+async function invokeFunction(event) {
+  event.preventDefault();
+  const functionID = elements.functionID.value.trim();
+  const form = new FormData(elements.functionInvokeForm);
+  const versionID = String(form.get("version_id") || "");
+  setBusy(elements.functionInvokeButton, true, "Creating");
+  setFormResult(elements.functionInvokeResult, "", "");
+  try {
+    if (!versionID || !state.functionVersions.some((version) => version.id === versionID && version.function_id === functionID)) {
+      throw new Error("Select a version belonging to this function");
+    }
+    const job = await fetchJSON(`/v1/functions/${encodeURIComponent(functionID)}/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: String(form.get("id") || "").trim(),
+        version_id: versionID,
+        priority: Number(form.get("priority")),
+      }),
+    }, 10000);
+    const link = createElement("a", "inline-detail-link", `View job ${job.id}`);
+    link.href = `/jobs/${encodeURIComponent(job.id)}`;
+    elements.functionInvokeResult.replaceChildren(link, document.createTextNode(` · ${job.status}`));
+    elements.functionInvokeResult.dataset.state = "success";
+    elements.functionJobID.value = nextJobID();
+    addActivity(`${job.id} created from ${functionID}`);
+    await refreshDashboard();
+  } catch (error) {
+    setFormResult(elements.functionInvokeResult, error.message, "error");
+  } finally {
+    setBusy(elements.functionInvokeButton, false, "Create job");
+  }
+}
+
+function formatFunctionDate(timestamp) {
+  return new Date(Number(timestamp)).toLocaleString();
+}
+
 async function submitJob(event) {
   event.preventDefault();
   const form = new FormData(elements.jobForm);
   const job = {
     id: String(form.get("id") || "").trim(),
+    function_version_id: String(form.get("function_version_id") || "").trim(),
     priority: Number(form.get("priority")),
     gpus: 0,
     cpus: Number(form.get("cpus")),
@@ -1013,6 +1291,7 @@ async function submitRandomJob() {
   const duration = randomInteger(2, 10);
   const job = {
     id: nextJobID(),
+    function_version_id: String(elements.jobForm.elements.namedItem("function_version_id").value || "").trim(),
     priority: randomInteger(1, 100),
     gpus: 0,
     cpus: randomCapacity("total_cpus", 8),
@@ -1034,6 +1313,9 @@ async function sendJob(job, button, busyLabel, idleLabel) {
   setFormResult(elements.jobFormResult, "", "");
 
   try {
+    if (!job.function_version_id) {
+      throw new Error("Select or deploy a function version before submitting jobs");
+    }
     const args = JSON.parse(job.args);
     if (!Array.isArray(args) || args.some((argument) => typeof argument !== "string")) {
       throw new Error("Arguments must be a JSON array of strings");

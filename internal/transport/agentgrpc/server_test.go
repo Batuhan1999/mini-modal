@@ -34,7 +34,7 @@ func TestRegisterNodeReturnsPersistedDrainFlag(t *testing.T) {
 	ctx := context.Background()
 	db := testdb.Open(t)
 	queries := postgresdb.New(db)
-	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, controlplane.NewMetrics(prometheus.NewRegistry()))
+	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, controlplane.NewMetrics(prometheus.NewRegistry()), nil)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestRegisterNodeReturnsPersistedDrainFlag(t *testing.T) {
 
 func TestClaimAndComplete(t *testing.T) {
 	server, service := newTestServer(t)
-	job := jobmodel.Spec{
+	job := jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID:       "job-1",
 		Priority: 1,
 		CPUs:     1,
@@ -130,7 +130,7 @@ func TestAssignmentRPCErrorClassifiesOnlyStaleAsPrecondition(t *testing.T) {
 func TestRenewAndAcknowledgeCancellation(t *testing.T) {
 	ctx := context.Background()
 	server, service := newTestServer(t)
-	if _, err := service.Submit(ctx, jobmodel.Spec{
+	if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "sleep", Args: []string{"30"},
 	}); err != nil {
@@ -222,9 +222,10 @@ func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 	t.Helper()
 	ctx := context.Background()
 	db := testdb.Open(t)
+	testdb.SeedFunctionVersion(t, db)
 
 	metrics := controlplane.NewMetrics(prometheus.NewRegistry())
-	service := controlplane.NewService(controlplane.NewRuntimeState(), postgresdb.New(db), db, metrics)
+	service := controlplane.NewService(controlplane.NewRuntimeState(), postgresdb.New(db), db, metrics, nil)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentv1 "mini-modal/gen/agent/v1"
+	"mini-modal/internal/artifact"
 	"mini-modal/internal/domain"
 	jobmodel "mini-modal/internal/job"
 	"mini-modal/internal/scheduler"
@@ -29,24 +30,31 @@ const (
 var ErrStaleAssignment = errors.New("stale assignment")
 
 type Service struct {
-	mu      sync.Mutex
-	runtime *RuntimeState
-	queries postgresdb.Querier
-	policy  *scheduler.Policy
-	db      *sql.DB
-	metrics *Metrics
-	wakeup  chan struct{}
+	mu        sync.Mutex
+	runtime   *RuntimeState
+	queries   postgresdb.Querier
+	policy    *scheduler.Policy
+	db        *sql.DB
+	metrics   *Metrics
+	wakeup    chan struct{}
+	artifacts ArtifactStore
 }
 
-func NewService(runtime *RuntimeState, queries postgresdb.Querier, db *sql.DB, metrics *Metrics) *Service {
+type ArtifactStore interface {
+	Upload(context.Context, string, []byte) (artifact.UploadResult, error)
+	Verify(context.Context, string, string) error
+}
+
+func NewService(runtime *RuntimeState, queries postgresdb.Querier, db *sql.DB, metrics *Metrics, artifacts ArtifactStore) *Service {
 	wakeup := make(chan struct{}, 1)
 	return &Service{
-		runtime: runtime,
-		queries: queries,
-		db:      db,
-		policy:  scheduler.NewFirstFitPolicy(),
-		metrics: metrics,
-		wakeup:  wakeup,
+		runtime:   runtime,
+		queries:   queries,
+		db:        db,
+		policy:    scheduler.NewFirstFitPolicy(),
+		metrics:   metrics,
+		wakeup:    wakeup,
+		artifacts: artifacts,
 	}
 }
 
@@ -459,6 +467,13 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 			return domain.Assignment{}, err
 		}
 
+		artifactKeyForJob, err := s.queries.GetArtifactKeyForJob(ctx, job.FunctionVersionID)
+		if err != nil {
+			return domain.Assignment{}, fmt.Errorf("get artifact key for job %q: %w", job.ID, err)
+		}
+		if artifactKeyForJob == "" {
+			return domain.Assignment{}, fmt.Errorf("artifact key for job %q is not found", job.ID)
+		}
 		return domain.Assignment{
 			JobID:           job.ID,
 			NodeID:          job.NodeID,
@@ -469,6 +484,7 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 			CPUs:            job.Cpus,
 			MemoryGB:        job.MemoryGb,
 			DurationSeconds: job.DurationSeconds,
+			ArtifactKey:     artifactKeyForJob,
 		}, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1006,6 +1022,9 @@ func (s *Service) releaseDueRetriesLocked(ctx context.Context, now time.Time) (i
 }
 
 func createJobParams(spec jobmodel.Spec) (postgresdb.CreateJobParams, error) {
+	if strings.TrimSpace(spec.FunctionVersionID) == "" {
+		return postgresdb.CreateJobParams{}, fmt.Errorf("job %q requires a function version ID", spec.ID)
+	}
 	args := spec.Args
 	if args == nil {
 		args = make([]string, 0)
@@ -1024,6 +1043,7 @@ func createJobParams(spec jobmodel.Spec) (postgresdb.CreateJobParams, error) {
 	}
 	return postgresdb.CreateJobParams{
 		ID:                  spec.ID,
+		FunctionVersionID:   spec.FunctionVersionID,
 		Priority:            spec.Priority,
 		GpuType:             spec.GPUType,
 		Gpus:                spec.GPUs,

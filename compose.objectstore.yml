@@ -1,0 +1,52 @@
+name: mini-modal-objectstore
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    pull_policy: never
+    cpus: "1.0"
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-mini_modal}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-mini_modal_dev_password}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks:
+      - objectstore
+
+  minio-init:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    pull_policy: never
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY_ID" "$$S3_SECRET_ACCESS_KEY"
+        mc mb --ignore-existing "local/$$S3_BUCKET"
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-mini_modal}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-mini_modal_dev_password}
+      S3_BUCKET: ${S3_BUCKET:-mini-modal-artifacts}
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - objectstore
+
+volumes:
+  minio-data:
+
+networks:
+  objectstore:
+    name: mini-modal-objectstore

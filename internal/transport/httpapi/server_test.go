@@ -29,6 +29,7 @@ func TestJobEndpoints(t *testing.T) {
 		"/v1/jobs",
 		strings.NewReader(`{
 			"id":"job-1",
+			"function_version_id":"test-function-version",
 			"priority":5,
 			"gpus":0,
 			"cpus":2,
@@ -169,7 +170,7 @@ func TestListJobsOnlyLimitsResponseWhenRequested(t *testing.T) {
 	ctx := context.Background()
 
 	for index := 0; index < 105; index++ {
-		if _, err := server.service.Submit(ctx, jobmodel.Spec{
+		if _, err := server.service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 			ID:       fmt.Sprintf("job-%03d", index),
 			CPUs:     1,
 			MemoryGB: 1,
@@ -262,7 +263,7 @@ func TestGetMissingJobEventsReturnsNotFound(t *testing.T) {
 func TestCancelJobEndpoint(t *testing.T) {
 	server := newTestServer(t)
 	ctx := context.Background()
-	if _, err := server.service.Submit(ctx, jobmodel.Spec{
+	if _, err := server.service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID: "job-cancel", CPUs: 1, MemoryGB: 1,
 		Image: "alpine:3.20", Command: "sleep", Args: []string{"30"},
 	}); err != nil {
@@ -305,7 +306,7 @@ func TestSubmitIdempotentRetryAndConflict(t *testing.T) {
 		return response
 	}
 
-	body := `{"id":"job-1","cpus":1,"memory_gb":1,"image":"alpine:3.20","command":"echo"}`
+	body := `{"id":"job-1","function_version_id":"test-function-version","cpus":1,"memory_gb":1,"image":"alpine:3.20","command":"echo"}`
 	first := submit(body)
 	retry := submit(body)
 	if first.Code != http.StatusAccepted || retry.Code != http.StatusAccepted {
@@ -315,7 +316,7 @@ func TestSubmitIdempotentRetryAndConflict(t *testing.T) {
 		t.Fatalf("retry response = %s, want %s", retry.Body.String(), first.Body.String())
 	}
 
-	conflict := submit(`{"id":"job-1","cpus":2,"memory_gb":1,"image":"alpine:3.20","command":"echo"}`)
+	conflict := submit(`{"id":"job-1","function_version_id":"test-function-version","cpus":2,"memory_gb":1,"image":"alpine:3.20","command":"echo"}`)
 	if conflict.Code != http.StatusConflict {
 		t.Fatalf("conflicting submit status = %d, want %d; body = %s", conflict.Code, http.StatusConflict, conflict.Body.String())
 	}
@@ -374,6 +375,11 @@ func TestDashboardAndNodesEndpoints(t *testing.T) {
 	}
 	if !strings.Contains(dashboardResponse.Body.String(), `id="jobs-body"`) {
 		t.Fatal("dashboard response does not contain the jobs table")
+	}
+	for _, id := range []string{"function-upload-form", "function-deploy-form", "function-invoke-form", "function-version-list"} {
+		if !strings.Contains(dashboardResponse.Body.String(), `id="`+id+`"`) {
+			t.Fatalf("dashboard response does not contain %s", id)
+		}
 	}
 
 	detailRequest := httptest.NewRequest(http.MethodGet, "/jobs/job-1", nil)
@@ -439,13 +445,18 @@ func TestDevNodeEndpoints(t *testing.T) {
 }
 
 func newTestServer(t *testing.T) *Server {
+	return newTestServerWithArtifacts(t, nil)
+}
+
+func newTestServerWithArtifacts(t *testing.T, artifacts controlplane.ArtifactStore) *Server {
 	t.Helper()
 	ctx := context.Background()
 	db := testdb.Open(t)
+	testdb.SeedFunctionVersion(t, db)
 
 	registry := prometheus.NewRegistry()
 	metrics := controlplane.NewMetrics(registry)
-	service := controlplane.NewService(controlplane.NewRuntimeState(), postgresdb.New(db), db, metrics)
+	service := controlplane.NewService(controlplane.NewRuntimeState(), postgresdb.New(db), db, metrics, artifacts)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}

@@ -36,6 +36,7 @@ type Assignment struct {
 	CPUs            int64
 	MemoryGB        int64
 	DurationSeconds int64
+	ArtifactKey     string
 }
 
 type FailureReason string

@@ -117,7 +117,7 @@ func (f fakeExecutor) Run(
 }
 
 func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
-	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 1}
+	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 1, ArtifactKey: "artifact.tar.gz"}
 	controlPlane := &fakeControlPlane{
 		claims: []claimResponse{
 			{err: errors.New("temporary claim failure")},
@@ -144,7 +144,6 @@ func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for job completion")
 	}
-
 	select {
 	case chunk := <-controlPlane.logs:
 		if chunk.Source != agentv1.LogSource_LOG_SOURCE_SYSTEM || string(chunk.Data) != "pulling image\n" {
@@ -163,7 +162,7 @@ func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
 }
 
 func TestAgentReportsExecutionFailure(t *testing.T) {
-	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 1}
+	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 1, ArtifactKey: "artifact.tar.gz"}
 	controlPlane := &fakeControlPlane{
 		claims:         []claimResponse{{assignment: assignment, found: true}},
 		completed:      make(chan domain.Assignment, 1),
@@ -213,8 +212,53 @@ func TestAgentReportsExecutionFailure(t *testing.T) {
 	}
 }
 
+func TestAgentReportsExecutorSetupFailure(t *testing.T) {
+	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 1, ArtifactKey: "artifact.tar.gz"}
+	controlPlane := &fakeControlPlane{
+		claims:         []claimResponse{{assignment: assignment, found: true}},
+		completed:      make(chan domain.Assignment, 1),
+		failed:         make(chan domain.Assignment, 1),
+		failureErrors:  make(chan string, 1),
+		failureReasons: make(chan domain.FailureReason, 1),
+	}
+	agent := New("node-a", controlPlane, fakeExecutor{err: errors.New("storage unavailable")}, time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		agent.Run(ctx, ctx)
+		close(done)
+	}()
+
+	select {
+	case failed := <-controlPlane.failed:
+		if !reflect.DeepEqual(failed, assignment) {
+			t.Fatalf("failed assignment %#v, want %#v", failed, assignment)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for executor setup failure")
+	}
+	if failureError := <-controlPlane.failureErrors; failureError != "storage unavailable" {
+		t.Fatalf("failure error = %q, want storage unavailable", failureError)
+	}
+	if reason := <-controlPlane.failureReasons; reason != domain.FailureExecutionError {
+		t.Fatalf("failure reason = %q, want execution error", reason)
+	}
+	select {
+	case completed := <-controlPlane.completed:
+		t.Fatalf("assignment completed after executor setup failed: %+v", completed)
+	default:
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for agent shutdown")
+	}
+}
+
 func TestAgentCancelsExecutionWhenRenewalRequestsIt(t *testing.T) {
-	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 2}
+	assignment := domain.Assignment{JobID: "job-1", NodeID: "node-a", Attempt: 2, ArtifactKey: "artifact.tar.gz"}
 	controlPlane := &fakeControlPlane{
 		completed:    make(chan domain.Assignment, 1),
 		failed:       make(chan domain.Assignment, 1),

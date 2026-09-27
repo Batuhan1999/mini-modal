@@ -8,6 +8,28 @@ import (
 	"database/sql"
 )
 
+type Function struct {
+	ID        string `json:"id"`
+	CreatedAt int64  `json:"created_at"`
+}
+
+type FunctionVersion struct {
+	ID                  string `json:"id"`
+	FunctionID          string `json:"function_id"`
+	ArtifactKey         string `json:"artifact_key"`
+	Image               string `json:"image"`
+	Command             string `json:"command"`
+	Args                string `json:"args"`
+	GpuType             string `json:"gpu_type"`
+	Gpus                int64  `json:"gpus"`
+	Cpus                int64  `json:"cpus"`
+	MemoryGb            int64  `json:"memory_gb"`
+	DurationSeconds     int64  `json:"duration_seconds"`
+	MaxAttempts         int64  `json:"max_attempts"`
+	RetryBackoffSeconds int64  `json:"retry_backoff_seconds"`
+	CreatedAt           int64  `json:"created_at"`
+}
+
 type Job struct {
 	ID                  string `json:"id"`
 	Priority            int64  `json:"priority"`
@@ -29,6 +51,7 @@ type Job struct {
 	NextAttemptAt       int64  `json:"next_attempt_at"`
 	LastError           string `json:"last_error"`
 	ExecutionAttempts   int64  `json:"execution_attempts"`
+	FunctionVersionID   string `json:"function_version_id"`
 }
 
 type JobEvent struct {

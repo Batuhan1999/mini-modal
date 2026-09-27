@@ -15,6 +15,7 @@ import (
 
 type submitJobRequest struct {
 	ID                  string   `json:"id"`
+	FunctionVersionID   string   `json:"function_version_id"`
 	Priority            int64    `json:"priority"`
 	GPUType             string   `json:"gpu_type"`
 	GPUs                int64    `json:"gpus"`
@@ -35,6 +36,7 @@ type jobCountResponse struct {
 func (r submitJobRequest) spec() jobmodel.Spec {
 	return jobmodel.Spec{
 		ID:                  r.ID,
+		FunctionVersionID:   r.FunctionVersionID,
 		Priority:            r.Priority,
 		GPUType:             r.GPUType,
 		GPUs:                r.GPUs,

@@ -75,6 +75,7 @@ func (a *Agent) Run(ctx context.Context, drainContext context.Context) {
 			go a.runAssignment(ctx, assignment, &waitGroup)
 		}
 	}
+
 }
 
 func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment, waitGroup *sync.WaitGroup) {
@@ -144,6 +145,7 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment,
 	}()
 
 	executionErr := a.executor.Run(executionCtx, assignment, stdout, stderr, systemOut)
+
 	stopRenewing()
 	<-renewDone
 

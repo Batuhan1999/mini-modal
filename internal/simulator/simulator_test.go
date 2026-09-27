@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,12 +15,25 @@ import (
 func TestRunnerSubmitsAndWaitsForJobs(t *testing.T) {
 	var mu sync.Mutex
 	jobs := make([]jobResponse, 0)
+	var uploads, deploys int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/artifacts"):
+			uploads++
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"artifact_key":"benchmark/artifact"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/versions"):
+			deploys++
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"benchmark-version"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/jobs":
 			var spec submitRequest
 			if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if spec.FunctionVersionID != "benchmark-version" {
+				http.Error(w, "missing benchmark version", http.StatusBadRequest)
 				return
 			}
 			mu.Lock()
@@ -51,6 +65,9 @@ func TestRunnerSubmitsAndWaitsForJobs(t *testing.T) {
 	if summary.Submitted != 3 || summary.Statuses["succeeded"] != 3 {
 		t.Fatalf("summary = %+v, want three succeeded jobs", summary)
 	}
+	if uploads != 1 || deploys != 1 {
+		t.Fatalf("function setup: %d uploads, %d deploys; want one each", uploads, deploys)
+	}
 	if summary.SubmissionThroughput() <= 0 || summary.CompletionThroughput() <= 0 {
 		t.Fatalf("throughput was not recorded: %+v", summary)
 	}
@@ -59,9 +76,28 @@ func TestRunnerSubmitsAndWaitsForJobs(t *testing.T) {
 func TestRunnerSupportsConcurrentSubmitOnlyLoad(t *testing.T) {
 	var inFlight atomic.Int64
 	var maxInFlight atomic.Int64
+	var uploads atomic.Int64
+	var deploys atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/artifacts") {
+			uploads.Add(1)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"artifact_key":"benchmark/artifact"}`))
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/versions") {
+			deploys.Add(1)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"benchmark-version"}`))
+			return
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/jobs" {
 			http.Error(w, "unexpected request", http.StatusInternalServerError)
+			return
+		}
+		var spec submitRequest
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil || spec.FunctionVersionID != "benchmark-version" {
+			http.Error(w, "missing benchmark version", http.StatusBadRequest)
 			return
 		}
 		current := inFlight.Add(1)
@@ -92,6 +128,9 @@ func TestRunnerSupportsConcurrentSubmitOnlyLoad(t *testing.T) {
 	}
 	if summary.Submitted != 20 || summary.SubmissionErrors != 0 {
 		t.Fatalf("summary = %+v, want 20 successful submissions", summary)
+	}
+	if uploads.Load() != 1 || deploys.Load() != 1 {
+		t.Fatalf("function setup: %d uploads, %d deploys; want one each", uploads.Load(), deploys.Load())
 	}
 	if summary.TerminalJobs() != 0 {
 		t.Fatalf("submit-only run waited for terminal jobs: %+v", summary)

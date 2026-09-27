@@ -47,6 +47,8 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+docker compose -f compose.objectstore.yml up -d --wait minio
+docker compose -f compose.objectstore.yml run --rm minio-init
 compose up -d --wait postgres
 compose build --quiet benchmark
 

@@ -159,6 +159,7 @@ func (s *Server) Claim(ctx context.Context, req *agentv1.ClaimRequest) (*agentv1
 			Cpus:            assignment.CPUs,
 			MemoryGb:        assignment.MemoryGB,
 			DurationSeconds: assignment.DurationSeconds,
+			ArtifactKey:     assignment.ArtifactKey,
 		},
 	}, nil
 }

@@ -17,6 +17,13 @@ limit. The application container retains its 4-CPU / 6-GiB limit. The benchmark
 database `mini_modal_benchmark` is dropped and recreated before every run;
 the Postgres container and volume remain. The separate `compose.dev.yml`
 development database is not touched.
+The local MinIO service and its artifact bucket are also shared across runs;
+the benchmark application container reaches it at `http://minio:9000` on the
+`mini-modal-objectstore` network. The benchmark launcher starts MinIO if
+needed and does not reset its volume. MinIO is capped at 1 CPU and 1 GiB of
+memory. Once artifact uploads are benchmarked,
+record whether code was already present in that bucket so warm and cold runs
+are compared separately.
 
 Check the effective cgroup limits with:
 
@@ -39,8 +46,9 @@ can still affect timings.
 ## Develop locally
 
 ```bash
-docker compose -f compose.dev.yml up -d --wait postgres
 cp -n .env.example .env
+docker compose -f compose.dev.yml up -d --wait postgres
+make objectstore-up
 go tool air
 ```
 

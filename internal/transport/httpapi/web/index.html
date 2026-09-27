@@ -35,7 +35,7 @@
           <p class="section-index">01 / Overview</p>
           <h2 id="overview-title">Control plane activity</h2>
         </div>
-        <p class="intro-copy">Live scheduling state from SQLite and agent heartbeats. Data refreshes every second.</p>
+        <p class="intro-copy">Live scheduling state from PostgreSQL and agent heartbeats. Data refreshes every second.</p>
       </section>
 
       <div class="error-banner" id="error-banner" role="alert" hidden>
@@ -76,11 +76,116 @@
         <div class="resource" id="resource-gpu"></div>
       </section>
 
+      <section class="functions-panel" aria-labelledby="functions-title">
+        <div class="panel-header">
+          <div>
+            <p class="section-index">02 / Function library</p>
+            <h2 id="functions-title">Functions <span class="count" id="functions-count">0</span></h2>
+          </div>
+          <p class="functions-header-copy">Upload source, deploy a version, then create an invocation.</p>
+        </div>
+        <p class="functions-notice">Artifact download is not wired into agents yet. You can test upload, versioning, and job creation here; jobs using the uploaded file will not execute it until that agent step is added.</p>
+        <div class="functions-layout">
+          <div class="functions-browser">
+            <div class="functions-subheader">
+              <h3>Library</h3>
+              <span>Latest 100</span>
+            </div>
+            <div class="function-list" id="functions-list" aria-live="polite">
+              <p class="function-empty">No functions deployed yet.</p>
+            </div>
+            <div class="functions-subheader versions-subheader">
+              <h3>Versions</h3>
+              <span id="function-versions-for">Select a function</span>
+            </div>
+            <div class="function-version-list" id="function-version-list" aria-live="polite">
+              <p class="function-empty">Deploy a version to see it here.</p>
+            </div>
+            <div class="function-version-detail" id="function-version-detail" hidden></div>
+          </div>
+
+          <div class="function-workflow">
+            <form id="function-upload-form" class="function-step">
+              <div class="function-step-heading">
+                <span class="function-step-number">01</span>
+                <div><h3>Upload source</h3><p>Choose a Python file or a tar.gz archive.</p></div>
+              </div>
+              <div class="function-fields">
+                <label class="function-field-wide">
+                  <span>Function ID</span>
+                  <input id="function-id" name="function_id" type="text" value="hello" required autocomplete="off" spellcheck="false">
+                </label>
+                <label class="function-field-wide">
+                  <span>Source file</span>
+                  <input id="function-file" name="file" type="file" accept=".py,.tar.gz,application/gzip" required>
+                </label>
+              </div>
+              <div class="function-step-footer">
+                <button type="submit" class="primary-button" id="function-upload-button">Upload artifact</button>
+                <p class="form-result" id="function-upload-result" role="status" aria-live="polite"></p>
+              </div>
+            </form>
+
+            <form id="function-deploy-form" class="function-step">
+              <div class="function-step-heading">
+                <span class="function-step-number">02</span>
+                <div><h3>Deploy version</h3><p>Snapshot the artifact and runtime settings.</p></div>
+              </div>
+              <div class="function-fields">
+                <label class="function-field-wide">
+                  <span>Artifact key</span>
+                  <input id="function-artifact-key" name="artifact_key" type="text" placeholder="Filled after upload" required autocomplete="off" spellcheck="false">
+                </label>
+                <label>
+                  <span>Image</span>
+                  <input name="image" type="text" value="python:3.13-slim" required autocomplete="off" spellcheck="false">
+                </label>
+                <label>
+                  <span>Command</span>
+                  <input name="command" type="text" value="python" required autocomplete="off" spellcheck="false">
+                </label>
+                <label class="function-field-wide">
+                  <span>Arguments (JSON array)</span>
+                  <input id="function-args" name="args" type="text" value='["hello_function.py", "world"]' required autocomplete="off" spellcheck="false">
+                </label>
+                <label><span>CPUs</span><input name="cpus" type="number" value="1" min="1" required></label>
+                <label><span>Memory GB</span><input name="memory_gb" type="number" value="1" min="1" required></label>
+                <label><span>Timeout s</span><input name="duration_seconds" type="number" value="30" min="0" required></label>
+                <label><span>Max attempts</span><input name="max_attempts" type="number" value="1" min="1" required></label>
+              </div>
+              <div class="function-step-footer">
+                <button type="submit" class="primary-button" id="function-deploy-button">Deploy version</button>
+                <p class="form-result" id="function-deploy-result" role="status" aria-live="polite"></p>
+              </div>
+            </form>
+
+            <form id="function-invoke-form" class="function-step">
+              <div class="function-step-heading">
+                <span class="function-step-number">03</span>
+                <div><h3>Create job</h3><p>Invoke a deployed function version.</p></div>
+              </div>
+              <div class="function-fields">
+                <label class="function-field-wide">
+                  <span>Version</span>
+                  <select id="function-version-select" name="version_id" required><option value="">Deploy a version first</option></select>
+                </label>
+                <label><span>Job ID</span><input id="function-job-id" name="id" type="text" required autocomplete="off" spellcheck="false"></label>
+                <label><span>Priority</span><input name="priority" type="number" value="5" min="0" required></label>
+              </div>
+              <div class="function-step-footer">
+                <button type="submit" class="primary-button" id="function-invoke-button">Create job</button>
+                <p class="form-result" id="function-invoke-result" role="status" aria-live="polite"></p>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
       <div class="workspace">
         <section class="jobs-panel" aria-labelledby="jobs-title">
           <div class="panel-header">
             <div>
-              <p class="section-index">02 / Scheduler</p>
+              <p class="section-index">03 / Scheduler</p>
               <h2 id="jobs-title">Jobs <span class="count" id="jobs-count">0</span></h2>
             </div>
             <div class="filters">
@@ -112,6 +217,10 @@
               <label class="job-field-id">
                 <span>Job ID</span>
                 <input id="job-id" name="id" type="text" required maxlength="80" autocomplete="off">
+              </label>
+              <label class="job-field-id">
+                <span>Function version ID</span>
+                <input name="function_version_id" type="text" required autocomplete="off" spellcheck="false" placeholder="Select or deploy a version above">
               </label>
               <label>
                 <span>Priority</span>
@@ -192,7 +301,7 @@
           <section class="dev-cluster-panel" aria-labelledby="dev-cluster-title">
             <div class="panel-header compact">
               <div>
-                <p class="section-index">03 / Development</p>
+                <p class="section-index">04 / Development</p>
                 <h2 id="dev-cluster-title">Local agents</h2>
               </div>
               <span class="dev-cluster-state" id="dev-cluster-state" data-state="stopped">Stopped</span>
@@ -222,7 +331,7 @@
           <aside class="nodes-panel" aria-labelledby="nodes-title">
             <div class="panel-header compact">
               <div>
-                <p class="section-index">04 / Data plane</p>
+                <p class="section-index">05 / Data plane</p>
                 <h2 id="nodes-title">Nodes <span class="count" id="nodes-count">0</span></h2>
               </div>
             </div>
@@ -241,7 +350,7 @@
           <section class="activity-panel" aria-labelledby="activity-title">
             <div class="panel-header compact">
               <div>
-                <p class="section-index">05 / Events</p>
+                <p class="section-index">06 / Events</p>
                 <h2 id="activity-title">Activity</h2>
               </div>
             </div>

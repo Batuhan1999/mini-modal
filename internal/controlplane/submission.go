@@ -10,6 +10,7 @@ var ErrSubmissionConflict = errors.New("submission conflict")
 
 func sameSubmission(existing postgresdb.Job, requested postgresdb.CreateJobParams) bool {
 	return existing.ID == requested.ID &&
+		existing.FunctionVersionID == requested.FunctionVersionID &&
 		existing.Priority == requested.Priority &&
 		existing.GpuType == requested.GpuType &&
 		existing.Gpus == requested.Gpus &&

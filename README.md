@@ -15,8 +15,9 @@ GPU execution yet.
 ## Run it
 
 ```bash
-docker compose -f compose.dev.yml up -d --wait postgres
 cp -n .env.example .env
+docker compose -f compose.dev.yml up -d --wait postgres
+make objectstore-up
 go tool air
 ```
 
@@ -27,10 +28,29 @@ Postgres. The named Docker volume persists data across `docker compose down`;
 stop the database with
 `docker compose -f compose.dev.yml down` when finished.
 
+MinIO is a separate, persistent local S3-compatible service. Its API is at
+`http://127.0.0.1:9000` and its console is at `http://127.0.0.1:9001`.
+The development credentials and bucket are in `.env.example`; change them in
+your ignored `.env` if needed. `make objectstore-up` creates the
+`mini-modal-artifacts` bucket if it does not exist. `make objectstore-stop`
+stops MinIO without deleting its volume. The benchmark containers use the
+same MinIO instance over Docker's `mini-modal-objectstore` network at
+`http://minio:9000`. The control plane uses the S3-compatible API to store
+function archives.
+This Mac already has the pinned MinIO image cached. The Compose file uses that
+local image because pulls from MinIO's published registries failed during
+setup; do not prune that image unless you arrange another image source first.
+
 Open [http://localhost:8080](http://localhost:8080) to use the dashboard. From
 there you can launch local agent processes, submit jobs, and watch scheduling,
 resource reservations, leases, completions, and failures update live. Launched
 agents still register, heartbeat, claim work, and report results over gRPC.
+The Functions panel lets you upload `hello_function.py` from the repository
+root, deploy a version, inspect versions, and create an invocation job. The
+Docker executor downloads each invocation's artifact, extracts it into a
+temporary directory, and mounts it read-only at `/workspace`. The directory is
+removed after the container exits, so `python hello_function.py` can run from
+the deployed version.
 
 To run a real agent process against the control plane:
 
@@ -65,6 +85,8 @@ make benchmark-process
 Each run starts its own control plane and agents when needed. The benchmark
 database is recreated before every run; the dedicated PostgreSQL container
 stays up between runs and can be stopped with `make benchmark-postgres-stop`.
+The benchmark launcher starts the shared MinIO service if needed, but never
+clears its bucket.
 No persistent development container is required. See
 [docs/benchmarking.md](docs/benchmarking.md) for the methodology.
 
@@ -72,6 +94,11 @@ The API listens on `http://localhost:8080`:
 
 ```text
 POST /v1/jobs
+POST /v1/functions/{id}/artifacts
+POST /v1/functions/{id}/versions
+POST /v1/functions/{id}/jobs
+GET  /v1/functions
+GET  /v1/functions/{id}/versions
 GET  /v1/jobs
 GET  /v1/jobs/{id}
 POST /v1/jobs/{id}/cancel
@@ -84,6 +111,38 @@ DELETE /v1/dev/nodes
 GET  /metrics
 ```
 
+`POST /v1/functions/{id}/artifacts` accepts a raw `.tar.gz` archive with
+`Content-Type: application/gzip`, or a single `.py` file with
+`Content-Type: text/x-python` and `?filename=hello_function.py`. Python source
+is packaged into a tar.gz archive before storage. The response includes an
+`artifact_key`, SHA-256 digest, and size. Archives are limited to 32 MiB compressed and 256 MiB uncompressed;
+only regular files and directories with safe relative paths are accepted.
+For example:
+
+```bash
+tar -czf function.tar.gz main.py
+curl -sS -X POST -H 'Content-Type: application/gzip' \
+  --data-binary @function.tar.gz \
+  http://localhost:8080/v1/functions/greet/artifacts
+```
+
+For a single Python file, upload `hello_function.py` directly in the
+dashboard; no manual `tar` step is needed.
+
+`POST /v1/functions/{id}/versions` creates an immutable, reusable runtime
+version and returns its `id`. Supply `artifact_key`, `image`, `command`, `cpus`,
+and `memory_gb`; `args`, GPU resources, duration, and retry settings are
+optional. The artifact key must belong to that function and exist in the
+configured bucket.
+`POST /v1/functions/{id}/jobs` accepts `id`, `version_id`, and optional
+`priority` to submit an invocation. Each job keeps the exact version ID and
+snapshots its runtime settings for scheduling. The Docker executor downloads
+and runs the version's artifact for each invocation.
+Direct `POST /v1/jobs` submissions also require `function_version_id` from a
+deployed version. There is no legacy job format or database upgrade path for
+jobs without a version; recreate an older development database before running
+this schema.
+
 ## Run a workload simulation
 
 The simulator is an HTTP client, not an in-process fake. Start the control
@@ -92,6 +151,10 @@ plane and enough agents first, then run:
 ```bash
 go run ./cmd/simulator -jobs 100 -rate 10 -failure-fraction 0.1 -timeout-fraction 0.1
 ```
+
+Each simulator run uploads one small artifact and deploys one function version
+before the timed submission phase. All jobs in that run reference the same
+version; this setup is excluded from submission throughput and latency.
 
 `-rate 0` submits the workload as a burst. The seed is deterministic, and the
 simulator waits for its jobs to reach a terminal state before printing a

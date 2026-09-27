@@ -10,13 +10,14 @@ INSERT INTO jobs (
     command,
     args,
     image,
+    function_version_id,
     max_attempts,
     retry_backoff_seconds,
     next_attempt_at,
     last_error,
     status,
     updated_at
-) VALUES (sqlc.arg(id), sqlc.arg(priority), sqlc.arg(gpu_type), sqlc.arg(gpus), sqlc.arg(cpus), sqlc.arg(memory_gb), sqlc.arg(duration_seconds), sqlc.arg(command), sqlc.arg(args), sqlc.arg(image), sqlc.arg(max_attempts), sqlc.arg(retry_backoff_seconds), sqlc.arg(next_attempt_at), sqlc.arg(last_error), 'pending', CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT))
+) VALUES (sqlc.arg(id), sqlc.arg(priority), sqlc.arg(gpu_type), sqlc.arg(gpus), sqlc.arg(cpus), sqlc.arg(memory_gb), sqlc.arg(duration_seconds), sqlc.arg(command), sqlc.arg(args), sqlc.arg(image), sqlc.arg(function_version_id), sqlc.arg(max_attempts), sqlc.arg(retry_backoff_seconds), sqlc.arg(next_attempt_at), sqlc.arg(last_error), 'pending', CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT))
 ON CONFLICT (id) DO NOTHING
 RETURNING *;
 

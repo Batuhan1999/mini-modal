@@ -103,6 +103,7 @@ func (m *Manager) Start(config Config) (Status, error) {
 			"-gpus", "0",
 			"-cpus", strconv.FormatInt(config.CPUsPerNode, 10),
 			"-memory-gb", strconv.FormatInt(config.MemoryGBPerNode, 10),
+			"-executor", "docker",
 		)
 		cmd.Stdout = m.stdout
 		cmd.Stderr = m.stderr

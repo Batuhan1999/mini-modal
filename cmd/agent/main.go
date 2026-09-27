@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"mini-modal/internal/agent"
+	"mini-modal/internal/artifact"
 	"mini-modal/internal/domain"
 	"mini-modal/internal/executor"
 	"mini-modal/internal/transport/agentgrpc"
@@ -50,10 +51,6 @@ func main() {
 	if *totalMemoryGB <= 0 {
 		log.Fatal("-memory-gb must be greater than zero")
 	}
-	selectedExecutor, err := selectExecutor(*executorName, *dockerBinary)
-	if err != nil {
-		log.Fatal(err)
-	}
 	log.SetPrefix("agent " + *nodeID + ": ")
 
 	ctx, stop := signal.NotifyContext(
@@ -62,6 +59,24 @@ func main() {
 		syscall.SIGTERM,
 	)
 	defer stop()
+
+	var artifactStore executor.ArtifactStore
+	if strings.EqualFold(strings.TrimSpace(*executorName), "docker") {
+		store, err := artifact.NewS3Store(ctx, artifact.Config{
+			Endpoint:  os.Getenv("S3_ENDPOINT"),
+			AccessKey: os.Getenv("S3_ACCESS_KEY_ID"),
+			SecretKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
+			Bucket:    os.Getenv("S3_BUCKET"),
+		})
+		if err != nil {
+			log.Fatalf("failed to configure artifact storage: %v", err)
+		}
+		artifactStore = store
+	}
+	selectedExecutor, err := selectExecutor(*executorName, *dockerBinary, artifactStore)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	conn, err := grpc.DialContext(
 		ctx,
@@ -87,7 +102,6 @@ func main() {
 	}
 
 	log.Println("node registered")
-
 	agent := agent.New(
 		*nodeID,
 		client,
@@ -137,14 +151,14 @@ func main() {
 	log.Println("agent stopped")
 }
 
-func selectExecutor(name, dockerBinary string) (executor.Executor, error) {
+func selectExecutor(name, dockerBinary string, artifactStore executor.ArtifactStore) (executor.Executor, error) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "fake":
 		return executor.Fake{}, nil
 	case "process":
 		return executor.ProcessExecutor{}, nil
 	case "docker":
-		return executor.DockerExecutor{Binary: strings.TrimSpace(dockerBinary)}, nil
+		return executor.DockerExecutor{Binary: strings.TrimSpace(dockerBinary), Artifacts: artifactStore}, nil
 	default:
 		return nil, fmt.Errorf("unknown executor %q: use fake, process, or docker", name)
 	}

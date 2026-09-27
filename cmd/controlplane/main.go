@@ -14,6 +14,7 @@ import (
 	"time"
 
 	agentv1 "mini-modal/gen/agent/v1"
+	"mini-modal/internal/artifact"
 	"mini-modal/internal/controlplane"
 	"mini-modal/internal/devcluster"
 	"mini-modal/internal/store/postgres"
@@ -58,7 +59,16 @@ func main() {
 		collectors.NewDBStatsCollector(db, "mini-modal"),
 	)
 	metrics := controlplane.NewMetrics(registry)
-	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, metrics)
+	artifactStore, err := artifact.NewS3Store(ctx, artifact.Config{
+		Endpoint:  os.Getenv("S3_ENDPOINT"),
+		AccessKey: os.Getenv("S3_ACCESS_KEY_ID"),
+		SecretKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
+		Bucket:    os.Getenv("S3_BUCKET"),
+	})
+	if err != nil {
+		log.Fatalf("failed to configure artifact storage: %v", err)
+	}
+	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, metrics, artifactStore)
 	if err := service.Initialize(ctx); err != nil {
 		log.Fatalf("failed to initialize control plane: %v", err)
 	}

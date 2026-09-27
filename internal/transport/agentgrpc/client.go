@@ -90,6 +90,7 @@ func (c *Client) Claim(ctx context.Context, nodeID string) (domain.Assignment, b
 		CPUs:            assignment.GetCpus(),
 		MemoryGB:        assignment.GetMemoryGb(),
 		DurationSeconds: assignment.GetDurationSeconds(),
+		ArtifactKey:     assignment.GetArtifactKey(),
 	}, true, nil
 }
 

@@ -10,6 +10,7 @@ import (
 func TestSameSubmission(t *testing.T) {
 	params, err := createJobParams(jobmodel.Spec{
 		ID:                  "job-1",
+		FunctionVersionID:   "version-1",
 		Priority:            2,
 		GPUType:             "A100",
 		GPUs:                1,
@@ -28,6 +29,7 @@ func TestSameSubmission(t *testing.T) {
 
 	existing := postgresdb.Job{
 		ID:                  params.ID,
+		FunctionVersionID:   params.FunctionVersionID,
 		Priority:            params.Priority,
 		GpuType:             params.GpuType,
 		Gpus:                params.Gpus,
@@ -53,6 +55,7 @@ func TestSameSubmission(t *testing.T) {
 		change func(*postgresdb.Job)
 	}{
 		{"id", func(j *postgresdb.Job) { j.ID = "job-2" }},
+		{"function version", func(j *postgresdb.Job) { j.FunctionVersionID = "version-2" }},
 		{"priority", func(j *postgresdb.Job) { j.Priority++ }},
 		{"gpu type", func(j *postgresdb.Job) { j.GpuType = "H100" }},
 		{"gpus", func(j *postgresdb.Job) { j.Gpus++ }},

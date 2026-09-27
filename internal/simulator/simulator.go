@@ -74,6 +74,11 @@ func (r *Runner) Run(ctx context.Context, config Config) (Summary, error) {
 		return Summary{}, err
 	}
 
+	functionID := fmt.Sprintf("benchmark-%d-%d", time.Now().UnixNano(), config.Seed)
+	versionID, err := r.createFunctionVersion(ctx, config, functionID)
+	if err != nil {
+		return Summary{}, fmt.Errorf("prepare benchmark function: %w", err)
+	}
 	startedAt := time.Now()
 	prefix := fmt.Sprintf("sim-%d-%d", startedAt.UnixMilli(), config.Seed)
 	jobIDs := make(map[string]struct{}, retainedJobCapacity(config))
@@ -94,6 +99,7 @@ func (r *Runner) Run(ctx context.Context, config Config) (Summary, error) {
 			for index := range work {
 				random := rand.New(rand.NewSource(config.Seed + int64(index)*7919))
 				spec := randomJob(random, config, fmt.Sprintf("%s-%06d", prefix, index+1))
+				spec.FunctionVersionID = versionID
 				requestStartedAt := time.Now()
 				err := r.submit(ctx, config.BaseURL, spec)
 				results <- submissionResult{
@@ -242,6 +248,7 @@ func (s Summary) CompletionThroughput() float64 {
 
 type submitRequest struct {
 	ID                  string   `json:"id"`
+	FunctionVersionID   string   `json:"function_version_id"`
 	Priority            int64    `json:"priority"`
 	CPUs                int64    `json:"cpus"`
 	MemoryGB            int64    `json:"memory_gb"`
@@ -251,6 +258,66 @@ type submitRequest struct {
 	Args                []string `json:"args"`
 	MaxAttempts         int64    `json:"max_attempts"`
 	RetryBackoffSeconds int64    `json:"retry_backoff_seconds"`
+}
+
+func (r *Runner) createFunctionVersion(ctx context.Context, config Config, functionID string) (string, error) {
+	endpoint := config.BaseURL + "/v1/functions/" + url.PathEscape(functionID)
+	upload, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/artifacts?filename=benchmark.py", strings.NewReader("# benchmark artifact\n"))
+	if err != nil {
+		return "", err
+	}
+	upload.Header.Set("Content-Type", "text/x-python")
+	uploadResponse, err := r.client.Do(upload)
+	if err != nil {
+		return "", fmt.Errorf("upload benchmark artifact: %w", err)
+	}
+	defer uploadResponse.Body.Close()
+	if uploadResponse.StatusCode != http.StatusCreated {
+		message, _ := io.ReadAll(io.LimitReader(uploadResponse.Body, 4<<10))
+		return "", fmt.Errorf("upload benchmark artifact: HTTP %d: %s", uploadResponse.StatusCode, strings.TrimSpace(string(message)))
+	}
+	var uploaded struct {
+		ArtifactKey string `json:"artifact_key"`
+	}
+	if err := json.NewDecoder(uploadResponse.Body).Decode(&uploaded); err != nil {
+		return "", fmt.Errorf("decode benchmark artifact: %w", err)
+	}
+	if uploaded.ArtifactKey == "" {
+		return "", fmt.Errorf("upload benchmark artifact: empty artifact key")
+	}
+	versionBody, err := json.Marshal(map[string]any{
+		"artifact_key": uploaded.ArtifactKey,
+		"image":        "alpine:3.20", "command": "sh", "args": []string{"-c", "true"},
+		"cpus": config.CPUs, "memory_gb": config.MemoryGB,
+		"max_attempts": config.MaxAttempts, "retry_backoff_seconds": config.RetryBackoffSeconds,
+	})
+	if err != nil {
+		return "", err
+	}
+	deploy, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/versions", bytes.NewReader(versionBody))
+	if err != nil {
+		return "", err
+	}
+	deploy.Header.Set("Content-Type", "application/json")
+	deployResponse, err := r.client.Do(deploy)
+	if err != nil {
+		return "", fmt.Errorf("deploy benchmark function: %w", err)
+	}
+	defer deployResponse.Body.Close()
+	if deployResponse.StatusCode != http.StatusCreated {
+		message, _ := io.ReadAll(io.LimitReader(deployResponse.Body, 4<<10))
+		return "", fmt.Errorf("deploy benchmark function: HTTP %d: %s", deployResponse.StatusCode, strings.TrimSpace(string(message)))
+	}
+	var version struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(deployResponse.Body).Decode(&version); err != nil {
+		return "", fmt.Errorf("decode benchmark function version: %w", err)
+	}
+	if version.ID == "" {
+		return "", fmt.Errorf("deploy benchmark function: empty version ID")
+	}
+	return version.ID, nil
 }
 
 type jobResponse struct {
