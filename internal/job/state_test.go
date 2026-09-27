@@ -13,7 +13,8 @@ func TestStateTransitions(t *testing.T) {
 		{Pending, EventRequestCancellation, Cancelled},
 		{Assigned, EventClaim, Running},
 		{Assigned, EventRequestCancellation, Cancelled},
-		{Assigned, EventLeaseExpired, Retrying},
+		{Assigned, EventLeaseExpired, Pending},
+		{Assigned, EventRequeueAssignment, Pending},
 		{Running, EventComplete, Succeeded},
 		{Running, EventFail, Failed},
 		{Running, EventScheduleRetry, Retrying},
@@ -49,6 +50,8 @@ func TestStateRejectsInvalidTransitions(t *testing.T) {
 	}{
 		{Pending, EventComplete},
 		{Assigned, EventComplete},
+		{Assigned, EventFail},
+		{Assigned, EventScheduleRetry},
 		{Running, EventClaim},
 		{Cancelling, EventComplete},
 		{Succeeded, EventRequestCancellation},

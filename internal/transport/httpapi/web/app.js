@@ -338,7 +338,7 @@ function renderJobs(changedJobs = new Set()) {
       request.push(`${job.gpus} GPU`);
     }
     const requestCell = tableCell("Request", request.join(" · "));
-    const attemptCell = tableCell("Attempt", job.attempt > 0 ? String(job.attempt) : "None");
+    const attemptCell = tableCell("Executions", String(job.execution_attempts));
     const leaseCell = tableCell("Lease");
     const lease = formatLease(job);
     leaseCell.textContent = lease.label;
@@ -391,7 +391,7 @@ function buildInlineLogPanel(job, panelID) {
   const header = createElement("div", "inline-log-header");
   const identity = document.createElement("div");
   identity.append(
-    createElement("span", "inline-log-title", `Attempt ${job.attempt || "not started"}`),
+    createElement("span", "inline-log-title", job.attempt > 0 ? `Assignment ${job.attempt}` : "Not assigned"),
     createElement("span", "inline-log-command", formatCommand(job)),
   );
   const detailLink = createElement("a", "inline-detail-link", "View full job");
@@ -475,8 +475,8 @@ function renderJobDetail(job) {
   elements.detailStatus.textContent = job.status;
   renderDetailCancelAction(job);
   elements.detailLogAttempt.textContent = job.attempt > 0
-    ? `${job.attempt} ${job.attempt === 1 ? "attempt" : "attempts"}`
-    : "No attempts";
+    ? `${job.attempt} ${job.attempt === 1 ? "assignment" : "assignments"}`
+    : "No assignments";
   document.title = `${job.id} · Mini Modal`;
   renderDetailFields(job);
   renderDetailEvents(state.detailEvents);
@@ -493,7 +493,7 @@ function renderDetailFields(job) {
     ]],
     ["Placement", [
       ["Node ID", job.node_id || "Unassigned"],
-      ["Attempt", job.attempt > 0 ? String(job.attempt) : "None"],
+      ["Assignment generation", job.attempt > 0 ? String(job.attempt) : "None"],
       ["Lease expires", formatLeaseTimestamp(job.lease_expires_at)],
       ["Lease remaining", formatLease(job).label],
     ]],
@@ -504,6 +504,7 @@ function renderDetailFields(job) {
       ["GPU type", job.gpu_type || "None"],
     ]],
     ["Execution", [
+      ["Executions started", String(job.execution_attempts)],
       ["Image", job.image],
       ["Duration", `${job.duration_seconds} seconds`],
       ["Command", job.command || "None"],
@@ -557,7 +558,7 @@ function renderDetailEvents(events) {
     );
 
     const context = [];
-    context.push(event.attempt > 0 ? `Attempt ${event.attempt}` : "Before first attempt");
+    context.push(event.attempt > 0 ? `Assignment ${event.attempt}` : "Before first assignment");
     if (event.node_id) {
       context.push(event.node_id);
     }
@@ -593,7 +594,7 @@ function renderDetailLogs(job) {
     group.open = attempt === job.attempt;
 
     const summary = document.createElement("summary");
-    const label = createElement("span", "attempt-log-label", `Attempt ${attempt}`);
+    const label = createElement("span", "attempt-log-label", `Assignment ${attempt}`);
     const meta = logState.loading && !logState.loaded
       ? "Loading"
       : `${logState.logs.length} ${logState.logs.length === 1 ? "chunk" : "chunks"}`;

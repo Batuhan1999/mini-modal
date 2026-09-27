@@ -277,7 +277,8 @@ func (s *Server) RegisterNode(ctx context.Context, req *agentv1.RegisterNodeRequ
 		TotalMemoryGB: int64(req.GetTotalMemoryGb()),
 	}
 
-	if err := s.service.RegisterNode(ctx, node); err != nil {
+	shouldDrain, err := s.service.RegisterNode(ctx, node)
+	if err != nil {
 		return nil, status.Errorf(
 			codes.FailedPrecondition,
 			"failed to register node: %v",
@@ -285,16 +286,17 @@ func (s *Server) RegisterNode(ctx context.Context, req *agentv1.RegisterNodeRequ
 		)
 	}
 
-	return &agentv1.RegisterNodeResponse{}, nil
+	return &agentv1.RegisterNodeResponse{ShouldDrain: shouldDrain}, nil
 }
-func (s *Server) Heartbeat(_ context.Context, req *agentv1.HeartbeatRequest) (*agentv1.HeartbeatResponse, error) {
+func (s *Server) Heartbeat(ctx context.Context, req *agentv1.HeartbeatRequest) (*agentv1.HeartbeatResponse, error) {
 	nodeID := strings.TrimSpace(req.GetNodeId())
 	if nodeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "node ID is required")
 	}
 
-	if err := s.service.Heartbeat(nodeID); err != nil {
+	shouldDrain, err := s.service.Heartbeat(ctx, nodeID)
+	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "failed to heartbeat: %v", err)
 	}
-	return &agentv1.HeartbeatResponse{}, nil
+	return &agentv1.HeartbeatResponse{ShouldDrain: shouldDrain}, nil
 }

@@ -96,13 +96,16 @@ WHERE id = sqlc.arg(id)
 -- name: ClaimJob :one
 UPDATE jobs
 SET status = 'running',
+    execution_attempts = execution_attempts + 1,
     lease_expires_at = sqlc.arg(lease_expires_at),
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
 WHERE id = (
     SELECT candidate.id
     FROM jobs AS candidate
+    LEFT JOIN nodes node ON node.id = candidate.node_id
     WHERE candidate.node_id = sqlc.arg(claim_node_id)
       AND candidate.status = 'assigned'
+      AND (node.should_drain = FALSE)
     ORDER BY candidate.priority DESC, candidate.id
     LIMIT 1
 )
@@ -151,6 +154,28 @@ WHERE id = sqlc.arg(job_id)
   AND attempt = sqlc.arg(assignment_attempt)
   AND status = 'running';
 
+-- name: RequeueExpiredUnclaimedAssignments :many
+UPDATE jobs
+SET status = 'pending',
+    node_id = '',
+    lease_expires_at = 0,
+    next_attempt_at = 0,
+    updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
+WHERE status = 'assigned'
+  AND lease_expires_at <= sqlc.arg(expired_before)
+RETURNING *;
+
+-- name: RequeueAssignedJobsForNode :many
+UPDATE jobs
+SET status = 'pending',
+    node_id = '',
+    lease_expires_at = 0,
+    next_attempt_at = 0,
+    updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
+WHERE status = 'assigned'
+  AND node_id = sqlc.arg(node_id)
+RETURNING *;
+
 -- name: RetryExpiredAssignments :many
 UPDATE jobs
 SET status = 'retrying',
@@ -159,9 +184,9 @@ SET status = 'retrying',
     next_attempt_at = sqlc.arg(expired_before) + retry_backoff_seconds * 1000,
     last_error = 'assignment lease expired',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-WHERE status IN ('assigned', 'running')
+WHERE status = 'running'
   AND lease_expires_at <= sqlc.arg(expired_before)
-  AND attempt < max_attempts
+  AND execution_attempts < max_attempts
 RETURNING *;
 
 -- name: FailExpiredAssignments :many
@@ -170,9 +195,9 @@ SET status = 'failed',
     lease_expires_at = 0,
     last_error = 'assignment lease expired',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-WHERE status IN ('assigned', 'running')
+WHERE status = 'running'
   AND lease_expires_at <= sqlc.arg(expired_before)
-  AND attempt >= max_attempts
+  AND execution_attempts >= max_attempts
 RETURNING *;
 
 -- name: RequeueUnschedulableJobs :execrows

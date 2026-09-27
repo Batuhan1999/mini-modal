@@ -268,27 +268,28 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 	return nil
 }
 
-func (s *Service) RegisterNode(ctx context.Context, node domain.Node) error {
+func (s *Service) RegisterNode(ctx context.Context, node domain.Node) (bool, error) {
 	if err := validateNode(node); err != nil {
-		return err
+		return false, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, err := s.queries.UpsertNode(ctx, postgresdb.UpsertNodeParams{
+	stored, err := s.queries.UpsertNode(ctx, postgresdb.UpsertNodeParams{
 		ID:            node.ID,
 		GpuType:       node.GPUType,
 		TotalGpus:     node.TotalGPUs,
 		TotalCpus:     node.TotalCPUs,
 		TotalMemoryGb: node.TotalMemoryGB,
-	}); err != nil {
-		return fmt.Errorf("store node %q: %w", node.ID, err)
+	})
+	if err != nil {
+		return false, fmt.Errorf("store node %q: %w", node.ID, err)
 	}
 	s.runtime.RegisterNode(node.ID, time.Now())
 
 	if _, err := s.queries.RequeueUnschedulableJobs(ctx); err != nil {
-		return fmt.Errorf("requeue unschedulable jobs: %w", err)
+		return false, fmt.Errorf("requeue unschedulable jobs: %w", err)
 	}
 	select {
 	case s.wakeup <- struct{}{}:
@@ -296,11 +297,67 @@ func (s *Service) RegisterNode(ctx context.Context, node domain.Node) error {
 	default:
 		// Channel is already full; a notification is already pending.
 	}
+	return stored.ShouldDrain, nil
+}
+
+func (s *Service) SetNodeDrain(ctx context.Context, nodeID string, shouldDrain bool) error {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return fmt.Errorf("node ID is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	_, err := withTx(ctx, s.db, func(queries *postgresdb.Queries) (int, error) {
+		if _, err := queries.UpdateNodeDrain(ctx, postgresdb.UpdateNodeDrainParams{
+			ID: nodeID, ShouldDrain: shouldDrain,
+		}); err != nil {
+			return 0, err
+		}
+		if !shouldDrain {
+			return 0, nil
+		}
+
+		jobs, err := queries.RequeueAssignedJobsForNode(ctx, nodeID)
+		if err != nil {
+			return 0, err
+		}
+		for _, job := range jobs {
+			job.NodeID = nodeID
+			if err := recordJobEvent(ctx, queries, job, jobmodel.HistoryAssignmentRequeued,
+				"Assignment requeued because node is draining", now); err != nil {
+				return 0, err
+			}
+		}
+		return len(jobs), nil
+	})
+	if err != nil {
+		return fmt.Errorf("set drain state for node %q: %w", nodeID, err)
+	}
+	select {
+	case s.wakeup <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
-func (s *Service) Heartbeat(nodeID string) error {
-	return s.runtime.Heartbeat(nodeID, time.Now())
+func (s *Service) Heartbeat(ctx context.Context, nodeID string) (bool, error) {
+	shouldDrain, err := s.queries.GetNode(ctx, nodeID)
+	if err != nil {
+		return false, fmt.Errorf("get node %q: %w", nodeID, err)
+	}
+	err = s.runtime.Heartbeat(nodeID, time.Now())
+	if err != nil {
+		return false, fmt.Errorf("heartbeat node %q: %w", nodeID, err)
+	}
+
+	if shouldDrain.ShouldDrain {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (postgresdb.Job, error) {
@@ -464,7 +521,7 @@ func (s *Service) finish(
 		if err != nil {
 			return postgresdb.Job{}, err
 		}
-		if event == jobmodel.EventFail && stored.Attempt < stored.MaxAttempts {
+		if event == jobmodel.EventFail && stored.ExecutionAttempts < stored.MaxAttempts {
 			event = jobmodel.EventScheduleRetry
 		}
 		next, err := current.Next(event)
@@ -779,7 +836,7 @@ func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]dom
 	for _, stored := range storedNodes {
 		node := nodeByID[stored.ID]
 		all = append(all, node)
-		if s.runtime.NodeHealthy(node.ID, now) {
+		if !stored.ShouldDrain && s.runtime.NodeHealthy(node.ID, now) {
 			healthy = append(healthy, node)
 		}
 	}
@@ -788,11 +845,13 @@ func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]dom
 
 func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (int, error) {
 	type expirationResult struct {
+		requeued  int
 		retrying  int
 		failed    int
 		cancelled int
 	}
 	type expiredJobs struct {
+		requeued  []postgresdb.Job
 		retrying  []postgresdb.Job
 		failed    []postgresdb.Job
 		cancelled []postgresdb.Job
@@ -808,6 +867,21 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 		for _, job := range active {
 			if job.LeaseExpiresAt <= now.UnixMilli() {
 				nodeByJobID[job.ID] = job.NodeID
+			}
+		}
+		requeued, err := queries.RequeueExpiredUnclaimedAssignments(ctx, now.UnixMilli())
+		if err != nil {
+			return expirationResult{}, fmt.Errorf("requeue expired unclaimed assignments: %w", err)
+		}
+		for _, job := range requeued {
+			job.NodeID = nodeByJobID[job.ID]
+			if err := recordJobEvent(ctx, queries, job, jobmodel.HistoryLeaseExpired,
+				"Unclaimed assignment lease expired", now); err != nil {
+				return expirationResult{}, err
+			}
+			if err := recordJobEvent(ctx, queries, job, jobmodel.HistoryAssignmentRequeued,
+				"Unclaimed assignment returned to pending", now); err != nil {
+				return expirationResult{}, err
 			}
 		}
 		retrying, err := queries.RetryExpiredAssignments(ctx, now.UnixMilli())
@@ -870,8 +944,9 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 			}
 		}
 
-		jobsResult = expiredJobs{retrying: retrying, failed: failed, cancelled: cancelled}
+		jobsResult = expiredJobs{requeued: requeued, retrying: retrying, failed: failed, cancelled: cancelled}
 		return expirationResult{
+			requeued:  len(requeued),
 			retrying:  len(retrying),
 			failed:    len(failed),
 			cancelled: len(cancelled),
@@ -879,6 +954,9 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 	})
 	if err != nil {
 		return 0, err
+	}
+	for range jobsResult.requeued {
+		s.metrics.RecordLeaseExpiration()
 	}
 	for _, job := range jobsResult.retrying {
 		s.metrics.RecordLeaseExpiration()
@@ -895,7 +973,7 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 		s.metrics.RecordAttemptFinished(job.ID, job.Attempt, "cancelled", now)
 		s.metrics.RecordJobFinished(job.ID, string(jobmodel.Cancelled), now)
 	}
-	return result.retrying + result.failed + result.cancelled, nil
+	return result.requeued + result.retrying + result.failed + result.cancelled, nil
 }
 
 func (s *Service) releaseDueRetriesLocked(ctx context.Context, now time.Time) (int, error) {

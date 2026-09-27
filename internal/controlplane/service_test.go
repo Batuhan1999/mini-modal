@@ -220,6 +220,226 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	}
 }
 
+func TestDrainingNodeRemainsVisibleButDoesNotReceiveWork(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{
+		{ID: "node-a", GPUType: "A100", TotalGPUs: 1, TotalCPUs: 8, TotalMemoryGB: 16},
+		{ID: "node-b", TotalCPUs: 8, TotalMemoryGB: 16},
+	})
+	if err := service.SetNodeDrain(ctx, "node-a", true); err != nil {
+		t.Fatal(err)
+	}
+
+	nodes, err := service.Nodes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 2 || nodes[0].ID != "node-a" || nodes[1].ID != "node-b" {
+		t.Fatalf("visible nodes = %+v, want both nodes", nodes)
+	}
+
+	job, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "gpu-job", GPUType: "A100", GPUs: 1, CPUs: 1, MemoryGB: 1,
+		Image: "alpine:3.20", Command: "echo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	job, err = service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(job.Status) != jobmodel.Pending {
+		t.Fatalf("job status = %q, want pending while its only capable node drains", job.Status)
+	}
+}
+
+func TestDrainingNodeImmediatelyRequeuesUnclaimedAssignment(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{
+		{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8},
+		{ID: "node-b", TotalCPUs: 4, TotalMemoryGB: 8},
+	})
+	job, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo",
+		MaxAttempts: 1, RetryBackoffSeconds: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	assigned, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(assigned.Status) != jobmodel.Assigned || assigned.NodeID != "node-a" || assigned.Attempt != 1 || assigned.ExecutionAttempts != 0 {
+		t.Fatalf("initial assignment = %+v, want attempt 1 on node-a", assigned)
+	}
+
+	if err := service.SetNodeDrain(ctx, "node-a", true); err != nil {
+		t.Fatal(err)
+	}
+	requeued, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(requeued.Status) != jobmodel.Pending || requeued.NodeID != "" || requeued.LeaseExpiresAt != 0 || requeued.ExecutionAttempts != 0 {
+		t.Fatalf("drained assignment = %+v, want pending without an execution attempt", requeued)
+	}
+	events := listTestJobEvents(t, service, job.ID, assigned.Attempt)
+	if len(events) != 2 || events[1].Event != string(jobmodel.HistoryAssignmentRequeued) || events[1].NodeID != "node-a" {
+		t.Fatalf("drain events = %+v, want assignment requeued on node-a", events)
+	}
+	if assignment, found, err := service.Claim(ctx, "node-a"); err != nil || found {
+		t.Fatalf("claim on draining node = %+v, found=%v, err=%v; want no assignment", assignment, found, err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	reassigned, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(reassigned.Status) != jobmodel.Assigned || reassigned.NodeID != "node-b" || reassigned.Attempt != 2 || reassigned.ExecutionAttempts != 0 {
+		t.Fatalf("reassignment = %+v, want attempt 2 on node-b", reassigned)
+	}
+	if assignment, found, err := service.Claim(ctx, "node-b"); err != nil || !found || assignment.JobID != job.ID {
+		t.Fatalf("claim on node-b = %+v, found=%v, err=%v; want reassigned job", assignment, found, err)
+	}
+	running, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if running.ExecutionAttempts != 1 {
+		t.Fatalf("execution attempts after claim = %d, want 1", running.ExecutionAttempts)
+	}
+}
+
+func TestClaimRejectsAlreadyAssignedWorkOnDrainingNode(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}})
+	job, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	// Set the flag directly to exercise the ClaimJob SQL guard independently of SetNodeDrain's requeue.
+	if _, err := service.queries.UpdateNodeDrain(ctx, postgresdb.UpdateNodeDrainParams{
+		ID: "node-a", ShouldDrain: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if assignment, found, err := service.Claim(ctx, "node-a"); err != nil || found {
+		t.Fatalf("claim on draining node = %+v, found=%v, err=%v; want no assignment", assignment, found, err)
+	}
+	stillAssigned, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(stillAssigned.Status) != jobmodel.Assigned || stillAssigned.ExecutionAttempts != 0 {
+		t.Fatalf("job after rejected claim = %+v, want assigned with no executions", stillAssigned)
+	}
+}
+
+func TestDrainingNodeLetsRunningAssignmentComplete(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}})
+	job, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "echo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	assignment, found, err := service.Claim(ctx, "node-a")
+	if err != nil || !found {
+		t.Fatalf("claim before drain: found=%v err=%v", found, err)
+	}
+	if err := service.SetNodeDrain(ctx, "node-a", true); err != nil {
+		t.Fatal(err)
+	}
+	running, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(running.Status) != jobmodel.Running || running.NodeID != "node-a" {
+		t.Fatalf("job after drain = %+v, want running on node-a", running)
+	}
+	if err := service.Complete(ctx, assignment); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(completed.Status) != jobmodel.Succeeded {
+		t.Fatalf("job after completion = %+v, want succeeded", completed)
+	}
+}
+
+func TestFailureBudgetCountsExecutionsNotPlacements(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{
+		{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8},
+		{ID: "node-b", TotalCPUs: 4, TotalMemoryGB: 8},
+	})
+	job, err := service.Submit(ctx, jobmodel.Spec{
+		ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "false",
+		MaxAttempts: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	if err := service.SetNodeDrain(ctx, "node-a", true); err != nil {
+		t.Fatal(err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	assignment, found, err := service.Claim(ctx, "node-b")
+	if err != nil || !found {
+		t.Fatalf("claim after re-placement: found=%v err=%v", found, err)
+	}
+	if assignment.Attempt != 2 {
+		t.Fatalf("assignment generation = %d, want 2", assignment.Attempt)
+	}
+	if err := service.Fail(ctx, assignment, domain.FailureExecutionError, "executor failed"); err != nil {
+		t.Fatal(err)
+	}
+	retrying, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(retrying.Status) != jobmodel.Retrying || retrying.ExecutionAttempts != 1 {
+		t.Fatalf("job after first execution failure = %+v, want retrying with one execution", retrying)
+	}
+}
+
+func TestRegisterNodeReturnsPersistedDrainState(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, nil)
+	node := domain.Node{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}
+
+	shouldDrain, err := service.RegisterNode(ctx, node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shouldDrain {
+		t.Fatal("new node unexpectedly requested to drain")
+	}
+	if err := service.SetNodeDrain(ctx, node.ID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	shouldDrain, err = service.RegisterNode(ctx, node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shouldDrain {
+		t.Fatal("re-registered node did not receive its persisted drain request")
+	}
+}
+
 func TestServiceRejectsInvalidJobs(t *testing.T) {
 	tests := []struct {
 		name string
@@ -263,7 +483,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RegisterNode(ctx, node); err != nil {
+	if _, err := service.RegisterNode(ctx, node); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.Submit(ctx, jobmodel.Spec{
@@ -303,7 +523,7 @@ func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 		t.Fatalf("attempt after restart = %d, want %d", running.Attempt, firstAssignment.Attempt)
 	}
 
-	if err := restarted.RegisterNode(ctx, node); err != nil {
+	if _, err := restarted.RegisterNode(ctx, node); err != nil {
 		t.Fatal(err)
 	}
 	shouldCancel, err := restarted.RenewAssignment(ctx, firstAssignment)
@@ -481,14 +701,14 @@ func TestServiceRetriesFailedJobAfterBackoff(t *testing.T) {
 	}
 }
 
-func TestServiceRecordsExpiredLeaseEvent(t *testing.T) {
+func TestUnclaimedAssignmentLeaseExpiryRequeuesWithoutRetry(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t, []domain.Node{{
 		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
 	}})
 	job, err := service.Submit(ctx, jobmodel.Spec{
 		ID: "job-1", CPUs: 1, MemoryGB: 1,
-		Image: "alpine:3.20", Command: "sleep",
+		Image: "alpine:3.20", Command: "sleep", MaxAttempts: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -506,15 +726,67 @@ func TestServiceRecordsExpiredLeaseEvent(t *testing.T) {
 	if len(events) != 3 ||
 		events[1].Event != "lease_expired" ||
 		events[1].NodeID != "node-a" ||
-		events[2].Event != "retry_scheduled" {
+		events[2].Event != "assignment_requeued" {
 		t.Fatalf("expired assignment events = %#v", events)
 	}
-	retrying, err := service.Job(ctx, job.ID)
+	requeued, err := service.Job(ctx, job.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if jobmodel.Status(retrying.Status) != jobmodel.Retrying {
-		t.Fatalf("status after lease expiration = %q, want %q", retrying.Status, jobmodel.Retrying)
+	if jobmodel.Status(requeued.Status) != jobmodel.Pending || requeued.ExecutionAttempts != 0 || requeued.NextAttemptAt != 0 {
+		t.Fatalf("job after unclaimed lease expiry = %+v, want pending with no execution attempts", requeued)
+	}
+	scheduleTestJobs(t, service, ctx)
+	reassigned, err := service.Job(ctx, job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobmodel.Status(reassigned.Status) != jobmodel.Assigned || reassigned.Attempt != 2 {
+		t.Fatalf("reassignment after lease expiry = %+v, want assignment generation 2", reassigned)
+	}
+}
+
+func TestRunningLeaseExpiryUsesExecutionRetryBudget(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		maxAttempts int64
+		wantStatus  jobmodel.Status
+	}{
+		{name: "retry available", maxAttempts: 2, wantStatus: jobmodel.Retrying},
+		{name: "retry exhausted", maxAttempts: 1, wantStatus: jobmodel.Failed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			service := newTestService(t, []domain.Node{{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}})
+			job, err := service.Submit(ctx, jobmodel.Spec{
+				ID: "job-1", CPUs: 1, MemoryGB: 1, Image: "alpine:3.20", Command: "sleep",
+				MaxAttempts: test.maxAttempts,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			scheduleTestJobs(t, service, ctx)
+			if _, found, err := service.Claim(ctx, "node-a"); err != nil || !found {
+				t.Fatalf("claim before lease expiry: found=%v err=%v", found, err)
+			}
+			running, err := service.Job(ctx, job.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if running.ExecutionAttempts != 1 {
+				t.Fatalf("execution attempts = %d, want 1", running.ExecutionAttempts)
+			}
+			if expired, err := service.expireAssignmentsLocked(ctx, time.UnixMilli(running.LeaseExpiresAt).Add(time.Millisecond)); err != nil || expired != 1 {
+				t.Fatalf("expired assignments = %d, err=%v; want 1", expired, err)
+			}
+			after, err := service.Job(ctx, job.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if jobmodel.Status(after.Status) != test.wantStatus || after.ExecutionAttempts != 1 {
+				t.Fatalf("job after running lease expiry = %+v, want %q with one execution", after, test.wantStatus)
+			}
+		})
 	}
 }
 
@@ -541,7 +813,7 @@ func newTestServiceWithMetrics(t *testing.T, nodes []domain.Node, metrics *Metri
 		t.Fatal(err)
 	}
 	for _, node := range nodes {
-		if err := service.RegisterNode(ctx, node); err != nil {
+		if _, err := service.RegisterNode(ctx, node); err != nil {
 			t.Fatal(err)
 		}
 	}

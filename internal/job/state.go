@@ -30,6 +30,7 @@ const (
 	EventRequestCancellation     Event = "request_cancellation"
 	EventAcknowledgeCancellation Event = "acknowledge_cancellation"
 	EventLeaseExpired            Event = "lease_expired"
+	EventRequeueAssignment       Event = "requeue_assignment"
 )
 
 var transitions = map[Status]map[Event]Status{
@@ -40,10 +41,9 @@ var transitions = map[Status]map[Event]Status{
 	},
 	Assigned: {
 		EventClaim:               Running,
-		EventFail:                Failed,
-		EventScheduleRetry:       Retrying,
 		EventRequestCancellation: Cancelled,
-		EventLeaseExpired:        Retrying,
+		EventLeaseExpired:        Pending,
+		EventRequeueAssignment:   Pending,
 	},
 	Running: {
 		EventComplete:            Succeeded,

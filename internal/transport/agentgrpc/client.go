@@ -149,20 +149,23 @@ func failureReasonToProto(reason domain.FailureReason) agentv1.FailureReason {
 	}
 }
 
-func (c *Client) RegisterNode(ctx context.Context, node domain.Node) error {
-	_, err := c.client.RegisterNode(ctx, &agentv1.RegisterNodeRequest{
+func (c *Client) RegisterNode(ctx context.Context, node domain.Node) (bool, error) {
+	response, err := c.client.RegisterNode(ctx, &agentv1.RegisterNodeRequest{
 		NodeId:        node.ID,
 		GpuType:       node.GPUType,
 		TotalGpus:     int32(node.TotalGPUs),
 		TotalCpus:     int32(node.TotalCPUs),
 		TotalMemoryGb: int32(node.TotalMemoryGB),
 	})
-	return err
+	if err != nil {
+		return false, err
+	}
+	return response.GetShouldDrain(), nil
 }
 
-func (c *Client) Heartbeat(ctx context.Context, nodeID string) error {
-	_, err := c.client.Heartbeat(ctx, &agentv1.HeartbeatRequest{
+func (c *Client) Heartbeat(ctx context.Context, nodeID string) (bool, error) {
+	response, err := c.client.Heartbeat(ctx, &agentv1.HeartbeatRequest{
 		NodeId: nodeID,
 	})
-	return err
+	return response.GetShouldDrain(), err
 }

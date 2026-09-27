@@ -14,4 +14,5 @@ const (
 	HistoryCancellationRequested HistoryEvent = "cancellation_requested"
 	HistoryCancelled             HistoryEvent = "cancelled"
 	HistoryLeaseExpired          HistoryEvent = "lease_expired"
+	HistoryAssignmentRequeued    HistoryEvent = "assignment_requeued"
 )

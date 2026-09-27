@@ -804,6 +804,7 @@ func (x *RegisterNodeRequest) GetTotalMemoryGb() int32 {
 
 type RegisterNodeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShouldDrain   bool                   `protobuf:"varint,1,opt,name=should_drain,json=shouldDrain,proto3" json:"should_drain,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -836,6 +837,13 @@ func (x *RegisterNodeResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use RegisterNodeResponse.ProtoReflect.Descriptor instead.
 func (*RegisterNodeResponse) Descriptor() ([]byte, []int) {
 	return file_agent_v1_agent_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RegisterNodeResponse) GetShouldDrain() bool {
+	if x != nil {
+		return x.ShouldDrain
+	}
+	return false
 }
 
 type RenewAssignmentRequest struct {
@@ -972,6 +980,7 @@ func (x *HeartbeatRequest) GetNodeId() string {
 
 type HeartbeatResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	ShouldDrain   bool                   `protobuf:"varint,1,opt,name=should_drain,json=shouldDrain,proto3" json:"should_drain,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1004,6 +1013,13 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
 	return file_agent_v1_agent_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *HeartbeatResponse) GetShouldDrain() bool {
+	if x != nil {
+		return x.ShouldDrain
+	}
+	return false
 }
 
 var File_agent_v1_agent_proto protoreflect.FileDescriptor
@@ -1059,8 +1075,9 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"total_gpus\x18\x03 \x01(\x05R\ttotalGpus\x12\x1d\n" +
 	"\n" +
 	"total_cpus\x18\x04 \x01(\x05R\ttotalCpus\x12&\n" +
-	"\x0ftotal_memory_gb\x18\x05 \x01(\x05R\rtotalMemoryGb\"\x16\n" +
-	"\x14RegisterNodeResponse\"X\n" +
+	"\x0ftotal_memory_gb\x18\x05 \x01(\x05R\rtotalMemoryGb\"9\n" +
+	"\x14RegisterNodeResponse\x12!\n" +
+	"\fshould_drain\x18\x01 \x01(\bR\vshouldDrain\"X\n" +
 	"\x16RenewAssignmentRequest\x12>\n" +
 	"\n" +
 	"assignment\x18\x01 \x01(\v2\x1e.minimodal.agent.v1.AssignmentR\n" +
@@ -1068,8 +1085,9 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\x17RenewAssignmentResponse\x12#\n" +
 	"\rshould_cancel\x18\x01 \x01(\bR\fshouldCancel\"+\n" +
 	"\x10HeartbeatRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x13\n" +
-	"\x11HeartbeatResponse*o\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"6\n" +
+	"\x11HeartbeatResponse\x12!\n" +
+	"\fshould_drain\x18\x01 \x01(\bR\vshouldDrain*o\n" +
 	"\rFailureReason\x12\x1e\n" +
 	"\x1aFAILURE_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eFAILURE_REASON_EXECUTION_ERROR\x10\x01\x12\x1a\n" +

@@ -81,7 +81,8 @@ func main() {
 		TotalCPUs:     *totalCPUs,
 		TotalMemoryGB: *totalMemoryGB,
 	}
-	if err := client.RegisterNode(ctx, node); err != nil {
+	shouldDrain, err := client.RegisterNode(ctx, node)
+	if err != nil {
 		log.Fatalf("failed to register node: %v", err)
 	}
 
@@ -93,8 +94,17 @@ func main() {
 		selectedExecutor,
 		250*time.Millisecond,
 	)
-
-	go agent.Run(ctx)
+	drainContext, drainCancel := context.WithCancel(ctx)
+	defer drainCancel()
+	requestDrain := func() {
+		if drainContext.Err() == nil {
+			log.Println("node should drain")
+			drainCancel()
+		}
+	}
+	if shouldDrain {
+		requestDrain()
+	}
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
@@ -104,19 +114,26 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := client.Heartbeat(ctx, *nodeID); err != nil {
+				shouldDrain, err := client.Heartbeat(ctx, *nodeID)
+				if err != nil {
 					log.Printf("failed to heartbeat: %v", err)
 					if status.Code(err) == codes.NotFound {
-						if registerErr := client.RegisterNode(ctx, node); registerErr != nil {
+						registeredShouldDrain, registerErr := client.RegisterNode(ctx, node)
+						if registerErr != nil {
 							log.Printf("failed to re-register node: %v", registerErr)
+						} else if registeredShouldDrain {
+							requestDrain()
 						}
 					}
+				}
+				if shouldDrain {
+					requestDrain()
 				}
 			}
 		}
 	}()
+	agent.Run(ctx, drainContext)
 
-	<-ctx.Done()
 	log.Println("agent stopped")
 }
 

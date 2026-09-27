@@ -28,6 +28,7 @@ type Job struct {
 	RetryBackoffSeconds int64  `json:"retry_backoff_seconds"`
 	NextAttemptAt       int64  `json:"next_attempt_at"`
 	LastError           string `json:"last_error"`
+	ExecutionAttempts   int64  `json:"execution_attempts"`
 }
 
 type JobEvent struct {
@@ -57,4 +58,5 @@ type Node struct {
 	TotalGpus     int64  `json:"total_gpus"`
 	TotalCpus     int64  `json:"total_cpus"`
 	TotalMemoryGb int64  `json:"total_memory_gb"`
+	ShouldDrain   bool   `json:"should_drain"`
 }

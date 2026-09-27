@@ -449,7 +449,7 @@ func newTestServer(t *testing.T) *Server {
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RegisterNode(ctx, domain.Node{
+	if _, err := service.RegisterNode(ctx, domain.Node{
 		ID: "node-a", TotalCPUs: 8, TotalMemoryGB: 16,
 	}); err != nil {
 		t.Fatal(err)

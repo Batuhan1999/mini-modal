@@ -24,6 +24,7 @@ type Querier interface {
 	GetJob(ctx context.Context, id string) (Job, error)
 	GetNode(ctx context.Context, id string) (Node, error)
 	ListActiveJobs(ctx context.Context) ([]Job, error)
+	ListActiveNodes(ctx context.Context) ([]Node, error)
 	ListAllJobEvents(ctx context.Context, jobID string) ([]JobEvent, error)
 	ListJobEvents(ctx context.Context, arg ListJobEventsParams) ([]JobEvent, error)
 	ListJobLogs(ctx context.Context, arg ListJobLogsParams) ([]JobLog, error)
@@ -34,11 +35,14 @@ type Querier interface {
 	MarkJobUnschedulable(ctx context.Context, id string) (int64, error)
 	ReleaseDueRetries(ctx context.Context, readyBefore int64) ([]Job, error)
 	RenewAssignment(ctx context.Context, arg RenewAssignmentParams) (int64, error)
+	RequeueAssignedJobsForNode(ctx context.Context, nodeID string) ([]Job, error)
 	RequeueAssignment(ctx context.Context, arg RequeueAssignmentParams) (Job, error)
+	RequeueExpiredUnclaimedAssignments(ctx context.Context, expiredBefore int64) ([]Job, error)
 	RequeueUnschedulableJobs(ctx context.Context) (int64, error)
 	RetryExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error)
 	RetryJob(ctx context.Context, arg RetryJobParams) (Job, error)
 	StartCancelJob(ctx context.Context, id string) (int64, error)
+	UpdateNodeDrain(ctx context.Context, arg UpdateNodeDrainParams) (Node, error)
 	UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, error)
 }
 

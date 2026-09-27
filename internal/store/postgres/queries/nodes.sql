@@ -13,3 +13,12 @@ SELECT * FROM nodes WHERE id = sqlc.arg(id);
 
 -- name: ListNodes :many
 SELECT * FROM nodes ORDER BY id;
+
+
+-- name: ListActiveNodes :many
+SELECT * FROM nodes WHERE should_drain = FALSE ORDER BY id;
+
+
+-- name: UpdateNodeDrain :one
+UPDATE nodes SET should_drain = sqlc.arg(should_drain) WHERE id = sqlc.arg(id)
+RETURNING *;

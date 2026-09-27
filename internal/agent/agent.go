@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"sync"
 	"time"
 
 	agentv1 "mini-modal/gen/agent/v1"
@@ -46,17 +47,23 @@ func New(nodeID string, controlPlane ControlPlane, executor executor.Executor, p
 	}
 }
 
-func (a *Agent) Run(ctx context.Context) {
+func (a *Agent) Run(ctx context.Context, drainContext context.Context) {
 	ticker := time.NewTicker(a.pollInterval)
 	defer ticker.Stop()
+
+	waitGroup := sync.WaitGroup{}
 
 	for {
 		select {
 		case <-ctx.Done():
+			waitGroup.Wait()
+			return
+		case <-drainContext.Done():
+			waitGroup.Wait()
 			return
 
 		case <-ticker.C:
-			assignment, found, err := a.controlPlane.Claim(ctx, a.nodeID)
+			assignment, found, err := a.controlPlane.Claim(drainContext, a.nodeID)
 			if err != nil {
 				log.Printf("agent %q failed to claim work: %v", a.nodeID, err)
 				continue
@@ -64,12 +71,14 @@ func (a *Agent) Run(ctx context.Context) {
 			if !found {
 				continue
 			}
-			go a.runAssignment(ctx, assignment)
+			waitGroup.Add(1)
+			go a.runAssignment(ctx, assignment, &waitGroup)
 		}
 	}
 }
 
-func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment) {
+func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment, waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
 	renewCtx, stopRenewing := context.WithCancel(ctx)
 	defer stopRenewing()
 

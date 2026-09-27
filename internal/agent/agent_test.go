@@ -132,7 +132,7 @@ func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		agent.Run(ctx)
+		agent.Run(ctx, ctx)
 		close(done)
 	}()
 
@@ -176,7 +176,7 @@ func TestAgentReportsExecutionFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		agent.Run(ctx)
+		agent.Run(ctx, ctx)
 		close(done)
 	}()
 
@@ -226,8 +226,10 @@ func TestAgentCancelsExecutionWhenRenewalRequestsIt(t *testing.T) {
 	agent.renewInterval = time.Millisecond
 
 	done := make(chan struct{})
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(1)
 	go func() {
-		agent.runAssignment(context.Background(), assignment)
+		agent.runAssignment(context.Background(), assignment, &waitGroup)
 		close(done)
 	}()
 

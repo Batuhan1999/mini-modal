@@ -91,7 +91,9 @@ message RegisterNodeRequest {
   int32 total_memory_gb = 5;
 }
 
-message RegisterNodeResponse {}
+message RegisterNodeResponse {
+  bool should_drain = 1;
+}
 
 message RenewAssignmentRequest {
   Assignment assignment = 1;
@@ -104,4 +106,6 @@ message HeartbeatRequest {
   string node_id = 1;
 }
 
-message HeartbeatResponse {}
+message HeartbeatResponse {
+  bool should_drain = 1;
+}

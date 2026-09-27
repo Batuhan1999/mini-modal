@@ -30,6 +30,37 @@ func TestClaimReturnsNoAssignmentWhenNoWorkIsAvailable(t *testing.T) {
 	}
 }
 
+func TestRegisterNodeReturnsPersistedDrainFlag(t *testing.T) {
+	ctx := context.Background()
+	db := testdb.Open(t)
+	queries := postgresdb.New(db)
+	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, controlplane.NewMetrics(prometheus.NewRegistry()))
+	if err := service.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(service)
+	request := &agentv1.RegisterNodeRequest{NodeId: "node-a", TotalCpus: 4, TotalMemoryGb: 8}
+
+	response, err := server.RegisterNode(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.GetShouldDrain() {
+		t.Fatal("new node unexpectedly requested to drain")
+	}
+	if err := service.SetNodeDrain(ctx, "node-a", true); err != nil {
+		t.Fatal(err)
+	}
+
+	response, err = server.RegisterNode(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !response.GetShouldDrain() {
+		t.Fatal("re-registered node did not receive its persisted drain request")
+	}
+}
+
 func TestClaimAndComplete(t *testing.T) {
 	server, service := newTestServer(t)
 	job := jobmodel.Spec{
@@ -197,7 +228,7 @@ func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RegisterNode(ctx, domain.Node{
+	if _, err := service.RegisterNode(ctx, domain.Node{
 		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
 	}); err != nil {
 		t.Fatal(err)
