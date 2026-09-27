@@ -5,12 +5,18 @@ be compared rather than accidentally measuring a different machine setup.
 
 ## Fixed environment
 
-Each benchmark container defaults to:
+The application benchmark container defaults to:
 
 - 4 CPU cores;
 - 6 GB RAM with no additional swap allowance;
 - 1,024 processes;
 - Go 1.27 on Debian Bookworm.
+
+One PostgreSQL 15 container is reused across runs with its own 4-CPU / 4-GiB
+limit. The application container retains its 4-CPU / 6-GiB limit. The benchmark
+database `mini_modal_benchmark` is dropped and recreated before every run;
+the Postgres container and volume remain. The separate `compose.dev.yml`
+development database is not touched.
 
 Check the effective cgroup limits with:
 
@@ -18,9 +24,10 @@ Check the effective cgroup limits with:
 make benchmark-limits
 ```
 
-Docker still runs on the Mac, but these cgroup limits bound the processes inside
-each benchmark container. Fake and process executor benchmarks stay inside this
-boundary. Docker-executor benchmarks are separate because access to the host
+Docker still runs on the Mac. These cgroup limits are per-container ceilings,
+not reserved physical resources; other host workloads can affect timings. Fake
+and process executor benchmarks stay inside the application container boundary.
+Docker-executor benchmarks are separate because access to the host
 Docker socket would allow child containers to consume resources outside the
 benchmark container.
 
@@ -32,13 +39,16 @@ can still affect timings.
 ## Develop locally
 
 ```bash
+docker compose -f compose.dev.yml up -d --wait postgres
+cp -n .env.example .env
 go tool air
 ```
 
 Run tests and generators with your local Go toolchain. When comparing versions,
 stop local development processes or keep their load consistent across both
-versions. The benchmark commands below build and remove their containers
-automatically; they do not need a long-lived development container.
+versions. The benchmark commands below build and remove their application
+containers automatically. The benchmark Postgres container stays up for reuse;
+stop it with `make benchmark-postgres-stop` when finished.
 
 For a local simulation against your development control plane:
 
@@ -75,8 +85,9 @@ source material for graphs and the eventual blog post.
 
 ## Initial scenarios
 
-Each target starts a fresh resource-limited container with its own control plane
-and temporary database, then removes that container when the run finishes:
+Each target starts a fresh application container with its own control plane,
+recreates the database in the shared benchmark Postgres container, then removes
+the application container when the run finishes:
 
 ```bash
 make benchmark-admission-serial
@@ -100,6 +111,26 @@ metadata:
 BENCHMARK_LABEL=background-scheduler make benchmark-admission-serial
 ```
 
-Every run writes one metadata/result JSON file and one raw Prometheus snapshot
-to `benchmarks/results/`. No benchmark ports are published to the host, so a
+Use `DB_MAX_OPEN_CONNS` to compare PostgreSQL connection-pool sizes without
+changing the source. The default is 20, chosen from the dedicated 4-core
+Postgres benchmark; the metadata records the selected size. Treat it as a
+workload-specific starting point, not a universal optimum.
+
+```bash
+DB_MAX_OPEN_CONNS=2 BENCHMARK_LABEL=dbpool2 make benchmark-admission-concurrent
+```
+
+Every run writes a metadata/result JSON file, a Prometheus snapshot, and separate
+100-ms cgroup traces for the application and Postgres containers to
+`benchmarks/results/`. The JSON `workload_usage` section measures the application
+container during the simulator invocation; `postgres_usage` measures the
+dedicated Postgres container over the same window. `container_usage` covers the
+application container's entire lifetime, including startup and builds. The
+application measurements still combine the control plane, agents, and simulator.
+Block-I/O byte counts can miss writes that the
+kernel flushes after the simulator ends, so interpret I/O pressure together
+with the byte counts. No benchmark ports are published to the host, so a
 local control plane can keep running, though its resource use may add noise.
+
+Results from the old shared application/Postgres container are not directly
+comparable with these split-container results.

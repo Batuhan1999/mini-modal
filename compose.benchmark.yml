@@ -1,6 +1,26 @@
 name: mini-modal-benchmark
 
 services:
+  postgres:
+    image: postgres:15-bookworm
+    cpus: "${MINI_MODAL_BENCH_POSTGRES_CPUS:-4.0}"
+    mem_limit: "${MINI_MODAL_BENCH_POSTGRES_MEMORY:-4g}"
+    memswap_limit: "${MINI_MODAL_BENCH_POSTGRES_MEMORY:-4g}"
+    pids_limit: 512
+    environment:
+      POSTGRES_USER: benchmark
+      POSTGRES_PASSWORD: benchmark
+      POSTGRES_DB: mini_modal_benchmark
+    volumes:
+      - benchmark-postgres-data:/var/lib/postgresql/data
+      - ./scripts:/benchmark-scripts:ro
+      - ./benchmarks/results:/benchmark-results:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U benchmark -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
   benchmark:
     build:
       context: .
@@ -18,12 +38,26 @@ services:
       JOBS: "${JOBS:-}"
       CONCURRENCY: "${CONCURRENCY:-}"
       AGENTS: "${AGENTS:-}"
+      BENCHMARK_RATE: "${BENCHMARK_RATE:-0}"
       BENCHMARK_LABEL: "${BENCHMARK_LABEL:-benchmark}"
+      DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-20}"
+      BENCHMARK_CAPTURE_LOGS: "${BENCHMARK_CAPTURE_LOGS:-false}"
+      BENCHMARK_TIMESTAMP: "${BENCHMARK_TIMESTAMP:-}"
+      BENCHMARK_DATABASE_URL: postgres://benchmark:benchmark@postgres:5432/mini_modal_benchmark?sslmode=disable
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: benchmark
+      PGPASSWORD: benchmark
+      PGDATABASE: mini_modal_benchmark
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - .:/workspace
       - go-module-cache:/home/developer/go/pkg/mod
       - go-build-cache:/home/developer/.cache/go-build
 
 volumes:
+  benchmark-postgres-data:
   go-module-cache:
   go-build-cache:
