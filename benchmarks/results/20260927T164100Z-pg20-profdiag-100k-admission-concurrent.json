@@ -1,0 +1,76 @@
+{
+  "schema_version": 3,
+  "timestamp": "20260927T164100Z",
+  "benchmark_label": "pg20-profdiag-100k",
+  "scenario": "admission-concurrent",
+  "git_commit": "38ebf7095f4bcbc96fe9562bff89f36e0d0c36e4",
+  "git_dirty": false,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 25817580,
+    "memory_peak_bytes": 380555264,
+    "pids_peak": 29,
+    "oom_kills": 0
+  },
+  "workload_usage": {
+    "started_unix_ms": 1790527265214,
+    "ended_unix_ms": 1790527274448,
+    "cpu_usage_usec": 23764285,
+    "cpu_throttled_usec": 0,
+    "cpu_pressure_some_usec": 707946,
+    "memory_start_bytes": 116899840,
+    "memory_end_bytes": 316899328,
+    "memory_peak_bytes": 369479680,
+    "io_read_bytes": 0,
+    "io_write_bytes": 0,
+    "io_read_ops": 0,
+    "io_write_ops": 0,
+    "io_pressure_some_usec": 1,
+    "io_pressure_full_usec": 0,
+    "sampled_peak_cpu_millicores": 3278,
+    "sampled_peak_io_read_bytes_per_sec": 0,
+    "sampled_peak_io_write_bytes_per_sec": 0,
+    "sample_count": 90
+  },
+  "workload": {
+    "jobs": 100000,
+    "concurrency": 32,
+    "rate_per_second": 0,
+    "agents": 0,
+    "executor": "fake",
+    "db_max_open_conns": 20
+  },
+  "storage": {
+    "database_bytes": 100048231,
+    "jobs": 100000,
+    "failure_reasons": [],
+    "failed_job_events": []
+  },
+  "result": {
+    "submitted": 100000,
+    "submission_errors": 0,
+    "statuses": {},
+    "submission_elapsed_ns": 9222455630,
+    "elapsed_ns": 9222455630,
+    "submission_latency_p50_ns": 2444166,
+    "submission_latency_p95_ns": 5838875,
+    "submission_latency_p99_ns": 12175500
+  },
+  "postgres_usage": {
+    "cpu_limit": "400000 100000",
+    "memory_limit_bytes": "4294967296",
+    "cpu_usage_usec": 33286024,
+    "cpu_throttled_usec": 727516,
+    "memory_peak_bytes": 490270720,
+    "io_read_bytes": 999424,
+    "io_write_bytes": 396451840,
+    "cpu_pressure_some_usec": 1212226,
+    "io_pressure_some_usec": 438764,
+    "sample_count": 86,
+    "oom_kills": 0
+  }
+}
