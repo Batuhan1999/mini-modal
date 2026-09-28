@@ -5,14 +5,14 @@ ON CONFLICT (id) DO NOTHING;
 
 -- name: CreateFunctionVersion :one
 INSERT INTO function_versions (
-    id, function_id, artifact_key, image, command, args,
-    gpu_type, gpus, cpus, memory_gb, duration_seconds,
+    id, function_id, artifact_key, image, entrypoint,
+    gpu_type, gpus, cpus, memory_gb, timeout_seconds,
     max_attempts, retry_backoff_seconds, created_at
 ) VALUES (
     sqlc.arg(id), sqlc.arg(function_id), sqlc.arg(artifact_key),
-    sqlc.arg(image), sqlc.arg(command), sqlc.arg(args),
+    sqlc.arg(image), sqlc.arg(entrypoint),
     sqlc.arg(gpu_type), sqlc.arg(gpus), sqlc.arg(cpus),
-    sqlc.arg(memory_gb), sqlc.arg(duration_seconds),
+    sqlc.arg(memory_gb), sqlc.arg(timeout_seconds),
     sqlc.arg(max_attempts), sqlc.arg(retry_backoff_seconds),
     sqlc.arg(created_at)
 )
@@ -35,6 +35,3 @@ LIMIT 100;
 SELECT * FROM function_versions
 WHERE function_id = sqlc.arg(function_id)
 ORDER BY created_at DESC, id DESC;
-
--- name: GetArtifactKeyForJob :one
-SELECT artifact_key FROM function_versions WHERE id = sqlc.arg(id);

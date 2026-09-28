@@ -8,13 +8,14 @@ message Assignment {
   string job_id = 1;
   string node_id = 2;
   int64 attempt = 3;
-  string command = 4;
-  repeated string args = 5;
+  reserved 4, 5;
   string image = 6;
   int64 cpus = 7;
   int64 memory_gb = 8;
-  int64 duration_seconds = 9;
+  int64 timeout_seconds = 9;
   string artifact_key = 10;
+  string entrypoint = 11;
+  bytes input_json = 12;
 }
 
 message ClaimRequest {
@@ -28,6 +29,7 @@ message ClaimResponse {
 message CompleteRequest {
   string job_id = 1;
   int64 attempt = 2;
+  bytes output_json = 3;
 }
 
 message CompleteResponse {}

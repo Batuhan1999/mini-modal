@@ -48,9 +48,10 @@ agents still register, heartbeat, claim work, and report results over gRPC.
 The Functions panel lets you upload `hello_function.py` from the repository
 root, deploy a version, inspect versions, and create an invocation job. The
 Docker executor downloads each invocation's artifact, extracts it into a
-temporary directory, and mounts it read-only at `/workspace`. The directory is
-removed after the container exits, so `python hello_function.py` can run from
-the deployed version.
+temporary directory, and mounts it read-only at `/workspace`. It calls the
+version's Python entrypoint with the job's JSON `args` and `kwargs`. Standard
+output and errors become job logs; the return value is stored separately as
+the job result. Temporary files are removed after execution.
 
 To run a real agent process against the control plane:
 
@@ -99,8 +100,10 @@ POST /v1/functions/{id}/versions
 POST /v1/functions/{id}/jobs
 GET  /v1/functions
 GET  /v1/functions/{id}/versions
+GET  /v1/function-versions/{id}
 GET  /v1/jobs
 GET  /v1/jobs/{id}
+GET  /v1/jobs/{id}/result
 POST /v1/jobs/{id}/cancel
 GET  /v1/jobs/{id}/logs
 GET  /v1/jobs/{id}/events
@@ -130,18 +133,19 @@ For a single Python file, upload `hello_function.py` directly in the
 dashboard; no manual `tar` step is needed.
 
 `POST /v1/functions/{id}/versions` creates an immutable, reusable runtime
-version and returns its `id`. Supply `artifact_key`, `image`, `command`, `cpus`,
-and `memory_gb`; `args`, GPU resources, duration, and retry settings are
-optional. The artifact key must belong to that function and exist in the
-configured bucket.
-`POST /v1/functions/{id}/jobs` accepts `id`, `version_id`, and optional
-`priority` to submit an invocation. Each job keeps the exact version ID and
-snapshots its runtime settings for scheduling. The Docker executor downloads
-and runs the version's artifact for each invocation.
+version and returns its `id`. Supply `artifact_key`, `image`, `entrypoint`
+(for example `hello_function:greet`), `cpus`, and `memory_gb`. GPU resources,
+`timeout_seconds`, and retry settings are optional. The artifact key must
+belong to that function and exist in the configured bucket.
+`POST /v1/functions/{id}/jobs` accepts `id`, `version_id`, optional
+`priority`, and `input` (for example `{"args":["Ada"],"kwargs":{}}`). Each
+job references its exact immutable version; runtime settings are read from
+the version during scheduling and claim. `GET /v1/jobs/{id}/result` returns
+the JSON return value after a successful invocation.
 Direct `POST /v1/jobs` submissions also require `function_version_id` from a
-deployed version. There is no legacy job format or database upgrade path for
-jobs without a version; recreate an older development database before running
-this schema.
+deployed version and may include `input`. There is no legacy job format or
+database upgrade path for jobs without a version; recreate an older
+development database before running this schema.
 
 ## Run a workload simulation
 

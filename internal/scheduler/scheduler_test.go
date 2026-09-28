@@ -21,7 +21,7 @@ func TestScheduleUsesOrderedJobsAndDoesNotOverAllocate(t *testing.T) {
 		},
 	}
 
-	jobs := []postgresdb.Job{
+	jobs := []postgresdb.ListPendingJobsRow{
 		{ID: "high", Priority: 10, GpuType: "A100", Gpus: 2, Cpus: 4, MemoryGb: 8},
 		{ID: "low", Priority: 1, GpuType: "A100", Gpus: 3, Cpus: 4, MemoryGb: 8},
 	}

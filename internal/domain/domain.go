@@ -2,7 +2,6 @@ package domain
 
 import (
 	agentv1 "mini-modal/gen/agent/v1"
-	postgresdb "mini-modal/internal/store/postgres/sqlc"
 	"time"
 )
 
@@ -27,16 +26,23 @@ type LogStream struct {
 }
 
 type Assignment struct {
-	JobID           string
-	Image           string
-	NodeID          string
-	Attempt         int64
-	Command         string
-	Args            []string
-	CPUs            int64
-	MemoryGB        int64
-	DurationSeconds int64
-	ArtifactKey     string
+	JobID          string
+	Image          string
+	NodeID         string
+	Attempt        int64
+	Entrypoint     string
+	InputJSON      []byte
+	CPUs           int64
+	MemoryGB       int64
+	TimeoutSeconds int64
+	ArtifactKey    string
+}
+
+type Resources struct {
+	GPUType  string
+	GPUs     int64
+	CPUs     int64
+	MemoryGB int64
 }
 
 type FailureReason string
@@ -46,28 +52,28 @@ const (
 	FailureTimeout        FailureReason = "timeout"
 )
 
-func (n Node) CanRun(job postgresdb.Job) bool {
-	return (job.GpuType == "" || job.GpuType == n.GPUType) &&
-		job.Gpus <= n.AvailableGPUs &&
-		job.Cpus <= n.AvailableCPUs &&
-		job.MemoryGb <= n.AvailableMemoryGB
+func (n Node) CanRun(job Resources) bool {
+	return (job.GPUType == "" || job.GPUType == n.GPUType) &&
+		job.GPUs <= n.AvailableGPUs &&
+		job.CPUs <= n.AvailableCPUs &&
+		job.MemoryGB <= n.AvailableMemoryGB
 }
 
-func (n Node) CanPossiblyRun(job postgresdb.Job) bool {
-	return (job.GpuType == "" || job.GpuType == n.GPUType) &&
-		job.Gpus <= n.TotalGPUs &&
-		job.Cpus <= n.TotalCPUs &&
-		job.MemoryGb <= n.TotalMemoryGB
+func (n Node) CanPossiblyRun(job Resources) bool {
+	return (job.GPUType == "" || job.GPUType == n.GPUType) &&
+		job.GPUs <= n.TotalGPUs &&
+		job.CPUs <= n.TotalCPUs &&
+		job.MemoryGB <= n.TotalMemoryGB
 }
 
-func (n *Node) Reserve(job postgresdb.Job) {
-	n.AvailableGPUs -= job.Gpus
-	n.AvailableCPUs -= job.Cpus
-	n.AvailableMemoryGB -= job.MemoryGb
+func (n *Node) Reserve(job Resources) {
+	n.AvailableGPUs -= job.GPUs
+	n.AvailableCPUs -= job.CPUs
+	n.AvailableMemoryGB -= job.MemoryGB
 }
 
-func (n *Node) Release(job postgresdb.Job) {
-	n.AvailableGPUs += job.Gpus
-	n.AvailableCPUs += job.Cpus
-	n.AvailableMemoryGB += job.MemoryGb
+func (n *Node) Release(job Resources) {
+	n.AvailableGPUs += job.GPUs
+	n.AvailableCPUs += job.CPUs
+	n.AvailableMemoryGB += job.MemoryGB
 }

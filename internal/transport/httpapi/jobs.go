@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,19 +15,10 @@ import (
 )
 
 type submitJobRequest struct {
-	ID                  string   `json:"id"`
-	FunctionVersionID   string   `json:"function_version_id"`
-	Priority            int64    `json:"priority"`
-	GPUType             string   `json:"gpu_type"`
-	GPUs                int64    `json:"gpus"`
-	CPUs                int64    `json:"cpus"`
-	MemoryGB            int64    `json:"memory_gb"`
-	DurationSeconds     int64    `json:"duration_seconds"`
-	Image               string   `json:"image"`
-	Command             string   `json:"command"`
-	Args                []string `json:"args"`
-	MaxAttempts         int64    `json:"max_attempts"`
-	RetryBackoffSeconds int64    `json:"retry_backoff_seconds"`
+	ID                string          `json:"id"`
+	FunctionVersionID string          `json:"function_version_id"`
+	Priority          int64           `json:"priority"`
+	Input             json.RawMessage `json:"input"`
 }
 
 type jobCountResponse struct {
@@ -35,19 +27,7 @@ type jobCountResponse struct {
 
 func (r submitJobRequest) spec() jobmodel.Spec {
 	return jobmodel.Spec{
-		ID:                  r.ID,
-		FunctionVersionID:   r.FunctionVersionID,
-		Priority:            r.Priority,
-		GPUType:             r.GPUType,
-		GPUs:                r.GPUs,
-		CPUs:                r.CPUs,
-		MemoryGB:            r.MemoryGB,
-		DurationSeconds:     r.DurationSeconds,
-		Image:               r.Image,
-		Command:             r.Command,
-		Args:                r.Args,
-		MaxAttempts:         r.MaxAttempts,
-		RetryBackoffSeconds: r.RetryBackoffSeconds,
+		ID: r.ID, FunctionVersionID: r.FunctionVersionID, Priority: r.Priority, Input: r.Input,
 	}
 }
 
@@ -122,6 +102,24 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, record)
+}
+
+func (s *Server) getJobResult(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("id")
+	if _, err := s.service.Job(r.Context(), jobID); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	result, err := s.service.JobResult(r.Context(), jobID)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending"})
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request) {

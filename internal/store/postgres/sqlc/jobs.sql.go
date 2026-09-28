@@ -7,6 +7,7 @@ package postgresdb
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const acknowledgeCancelledJob = `-- name: AcknowledgeCancelledJob :one
@@ -18,7 +19,7 @@ SET status = 'cancelled',
 WHERE id = $1
   AND attempt = $2
   AND status = 'cancelling'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 type AcknowledgeCancelledJobParams struct {
@@ -32,25 +33,17 @@ func (q *Queries) AcknowledgeCancelledJob(ctx context.Context, arg AcknowledgeCa
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -64,7 +57,7 @@ SET status = 'assigned',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
 WHERE id = $3
   AND status = 'pending'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 type AssignJobParams struct {
@@ -79,25 +72,17 @@ func (q *Queries) AssignJob(ctx context.Context, arg AssignJobParams) (Job, erro
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -110,7 +95,7 @@ SET status = 'cancelled',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
 WHERE status = 'cancelling'
   AND lease_expires_at <= $1
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 func (q *Queries) CancelExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error) {
@@ -125,25 +110,17 @@ func (q *Queries) CancelExpiredAssignments(ctx context.Context, expiredBefore in
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
-			&i.GpuType,
-			&i.Gpus,
-			&i.Cpus,
-			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
 			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
 			&i.NextAttemptAt,
 			&i.LastError,
 			&i.ExecutionAttempts,
 			&i.FunctionVersionID,
+			&i.InputJson,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -193,7 +170,7 @@ WHERE id = (
     LIMIT 1
 )
   AND status = 'assigned'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 type ClaimJobParams struct {
@@ -207,25 +184,17 @@ func (q *Queries) ClaimJob(ctx context.Context, arg ClaimJobParams) (Job, error)
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -238,7 +207,7 @@ SET status = 'succeeded',
 WHERE id = $1
   AND attempt = $2
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 type CompleteJobParams struct {
@@ -252,25 +221,17 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -291,99 +252,77 @@ const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (
     id,
     priority,
-    gpu_type,
-    gpus,
-    cpus,
-    memory_gb,
-    duration_seconds,
-    command,
-    args,
-    image,
     function_version_id,
-    max_attempts,
-    retry_backoff_seconds,
-    next_attempt_at,
-    last_error,
+    input_json,
     status,
+    created_at,
     updated_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending', CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT))
+) VALUES ($1, $2, $3, $4, 'pending', CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT), CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT))
 ON CONFLICT (id) DO NOTHING
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 type CreateJobParams struct {
-	ID                  string `json:"id"`
-	Priority            int64  `json:"priority"`
-	GpuType             string `json:"gpu_type"`
-	Gpus                int64  `json:"gpus"`
-	Cpus                int64  `json:"cpus"`
-	MemoryGb            int64  `json:"memory_gb"`
-	DurationSeconds     int64  `json:"duration_seconds"`
-	Command             string `json:"command"`
-	Args                string `json:"args"`
-	Image               string `json:"image"`
-	FunctionVersionID   string `json:"function_version_id"`
-	MaxAttempts         int64  `json:"max_attempts"`
-	RetryBackoffSeconds int64  `json:"retry_backoff_seconds"`
-	NextAttemptAt       int64  `json:"next_attempt_at"`
-	LastError           string `json:"last_error"`
+	ID                string          `json:"id"`
+	Priority          int64           `json:"priority"`
+	FunctionVersionID string          `json:"function_version_id"`
+	InputJson         json.RawMessage `json:"input_json"`
 }
 
 func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, error) {
 	row := q.db.QueryRowContext(ctx, createJob,
 		arg.ID,
 		arg.Priority,
-		arg.GpuType,
-		arg.Gpus,
-		arg.Cpus,
-		arg.MemoryGb,
-		arg.DurationSeconds,
-		arg.Command,
-		arg.Args,
-		arg.Image,
 		arg.FunctionVersionID,
-		arg.MaxAttempts,
-		arg.RetryBackoffSeconds,
-		arg.NextAttemptAt,
-		arg.LastError,
+		arg.InputJson,
 	)
 	var i Job
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
+const createJobResult = `-- name: CreateJobResult :exec
+INSERT INTO job_results (job_id, attempt, output_json, created_at)
+VALUES ($1, $2, $3, CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT))
+`
+
+type CreateJobResultParams struct {
+	JobID      string          `json:"job_id"`
+	Attempt    int64           `json:"attempt"`
+	OutputJson json.RawMessage `json:"output_json"`
+}
+
+func (q *Queries) CreateJobResult(ctx context.Context, arg CreateJobResultParams) error {
+	_, err := q.db.ExecContext(ctx, createJobResult, arg.JobID, arg.Attempt, arg.OutputJson)
+	return err
+}
+
 const failExpiredAssignments = `-- name: FailExpiredAssignments :many
-UPDATE jobs
+UPDATE jobs AS j
 SET status = 'failed',
     lease_expires_at = 0,
     last_error = 'assignment lease expired',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-WHERE status = 'running'
-  AND lease_expires_at <= $1
-  AND execution_attempts >= max_attempts
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+FROM function_versions AS v
+WHERE j.function_version_id = v.id
+  AND j.status = 'running'
+  AND j.lease_expires_at <= $1
+  AND j.execution_attempts >= v.max_attempts
+RETURNING j.id, j.priority, j.status, j.node_id, j.attempt, j.lease_expires_at, j.updated_at, j.next_attempt_at, j.last_error, j.execution_attempts, j.function_version_id, j.input_json, j.created_at
 `
 
 func (q *Queries) FailExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error) {
@@ -398,25 +337,17 @@ func (q *Queries) FailExpiredAssignments(ctx context.Context, expiredBefore int6
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
-			&i.GpuType,
-			&i.Gpus,
-			&i.Cpus,
-			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
 			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
 			&i.NextAttemptAt,
 			&i.LastError,
 			&i.ExecutionAttempts,
 			&i.FunctionVersionID,
+			&i.InputJson,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -440,7 +371,7 @@ SET status = 'failed',
 WHERE id = $2
   AND attempt = $3
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 type FailJobParams struct {
@@ -455,31 +386,23 @@ func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (Job, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+SELECT id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 FROM jobs
 WHERE id = $1
 `
@@ -490,67 +413,74 @@ func (q *Queries) GetJob(ctx context.Context, id string) (Job, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getJobResult = `-- name: GetJobResult :one
+SELECT job_id, attempt, output_json, created_at FROM job_results WHERE job_id = $1
+`
+
+func (q *Queries) GetJobResult(ctx context.Context, jobID string) (JobResult, error) {
+	row := q.db.QueryRowContext(ctx, getJobResult, jobID)
+	var i JobResult
+	err := row.Scan(
+		&i.JobID,
+		&i.Attempt,
+		&i.OutputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listActiveJobs = `-- name: ListActiveJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
-FROM jobs
-WHERE status IN ('assigned', 'running', 'cancelling')
-ORDER BY id
+SELECT j.id, j.node_id, j.status, j.lease_expires_at, v.gpu_type, v.gpus, v.cpus, v.memory_gb
+FROM jobs AS j
+JOIN function_versions AS v ON v.id = j.function_version_id
+WHERE j.status IN ('assigned', 'running', 'cancelling')
+ORDER BY j.id
 `
 
-func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
+type ListActiveJobsRow struct {
+	ID             string `json:"id"`
+	NodeID         string `json:"node_id"`
+	Status         string `json:"status"`
+	LeaseExpiresAt int64  `json:"lease_expires_at"`
+	GpuType        string `json:"gpu_type"`
+	Gpus           int64  `json:"gpus"`
+	Cpus           int64  `json:"cpus"`
+	MemoryGb       int64  `json:"memory_gb"`
+}
+
+func (q *Queries) ListActiveJobs(ctx context.Context) ([]ListActiveJobsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listActiveJobs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Job
+	var items []ListActiveJobsRow
 	for rows.Next() {
-		var i Job
+		var i ListActiveJobsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Priority,
+			&i.NodeID,
+			&i.Status,
+			&i.LeaseExpiresAt,
 			&i.GpuType,
 			&i.Gpus,
 			&i.Cpus,
 			&i.MemoryGb,
-			&i.DurationSeconds,
-			&i.Status,
-			&i.NodeID,
-			&i.Attempt,
-			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
-			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
-			&i.NextAttemptAt,
-			&i.LastError,
-			&i.ExecutionAttempts,
-			&i.FunctionVersionID,
 		); err != nil {
 			return nil, err
 		}
@@ -566,7 +496,7 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listJobs = `-- name: ListJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+SELECT id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 FROM jobs
 ORDER BY updated_at DESC, id
 `
@@ -583,25 +513,17 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
-			&i.GpuType,
-			&i.Gpus,
-			&i.Cpus,
-			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
 			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
 			&i.NextAttemptAt,
 			&i.LastError,
 			&i.ExecutionAttempts,
 			&i.FunctionVersionID,
+			&i.InputJson,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -617,22 +539,32 @@ func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listPendingJobs = `-- name: ListPendingJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
-FROM jobs
-WHERE status = 'pending'
-  AND next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-ORDER BY priority DESC, id
+SELECT j.id, j.priority, v.gpu_type, v.gpus, v.cpus, v.memory_gb
+FROM jobs AS j
+JOIN function_versions AS v ON v.id = j.function_version_id
+WHERE j.status = 'pending'
+  AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
+ORDER BY j.priority DESC, j.id
 `
 
-func (q *Queries) ListPendingJobs(ctx context.Context) ([]Job, error) {
+type ListPendingJobsRow struct {
+	ID       string `json:"id"`
+	Priority int64  `json:"priority"`
+	GpuType  string `json:"gpu_type"`
+	Gpus     int64  `json:"gpus"`
+	Cpus     int64  `json:"cpus"`
+	MemoryGb int64  `json:"memory_gb"`
+}
+
+func (q *Queries) ListPendingJobs(ctx context.Context) ([]ListPendingJobsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listPendingJobs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Job
+	var items []ListPendingJobsRow
 	for rows.Next() {
-		var i Job
+		var i ListPendingJobsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
@@ -640,21 +572,6 @@ func (q *Queries) ListPendingJobs(ctx context.Context) ([]Job, error) {
 			&i.Gpus,
 			&i.Cpus,
 			&i.MemoryGb,
-			&i.DurationSeconds,
-			&i.Status,
-			&i.NodeID,
-			&i.Attempt,
-			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
-			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
-			&i.NextAttemptAt,
-			&i.LastError,
-			&i.ExecutionAttempts,
-			&i.FunctionVersionID,
 		); err != nil {
 			return nil, err
 		}
@@ -670,7 +587,7 @@ func (q *Queries) ListPendingJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listRecentJobs = `-- name: ListRecentJobs :many
-SELECT id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+SELECT id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 FROM jobs
 ORDER BY updated_at DESC, id
 LIMIT $1::bigint
@@ -688,25 +605,17 @@ func (q *Queries) ListRecentJobs(ctx context.Context, rowLimit int64) ([]Job, er
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
-			&i.GpuType,
-			&i.Gpus,
-			&i.Cpus,
-			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
 			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
 			&i.NextAttemptAt,
 			&i.LastError,
 			&i.ExecutionAttempts,
 			&i.FunctionVersionID,
+			&i.InputJson,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -744,7 +653,7 @@ SET status = 'pending',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
 WHERE status = 'retrying'
   AND next_attempt_at <= $1
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 func (q *Queries) ReleaseDueRetries(ctx context.Context, readyBefore int64) ([]Job, error) {
@@ -759,25 +668,17 @@ func (q *Queries) ReleaseDueRetries(ctx context.Context, readyBefore int64) ([]J
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
-			&i.GpuType,
-			&i.Gpus,
-			&i.Cpus,
-			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
 			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
 			&i.NextAttemptAt,
 			&i.LastError,
 			&i.ExecutionAttempts,
 			&i.FunctionVersionID,
+			&i.InputJson,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -831,7 +732,7 @@ SET status = 'pending',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
 WHERE status = 'assigned'
   AND node_id = $1
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 func (q *Queries) RequeueAssignedJobsForNode(ctx context.Context, nodeID string) ([]Job, error) {
@@ -846,25 +747,17 @@ func (q *Queries) RequeueAssignedJobsForNode(ctx context.Context, nodeID string)
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
-			&i.GpuType,
-			&i.Gpus,
-			&i.Cpus,
-			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
 			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
 			&i.NextAttemptAt,
 			&i.LastError,
 			&i.ExecutionAttempts,
 			&i.FunctionVersionID,
+			&i.InputJson,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -889,7 +782,7 @@ WHERE id = $1
   AND node_id = $2
   AND attempt = $3
   AND status IN ('assigned', 'running')
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 type RequeueAssignmentParams struct {
@@ -904,25 +797,17 @@ func (q *Queries) RequeueAssignment(ctx context.Context, arg RequeueAssignmentPa
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -936,7 +821,7 @@ SET status = 'pending',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
 WHERE status = 'assigned'
   AND lease_expires_at <= $1
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 func (q *Queries) RequeueExpiredUnclaimedAssignments(ctx context.Context, expiredBefore int64) ([]Job, error) {
@@ -951,25 +836,17 @@ func (q *Queries) RequeueExpiredUnclaimedAssignments(ctx context.Context, expire
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
-			&i.GpuType,
-			&i.Gpus,
-			&i.Cpus,
-			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
 			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
 			&i.NextAttemptAt,
 			&i.LastError,
 			&i.ExecutionAttempts,
 			&i.FunctionVersionID,
+			&i.InputJson,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1000,17 +877,19 @@ func (q *Queries) RequeueUnschedulableJobs(ctx context.Context) (int64, error) {
 }
 
 const retryExpiredAssignments = `-- name: RetryExpiredAssignments :many
-UPDATE jobs
+UPDATE jobs AS j
 SET status = 'retrying',
     node_id = '',
     lease_expires_at = 0,
-    next_attempt_at = $1 + retry_backoff_seconds * 1000,
+    next_attempt_at = $1 + v.retry_backoff_seconds * 1000,
     last_error = 'assignment lease expired',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-WHERE status = 'running'
-  AND lease_expires_at <= $1
-  AND execution_attempts < max_attempts
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+FROM function_versions AS v
+WHERE j.function_version_id = v.id
+  AND j.status = 'running'
+  AND j.lease_expires_at <= $1
+  AND j.execution_attempts < v.max_attempts
+RETURNING j.id, j.priority, j.status, j.node_id, j.attempt, j.lease_expires_at, j.updated_at, j.next_attempt_at, j.last_error, j.execution_attempts, j.function_version_id, j.input_json, j.created_at
 `
 
 func (q *Queries) RetryExpiredAssignments(ctx context.Context, expiredBefore int64) ([]Job, error) {
@@ -1025,25 +904,17 @@ func (q *Queries) RetryExpiredAssignments(ctx context.Context, expiredBefore int
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,
-			&i.GpuType,
-			&i.Gpus,
-			&i.Cpus,
-			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.Status,
 			&i.NodeID,
 			&i.Attempt,
 			&i.LeaseExpiresAt,
-			&i.Command,
-			&i.Args,
 			&i.UpdatedAt,
-			&i.Image,
-			&i.MaxAttempts,
-			&i.RetryBackoffSeconds,
 			&i.NextAttemptAt,
 			&i.LastError,
 			&i.ExecutionAttempts,
 			&i.FunctionVersionID,
+			&i.InputJson,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1069,7 +940,7 @@ SET status = 'retrying',
 WHERE id = $3
   AND attempt = $4
   AND status = 'running'
-RETURNING id, priority, gpu_type, gpus, cpus, memory_gb, duration_seconds, status, node_id, attempt, lease_expires_at, command, args, updated_at, image, max_attempts, retry_backoff_seconds, next_attempt_at, last_error, execution_attempts, function_version_id
+RETURNING id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 `
 
 type RetryJobParams struct {
@@ -1090,25 +961,17 @@ func (q *Queries) RetryJob(ctx context.Context, arg RetryJobParams) (Job, error)
 	err := row.Scan(
 		&i.ID,
 		&i.Priority,
-		&i.GpuType,
-		&i.Gpus,
-		&i.Cpus,
-		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.Status,
 		&i.NodeID,
 		&i.Attempt,
 		&i.LeaseExpiresAt,
-		&i.Command,
-		&i.Args,
 		&i.UpdatedAt,
-		&i.Image,
-		&i.MaxAttempts,
-		&i.RetryBackoffSeconds,
 		&i.NextAttemptAt,
 		&i.LastError,
 		&i.ExecutionAttempts,
 		&i.FunctionVersionID,
+		&i.InputJson,
+		&i.CreatedAt,
 	)
 	return i, err
 }

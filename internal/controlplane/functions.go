@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,17 +18,17 @@ import (
 )
 
 var ErrFunctionVersionNotFound = errors.New("function version not found")
+var pythonEntrypoint = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*$`)
 
 type FunctionVersionSpec struct {
 	ArtifactKey         string
 	Image               string
-	Command             string
-	Args                []string
+	Entrypoint          string
 	GPUType             string
 	GPUs                int64
 	CPUs                int64
 	MemoryGB            int64
-	DurationSeconds     int64
+	TimeoutSeconds      int64
 	MaxAttempts         int64
 	RetryBackoffSeconds int64
 }
@@ -42,6 +43,21 @@ func (s *Service) FunctionVersions(ctx context.Context, functionID string) ([]po
 		return nil, fmt.Errorf("function ID is required")
 	}
 	return s.queries.ListFunctionVersions(ctx, functionID)
+}
+
+func (s *Service) FunctionVersion(ctx context.Context, versionID string) (postgresdb.FunctionVersion, error) {
+	versionID = strings.TrimSpace(versionID)
+	if versionID == "" {
+		return postgresdb.FunctionVersion{}, fmt.Errorf("function version ID is required")
+	}
+	version, err := s.queries.GetFunctionVersion(ctx, versionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return postgresdb.FunctionVersion{}, fmt.Errorf("%w: %q", ErrFunctionVersionNotFound, versionID)
+	}
+	if err != nil {
+		return postgresdb.FunctionVersion{}, fmt.Errorf("get function version %q: %w", versionID, err)
+	}
+	return version, nil
 }
 
 func (s *Service) UploadFunction(ctx context.Context, functionID string, archive []byte) (artifact.UploadResult, error) {
@@ -66,13 +82,11 @@ func (s *Service) DeployFunction(ctx context.Context, functionID string, spec Fu
 	if strings.TrimSpace(spec.ArtifactKey) == "" {
 		return postgresdb.FunctionVersion{}, fmt.Errorf("artifact key is required")
 	}
-	if err := (jobmodel.Spec{
-		ID: functionID, Image: spec.Image, Command: spec.Command, Args: spec.Args,
-		GPUType: spec.GPUType, GPUs: spec.GPUs, CPUs: spec.CPUs,
-		MemoryGB: spec.MemoryGB, DurationSeconds: spec.DurationSeconds,
-		MaxAttempts: spec.MaxAttempts, RetryBackoffSeconds: spec.RetryBackoffSeconds,
-	}).Validate(); err != nil {
-		return postgresdb.FunctionVersion{}, err
+	if strings.TrimSpace(spec.Image) == "" || !pythonEntrypoint.MatchString(spec.Entrypoint) {
+		return postgresdb.FunctionVersion{}, fmt.Errorf("image and module:function entrypoint are required")
+	}
+	if spec.CPUs <= 0 || spec.MemoryGB <= 0 || spec.GPUs < 0 || spec.TimeoutSeconds < 0 || spec.MaxAttempts < 0 || spec.RetryBackoffSeconds < 0 {
+		return postgresdb.FunctionVersion{}, fmt.Errorf("invalid function resource, timeout, or retry settings")
 	}
 	if s.artifacts == nil {
 		return postgresdb.FunctionVersion{}, fmt.Errorf("%w: not configured", artifact.ErrStorage)
@@ -81,14 +95,6 @@ func (s *Service) DeployFunction(ctx context.Context, functionID string, spec Fu
 		return postgresdb.FunctionVersion{}, fmt.Errorf("verify artifact for function %q: %w", functionID, err)
 	}
 
-	args := spec.Args
-	if args == nil {
-		args = []string{}
-	}
-	encodedArgs, err := json.Marshal(args)
-	if err != nil {
-		return postgresdb.FunctionVersion{}, fmt.Errorf("encode function arguments: %w", err)
-	}
 	maxAttempts := spec.MaxAttempts
 	if maxAttempts == 0 {
 		maxAttempts = defaultMaxAttempts
@@ -107,9 +113,9 @@ func (s *Service) DeployFunction(ctx context.Context, functionID string, spec Fu
 		return queries.CreateFunctionVersion(ctx, postgresdb.CreateFunctionVersionParams{
 			ID: uuid.NewString(), FunctionID: functionID,
 			ArtifactKey: spec.ArtifactKey,
-			Image:       spec.Image, Command: spec.Command, Args: string(encodedArgs),
+			Image:       spec.Image, Entrypoint: spec.Entrypoint,
 			GpuType: spec.GPUType, Gpus: spec.GPUs, Cpus: spec.CPUs,
-			MemoryGb: spec.MemoryGB, DurationSeconds: spec.DurationSeconds,
+			MemoryGb: spec.MemoryGB, TimeoutSeconds: spec.TimeoutSeconds,
 			MaxAttempts: maxAttempts, RetryBackoffSeconds: retryBackoffSeconds,
 			CreatedAt: time.Now().UnixMilli(),
 		})
@@ -120,32 +126,22 @@ func (s *Service) DeployFunction(ctx context.Context, functionID string, spec Fu
 	return version, nil
 }
 
-func (s *Service) InvokeFunction(ctx context.Context, functionID, versionID, jobID string, priority int64) (postgresdb.Job, error) {
+func (s *Service) InvokeFunction(ctx context.Context, functionID, versionID, jobID string, priority int64, input json.RawMessage) (postgresdb.Job, error) {
 	functionID = strings.TrimSpace(functionID)
 	versionID = strings.TrimSpace(versionID)
 	if functionID == "" || versionID == "" {
 		return postgresdb.Job{}, fmt.Errorf("function ID and version ID are required")
 	}
-	version, err := s.queries.GetFunctionVersion(ctx, versionID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return postgresdb.Job{}, fmt.Errorf("%w: %q", ErrFunctionVersionNotFound, versionID)
-	}
+	version, err := s.FunctionVersion(ctx, versionID)
 	if err != nil {
-		return postgresdb.Job{}, fmt.Errorf("get function version %q: %w", versionID, err)
+		return postgresdb.Job{}, err
 	}
 	if version.FunctionID != functionID {
 		return postgresdb.Job{}, fmt.Errorf("%w: version %q does not belong to function %q", ErrFunctionVersionNotFound, versionID, functionID)
 	}
 
-	var args []string
-	if err := json.Unmarshal([]byte(version.Args), &args); err != nil {
-		return postgresdb.Job{}, fmt.Errorf("decode function version arguments: %w", err)
-	}
 	return s.Submit(ctx, jobmodel.Spec{
 		ID: jobID, FunctionVersionID: version.ID, Priority: priority,
-		Image: version.Image, Command: version.Command, Args: args,
-		GPUType: version.GpuType, GPUs: version.Gpus, CPUs: version.Cpus,
-		MemoryGB: version.MemoryGb, DurationSeconds: version.DurationSeconds,
-		MaxAttempts: version.MaxAttempts, RetryBackoffSeconds: version.RetryBackoffSeconds,
+		Input: input,
 	})
 }

@@ -61,7 +61,7 @@ func main() {
 	defer stop()
 
 	var artifactStore executor.ArtifactStore
-	if strings.EqualFold(strings.TrimSpace(*executorName), "docker") {
+	if strings.EqualFold(strings.TrimSpace(*executorName), "docker") || strings.EqualFold(strings.TrimSpace(*executorName), "process") {
 		store, err := artifact.NewS3Store(ctx, artifact.Config{
 			Endpoint:  os.Getenv("S3_ENDPOINT"),
 			AccessKey: os.Getenv("S3_ACCESS_KEY_ID"),
@@ -156,7 +156,7 @@ func selectExecutor(name, dockerBinary string, artifactStore executor.ArtifactSt
 	case "fake":
 		return executor.Fake{}, nil
 	case "process":
-		return executor.ProcessExecutor{}, nil
+		return executor.ProcessExecutor{Artifacts: artifactStore}, nil
 	case "docker":
 		return executor.DockerExecutor{Binary: strings.TrimSpace(dockerBinary), Artifacts: artifactStore}, nil
 	default:

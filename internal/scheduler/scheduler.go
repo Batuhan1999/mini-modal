@@ -14,26 +14,27 @@ func NewFirstFitPolicy() *Policy {
 
 // Schedule assigns higher-priority jobs first using a deterministic first-fit
 // policy. Jobs that do not currently fit remain pending.
-func (p *Policy) Schedule(jobs []postgresdb.Job, nodes []domain.Node) ([]domain.Assignment, []postgresdb.Job, []postgresdb.Job) {
+func (p *Policy) Schedule(jobs []postgresdb.ListPendingJobsRow, nodes []domain.Node) ([]domain.Assignment, []postgresdb.ListPendingJobsRow, []postgresdb.ListPendingJobsRow) {
 
 	assignments := make([]domain.Assignment, 0, len(jobs))
-	pending := make([]postgresdb.Job, 0)
-	unschedulable := make([]postgresdb.Job, 0)
+	pending := make([]postgresdb.ListPendingJobsRow, 0)
+	unschedulable := make([]postgresdb.ListPendingJobsRow, 0)
 
 	for _, job := range jobs {
 		assigned := false
+		resources := domain.Resources{GPUType: job.GpuType, GPUs: job.Gpus, CPUs: job.Cpus, MemoryGB: job.MemoryGb}
 
 		canPossiblyRun := false
 		for i := range nodes {
-			if nodes[i].CanPossiblyRun(job) {
+			if nodes[i].CanPossiblyRun(resources) {
 				canPossiblyRun = true
 			}
 
-			if !nodes[i].CanRun(job) {
+			if !nodes[i].CanRun(resources) {
 				continue
 			}
 
-			nodes[i].Reserve(job)
+			nodes[i].Reserve(resources)
 			assignments = append(assignments, domain.Assignment{
 				JobID:  job.ID,
 				NodeID: nodes[i].ID,

@@ -14,6 +14,13 @@ func TestPackagePythonFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	again, err := PackagePythonFile("hello_function.py", []byte("print('hello')\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(archive, again) {
+		t.Fatal("packaging identical source produced different artifact bytes")
+	}
 	if err := ValidateArchive(archive); err != nil {
 		t.Fatalf("packaged archive is invalid: %v", err)
 	}

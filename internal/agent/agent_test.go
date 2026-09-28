@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"reflect"
@@ -51,7 +52,7 @@ func (f *fakeControlPlane) Claim(ctx context.Context, nodeID string) (domain.Ass
 	return response.assignment, response.found, response.err
 }
 
-func (f *fakeControlPlane) Complete(ctx context.Context, assignment domain.Assignment) error {
+func (f *fakeControlPlane) Complete(ctx context.Context, assignment domain.Assignment, output json.RawMessage) error {
 	f.completed <- assignment
 	return nil
 }
@@ -105,15 +106,18 @@ func (f fakeExecutor) Run(
 	_ io.Writer,
 	_ io.Writer,
 	systemOut io.Writer,
-) error {
+) (json.RawMessage, error) {
 	if f.systemOutput != "" {
 		_, _ = io.WriteString(systemOut, f.systemOutput)
 	}
 	if f.waitForCancellation {
 		<-ctx.Done()
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
-	return f.err
+	if f.err != nil {
+		return nil, f.err
+	}
+	return json.RawMessage("null"), nil
 }
 
 func TestAgentRetriesClaimAndCompletesWork(t *testing.T) {

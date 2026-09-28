@@ -90,7 +90,7 @@ func TestUploadAndDeployFunctionArtifact(t *testing.T) {
 	}
 	deploy := func(functionID, key string) *httptest.ResponseRecorder {
 		t.Helper()
-		request := httptest.NewRequest(http.MethodPost, "/v1/functions/"+functionID+"/versions", strings.NewReader(fmt.Sprintf(`{"artifact_key":%q,"image":"python:3.13","command":"python","args":["main.py"],"cpus":1,"memory_gb":1}`, key)))
+		request := httptest.NewRequest(http.MethodPost, "/v1/functions/"+functionID+"/versions", strings.NewReader(fmt.Sprintf(`{"artifact_key":%q,"image":"python:3.13","entrypoint":"main:greet","cpus":1,"memory_gb":1}`, key)))
 		response := httptest.NewRecorder()
 		server.ServeHTTP(response, request)
 		return response
@@ -170,7 +170,7 @@ func TestDeployAndInvokeFunctionVersions(t *testing.T) {
 
 	deploy := func(image string) postgresdb.FunctionVersion {
 		t.Helper()
-		body := fmt.Sprintf(`{"artifact_key":"artifact-for-greet","image":%q,"command":"echo","args":["hello"],"cpus":2,"memory_gb":4}`, image)
+		body := fmt.Sprintf(`{"artifact_key":"artifact-for-greet","image":%q,"entrypoint":"main:greet","cpus":2,"memory_gb":4}`, image)
 		response := post("/v1/functions/greet/versions", body)
 		if response.Code != http.StatusCreated {
 			t.Fatalf("deploy status = %d, body = %s", response.Code, response.Body.String())
@@ -199,8 +199,8 @@ func TestDeployAndInvokeFunctionVersions(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&job); err != nil {
 		t.Fatal(err)
 	}
-	if job.FunctionVersionID != first.ID || job.Image != first.Image || job.Cpus != 2 || job.MemoryGb != 4 {
-		t.Fatalf("job did not snapshot first version: %+v", job)
+	if job.FunctionVersionID != first.ID || first.Cpus != 2 || first.MemoryGb != 4 {
+		t.Fatalf("job did not refer to first version: %+v", job)
 	}
 	if retry := invoke("job-1", first.ID); retry.Code != http.StatusAccepted {
 		t.Fatalf("idempotent retry status = %d, body = %s", retry.Code, retry.Body.String())
@@ -213,5 +213,26 @@ func TestDeployAndInvokeFunctionVersions(t *testing.T) {
 	}
 	if next := invoke("job-2", second.ID); next.Code != http.StatusAccepted {
 		t.Fatalf("invoke next version status = %d, body = %s", next.Code, next.Body.String())
+	}
+}
+
+func TestGetFunctionVersion(t *testing.T) {
+	server := newTestServer(t)
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/function-versions/test-function-version", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("version status = %d; body = %s", response.Code, response.Body.String())
+	}
+	var version postgresdb.FunctionVersion
+	if err := json.Unmarshal(response.Body.Bytes(), &version); err != nil {
+		t.Fatal(err)
+	}
+	if version.Entrypoint != "hello_function:greet" || version.Cpus != 1 {
+		t.Fatalf("unexpected version: %+v", version)
+	}
+	missing := httptest.NewRecorder()
+	server.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/v1/function-versions/missing", nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing version status = %d, want 404", missing.Code)
 	}
 }

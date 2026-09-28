@@ -27,18 +27,18 @@ func (q *Queries) CreateFunction(ctx context.Context, arg CreateFunctionParams) 
 
 const createFunctionVersion = `-- name: CreateFunctionVersion :one
 INSERT INTO function_versions (
-    id, function_id, artifact_key, image, command, args,
-    gpu_type, gpus, cpus, memory_gb, duration_seconds,
+    id, function_id, artifact_key, image, entrypoint,
+    gpu_type, gpus, cpus, memory_gb, timeout_seconds,
     max_attempts, retry_backoff_seconds, created_at
 ) VALUES (
     $1, $2, $3,
-    $4, $5, $6,
-    $7, $8, $9,
-    $10, $11,
-    $12, $13,
-    $14
+    $4, $5,
+    $6, $7, $8,
+    $9, $10,
+    $11, $12,
+    $13
 )
-RETURNING id, function_id, artifact_key, image, command, args, gpu_type, gpus, cpus, memory_gb, duration_seconds, max_attempts, retry_backoff_seconds, created_at
+RETURNING id, function_id, artifact_key, image, gpu_type, gpus, cpus, memory_gb, max_attempts, retry_backoff_seconds, created_at, entrypoint, timeout_seconds
 `
 
 type CreateFunctionVersionParams struct {
@@ -46,13 +46,12 @@ type CreateFunctionVersionParams struct {
 	FunctionID          string `json:"function_id"`
 	ArtifactKey         string `json:"artifact_key"`
 	Image               string `json:"image"`
-	Command             string `json:"command"`
-	Args                string `json:"args"`
+	Entrypoint          string `json:"entrypoint"`
 	GpuType             string `json:"gpu_type"`
 	Gpus                int64  `json:"gpus"`
 	Cpus                int64  `json:"cpus"`
 	MemoryGb            int64  `json:"memory_gb"`
-	DurationSeconds     int64  `json:"duration_seconds"`
+	TimeoutSeconds      int64  `json:"timeout_seconds"`
 	MaxAttempts         int64  `json:"max_attempts"`
 	RetryBackoffSeconds int64  `json:"retry_backoff_seconds"`
 	CreatedAt           int64  `json:"created_at"`
@@ -64,13 +63,12 @@ func (q *Queries) CreateFunctionVersion(ctx context.Context, arg CreateFunctionV
 		arg.FunctionID,
 		arg.ArtifactKey,
 		arg.Image,
-		arg.Command,
-		arg.Args,
+		arg.Entrypoint,
 		arg.GpuType,
 		arg.Gpus,
 		arg.Cpus,
 		arg.MemoryGb,
-		arg.DurationSeconds,
+		arg.TimeoutSeconds,
 		arg.MaxAttempts,
 		arg.RetryBackoffSeconds,
 		arg.CreatedAt,
@@ -81,33 +79,21 @@ func (q *Queries) CreateFunctionVersion(ctx context.Context, arg CreateFunctionV
 		&i.FunctionID,
 		&i.ArtifactKey,
 		&i.Image,
-		&i.Command,
-		&i.Args,
 		&i.GpuType,
 		&i.Gpus,
 		&i.Cpus,
 		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.MaxAttempts,
 		&i.RetryBackoffSeconds,
 		&i.CreatedAt,
+		&i.Entrypoint,
+		&i.TimeoutSeconds,
 	)
 	return i, err
 }
 
-const getArtifactKeyForJob = `-- name: GetArtifactKeyForJob :one
-SELECT artifact_key FROM function_versions WHERE id = $1
-`
-
-func (q *Queries) GetArtifactKeyForJob(ctx context.Context, id string) (string, error) {
-	row := q.db.QueryRowContext(ctx, getArtifactKeyForJob, id)
-	var artifact_key string
-	err := row.Scan(&artifact_key)
-	return artifact_key, err
-}
-
 const getFunctionVersion = `-- name: GetFunctionVersion :one
-SELECT id, function_id, artifact_key, image, command, args, gpu_type, gpus, cpus, memory_gb, duration_seconds, max_attempts, retry_backoff_seconds, created_at FROM function_versions WHERE id = $1
+SELECT id, function_id, artifact_key, image, gpu_type, gpus, cpus, memory_gb, max_attempts, retry_backoff_seconds, created_at, entrypoint, timeout_seconds FROM function_versions WHERE id = $1
 `
 
 func (q *Queries) GetFunctionVersion(ctx context.Context, id string) (FunctionVersion, error) {
@@ -118,22 +104,21 @@ func (q *Queries) GetFunctionVersion(ctx context.Context, id string) (FunctionVe
 		&i.FunctionID,
 		&i.ArtifactKey,
 		&i.Image,
-		&i.Command,
-		&i.Args,
 		&i.GpuType,
 		&i.Gpus,
 		&i.Cpus,
 		&i.MemoryGb,
-		&i.DurationSeconds,
 		&i.MaxAttempts,
 		&i.RetryBackoffSeconds,
 		&i.CreatedAt,
+		&i.Entrypoint,
+		&i.TimeoutSeconds,
 	)
 	return i, err
 }
 
 const listFunctionVersions = `-- name: ListFunctionVersions :many
-SELECT id, function_id, artifact_key, image, command, args, gpu_type, gpus, cpus, memory_gb, duration_seconds, max_attempts, retry_backoff_seconds, created_at FROM function_versions
+SELECT id, function_id, artifact_key, image, gpu_type, gpus, cpus, memory_gb, max_attempts, retry_backoff_seconds, created_at, entrypoint, timeout_seconds FROM function_versions
 WHERE function_id = $1
 ORDER BY created_at DESC, id DESC
 `
@@ -152,16 +137,15 @@ func (q *Queries) ListFunctionVersions(ctx context.Context, functionID string) (
 			&i.FunctionID,
 			&i.ArtifactKey,
 			&i.Image,
-			&i.Command,
-			&i.Args,
 			&i.GpuType,
 			&i.Gpus,
 			&i.Cpus,
 			&i.MemoryGb,
-			&i.DurationSeconds,
 			&i.MaxAttempts,
 			&i.RetryBackoffSeconds,
 			&i.CreatedAt,
+			&i.Entrypoint,
+			&i.TimeoutSeconds,
 		); err != nil {
 			return nil, err
 		}

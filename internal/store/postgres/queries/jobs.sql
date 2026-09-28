@@ -2,22 +2,12 @@
 INSERT INTO jobs (
     id,
     priority,
-    gpu_type,
-    gpus,
-    cpus,
-    memory_gb,
-    duration_seconds,
-    command,
-    args,
-    image,
     function_version_id,
-    max_attempts,
-    retry_backoff_seconds,
-    next_attempt_at,
-    last_error,
+    input_json,
     status,
+    created_at,
     updated_at
-) VALUES (sqlc.arg(id), sqlc.arg(priority), sqlc.arg(gpu_type), sqlc.arg(gpus), sqlc.arg(cpus), sqlc.arg(memory_gb), sqlc.arg(duration_seconds), sqlc.arg(command), sqlc.arg(args), sqlc.arg(image), sqlc.arg(function_version_id), sqlc.arg(max_attempts), sqlc.arg(retry_backoff_seconds), sqlc.arg(next_attempt_at), sqlc.arg(last_error), 'pending', CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT))
+) VALUES (sqlc.arg(id), sqlc.arg(priority), sqlc.arg(function_version_id), sqlc.arg(input_json), 'pending', CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT), CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT))
 ON CONFLICT (id) DO NOTHING
 RETURNING *;
 
@@ -64,17 +54,19 @@ ORDER BY updated_at DESC, id
 LIMIT sqlc.arg(row_limit)::bigint;
 
 -- name: ListPendingJobs :many
-SELECT *
-FROM jobs
-WHERE status = 'pending'
-  AND next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-ORDER BY priority DESC, id;
+SELECT j.id, j.priority, v.gpu_type, v.gpus, v.cpus, v.memory_gb
+FROM jobs AS j
+JOIN function_versions AS v ON v.id = j.function_version_id
+WHERE j.status = 'pending'
+  AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
+ORDER BY j.priority DESC, j.id;
 
 -- name: ListActiveJobs :many
-SELECT *
-FROM jobs
-WHERE status IN ('assigned', 'running', 'cancelling')
-ORDER BY id;
+SELECT j.id, j.node_id, j.status, j.lease_expires_at, v.gpu_type, v.gpus, v.cpus, v.memory_gb
+FROM jobs AS j
+JOIN function_versions AS v ON v.id = j.function_version_id
+WHERE j.status IN ('assigned', 'running', 'cancelling')
+ORDER BY j.id;
 
 -- name: AssignJob :one
 UPDATE jobs
@@ -178,28 +170,39 @@ WHERE status = 'assigned'
 RETURNING *;
 
 -- name: RetryExpiredAssignments :many
-UPDATE jobs
+UPDATE jobs AS j
 SET status = 'retrying',
     node_id = '',
     lease_expires_at = 0,
-    next_attempt_at = sqlc.arg(expired_before) + retry_backoff_seconds * 1000,
+    next_attempt_at = sqlc.arg(expired_before) + v.retry_backoff_seconds * 1000,
     last_error = 'assignment lease expired',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-WHERE status = 'running'
-  AND lease_expires_at <= sqlc.arg(expired_before)
-  AND execution_attempts < max_attempts
-RETURNING *;
+FROM function_versions AS v
+WHERE j.function_version_id = v.id
+  AND j.status = 'running'
+  AND j.lease_expires_at <= sqlc.arg(expired_before)
+  AND j.execution_attempts < v.max_attempts
+RETURNING j.*;
 
 -- name: FailExpiredAssignments :many
-UPDATE jobs
+UPDATE jobs AS j
 SET status = 'failed',
     lease_expires_at = 0,
     last_error = 'assignment lease expired',
     updated_at = CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-WHERE status = 'running'
-  AND lease_expires_at <= sqlc.arg(expired_before)
-  AND execution_attempts >= max_attempts
-RETURNING *;
+FROM function_versions AS v
+WHERE j.function_version_id = v.id
+  AND j.status = 'running'
+  AND j.lease_expires_at <= sqlc.arg(expired_before)
+  AND j.execution_attempts >= v.max_attempts
+RETURNING j.*;
+
+-- name: CreateJobResult :exec
+INSERT INTO job_results (job_id, attempt, output_json, created_at)
+VALUES (sqlc.arg(job_id), sqlc.arg(attempt), sqlc.arg(output_json), CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT));
+
+-- name: GetJobResult :one
+SELECT * FROM job_results WHERE job_id = sqlc.arg(job_id);
 
 -- name: RequeueUnschedulableJobs :execrows
 UPDATE jobs

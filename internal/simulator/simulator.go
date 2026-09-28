@@ -247,22 +247,23 @@ func (s Summary) CompletionThroughput() float64 {
 }
 
 type submitRequest struct {
-	ID                  string   `json:"id"`
-	FunctionVersionID   string   `json:"function_version_id"`
-	Priority            int64    `json:"priority"`
-	CPUs                int64    `json:"cpus"`
-	MemoryGB            int64    `json:"memory_gb"`
-	DurationSeconds     int64    `json:"duration_seconds"`
-	Image               string   `json:"image"`
-	Command             string   `json:"command"`
-	Args                []string `json:"args"`
-	MaxAttempts         int64    `json:"max_attempts"`
-	RetryBackoffSeconds int64    `json:"retry_backoff_seconds"`
+	ID                string          `json:"id"`
+	FunctionVersionID string          `json:"function_version_id"`
+	Priority          int64           `json:"priority"`
+	Input             json.RawMessage `json:"input"`
 }
 
 func (r *Runner) createFunctionVersion(ctx context.Context, config Config, functionID string) (string, error) {
 	endpoint := config.BaseURL + "/v1/functions/" + url.PathEscape(functionID)
-	upload, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/artifacts?filename=benchmark.py", strings.NewReader("# benchmark artifact\n"))
+	upload, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/artifacts?filename=benchmark.py", strings.NewReader(`import time
+def run(runtime_seconds, fail, job_id):
+    print(f"{job_id} started", flush=True)
+    time.sleep(runtime_seconds)
+    if fail:
+        raise RuntimeError("intentional failure")
+    print(f"{job_id} finished", flush=True)
+    return {"job_id": job_id}
+`))
 	if err != nil {
 		return "", err
 	}
@@ -287,9 +288,10 @@ func (r *Runner) createFunctionVersion(ctx context.Context, config Config, funct
 	}
 	versionBody, err := json.Marshal(map[string]any{
 		"artifact_key": uploaded.ArtifactKey,
-		"image":        "alpine:3.20", "command": "sh", "args": []string{"-c", "true"},
+		"image":        "python:3.13-slim", "entrypoint": "benchmark:run",
 		"cpus": config.CPUs, "memory_gb": config.MemoryGB,
-		"max_attempts": config.MaxAttempts, "retry_backoff_seconds": config.RetryBackoffSeconds,
+		"timeout_seconds": int64((config.MaxRuntime + config.TimeoutHeadroom + time.Second - 1) / time.Second),
+		"max_attempts":    config.MaxAttempts, "retry_backoff_seconds": config.RetryBackoffSeconds,
 	})
 	if err != nil {
 		return "", err
@@ -384,34 +386,19 @@ func randomJob(random *rand.Rand, config Config, id string) submitRequest {
 	}
 
 	spec := submitRequest{
-		ID:                  id,
-		Priority:            int64(random.Intn(10)),
-		CPUs:                config.CPUs,
-		MemoryGB:            config.MemoryGB,
-		DurationSeconds:     int64((time.Duration(runtimeSeconds)*time.Second + config.TimeoutHeadroom) / time.Second),
-		Image:               "alpine:3.20",
-		Command:             "sh",
-		MaxAttempts:         config.MaxAttempts,
-		RetryBackoffSeconds: config.RetryBackoffSeconds,
+		ID: id, Priority: int64(random.Intn(10)),
 	}
 
 	roll := random.Float64()
+	fail := false
 	switch {
 	case roll < config.TimeoutFraction:
-		timeoutSeconds := runtimeSeconds / 2
-		if timeoutSeconds < 1 {
-			timeoutSeconds = 1
-		}
-		if runtimeSeconds <= timeoutSeconds {
-			runtimeSeconds = timeoutSeconds + 1
-		}
-		spec.DurationSeconds = int64(timeoutSeconds)
-		spec.Args = []string{"-c", fmt.Sprintf("echo %s started; sleep %d; echo should-not-finish", id, runtimeSeconds)}
+		timeoutSeconds := int((config.MaxRuntime + config.TimeoutHeadroom + time.Second - 1) / time.Second)
+		runtimeSeconds = timeoutSeconds + 1
 	case roll < config.TimeoutFraction+config.FailureFraction:
-		spec.Args = []string{"-c", fmt.Sprintf("echo %s started; sleep %d; echo intentional-failure >&2; exit 1", id, runtimeSeconds)}
-	default:
-		spec.Args = []string{"-c", fmt.Sprintf("echo %s started; sleep %d; echo %s finished", id, runtimeSeconds, id)}
+		fail = true
 	}
+	spec.Input, _ = json.Marshal(map[string]any{"args": []any{runtimeSeconds, fail, id}, "kwargs": map[string]any{}})
 	return spec
 }
 

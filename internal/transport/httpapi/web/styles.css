@@ -1667,6 +1667,37 @@ tbody tr[data-expanded="true"]:hover td {
   border-bottom: 1px solid var(--line);
 }
 
+.detail-result {
+  padding: 17px 20px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-result h4 {
+  margin: 0 0 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.detail-result pre {
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 13px 14px;
+  color: var(--text);
+  background: #0c0f0d;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .detail-field-group:last-child {
   border-bottom: 0;
 }

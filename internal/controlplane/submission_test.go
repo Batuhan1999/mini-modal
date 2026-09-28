@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"encoding/json"
 	"testing"
 
 	jobmodel "mini-modal/internal/job"
@@ -8,73 +9,23 @@ import (
 )
 
 func TestSameSubmission(t *testing.T) {
-	params, err := createJobParams(jobmodel.Spec{
-		ID:                  "job-1",
-		FunctionVersionID:   "version-1",
-		Priority:            2,
-		GPUType:             "A100",
-		GPUs:                1,
-		CPUs:                4,
-		MemoryGB:            8,
-		DurationSeconds:     30,
-		Image:               "alpine:3.20",
-		Command:             "echo",
-		Args:                []string{"hello"},
-		MaxAttempts:         5,
-		RetryBackoffSeconds: 10,
-	})
+	params, err := createJobParams(jobmodel.Spec{ID: "job-1", FunctionVersionID: "version-1", Priority: 2, Input: json.RawMessage(`{"args":[1],"kwargs":{}}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	existing := postgresdb.Job{
-		ID:                  params.ID,
-		FunctionVersionID:   params.FunctionVersionID,
-		Priority:            params.Priority,
-		GpuType:             params.GpuType,
-		Gpus:                params.Gpus,
-		Cpus:                params.Cpus,
-		MemoryGb:            params.MemoryGb,
-		DurationSeconds:     params.DurationSeconds,
-		Image:               params.Image,
-		Command:             params.Command,
-		Args:                params.Args,
-		MaxAttempts:         params.MaxAttempts,
-		RetryBackoffSeconds: params.RetryBackoffSeconds,
-		Status:              "running",
-		Attempt:             2,
-		NodeID:              "node-a",
-		LastError:           "previous attempt failed",
-	}
+	existing := postgresdb.Job{ID: params.ID, FunctionVersionID: params.FunctionVersionID, Priority: params.Priority, InputJson: json.RawMessage(`{"kwargs":{}, "args":[1]}`), Status: "running", Attempt: 2}
 	if !sameSubmission(existing, params) {
-		t.Fatal("mutable job state should not affect submission comparison")
+		t.Fatal("equivalent JSON inputs should be idempotent")
 	}
-
-	tests := []struct {
-		name   string
-		change func(*postgresdb.Job)
-	}{
-		{"id", func(j *postgresdb.Job) { j.ID = "job-2" }},
-		{"function version", func(j *postgresdb.Job) { j.FunctionVersionID = "version-2" }},
-		{"priority", func(j *postgresdb.Job) { j.Priority++ }},
-		{"gpu type", func(j *postgresdb.Job) { j.GpuType = "H100" }},
-		{"gpus", func(j *postgresdb.Job) { j.Gpus++ }},
-		{"cpus", func(j *postgresdb.Job) { j.Cpus++ }},
-		{"memory", func(j *postgresdb.Job) { j.MemoryGb++ }},
-		{"duration", func(j *postgresdb.Job) { j.DurationSeconds++ }},
-		{"image", func(j *postgresdb.Job) { j.Image = "ubuntu:latest" }},
-		{"command", func(j *postgresdb.Job) { j.Command = "sleep" }},
-		{"args", func(j *postgresdb.Job) { j.Args = `["different"]` }},
-		{"max attempts", func(j *postgresdb.Job) { j.MaxAttempts++ }},
-		{"retry backoff", func(j *postgresdb.Job) { j.RetryBackoffSeconds++ }},
+	changes := []postgresdb.Job{
+		{ID: "job-2", FunctionVersionID: existing.FunctionVersionID, Priority: existing.Priority, InputJson: existing.InputJson},
+		{ID: existing.ID, FunctionVersionID: "version-2", Priority: existing.Priority, InputJson: existing.InputJson},
+		{ID: existing.ID, FunctionVersionID: existing.FunctionVersionID, Priority: 3, InputJson: existing.InputJson},
+		{ID: existing.ID, FunctionVersionID: existing.FunctionVersionID, Priority: existing.Priority, InputJson: json.RawMessage(`{"args":[2],"kwargs":{}}`)},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			changed := existing
-			test.change(&changed)
-			if sameSubmission(changed, params) {
-				t.Fatal("different submission was treated as the same job")
-			}
-		})
+	for _, changed := range changes {
+		if sameSubmission(changed, params) {
+			t.Fatalf("different submission accepted: %+v", changed)
+		}
 	}
 }

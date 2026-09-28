@@ -14,17 +14,16 @@ import (
 )
 
 type deployFunctionRequest struct {
-	ArtifactKey         string   `json:"artifact_key"`
-	Image               string   `json:"image"`
-	Command             string   `json:"command"`
-	Args                []string `json:"args"`
-	GPUType             string   `json:"gpu_type"`
-	GPUs                int64    `json:"gpus"`
-	CPUs                int64    `json:"cpus"`
-	MemoryGB            int64    `json:"memory_gb"`
-	DurationSeconds     int64    `json:"duration_seconds"`
-	MaxAttempts         int64    `json:"max_attempts"`
-	RetryBackoffSeconds int64    `json:"retry_backoff_seconds"`
+	ArtifactKey         string `json:"artifact_key"`
+	Image               string `json:"image"`
+	Entrypoint          string `json:"entrypoint"`
+	GPUType             string `json:"gpu_type"`
+	GPUs                int64  `json:"gpus"`
+	CPUs                int64  `json:"cpus"`
+	MemoryGB            int64  `json:"memory_gb"`
+	TimeoutSeconds      int64  `json:"timeout_seconds"`
+	MaxAttempts         int64  `json:"max_attempts"`
+	RetryBackoffSeconds int64  `json:"retry_backoff_seconds"`
 }
 
 func (s *Server) uploadFunction(w http.ResponseWriter, r *http.Request) {
@@ -76,9 +75,10 @@ func (s *Server) uploadFunction(w http.ResponseWriter, r *http.Request) {
 }
 
 type invokeFunctionRequest struct {
-	ID        string `json:"id"`
-	VersionID string `json:"version_id"`
-	Priority  int64  `json:"priority"`
+	ID        string          `json:"id"`
+	VersionID string          `json:"version_id"`
+	Priority  int64           `json:"priority"`
+	Input     json.RawMessage `json:"input"`
 }
 
 func (s *Server) listFunctions(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +105,19 @@ func (s *Server) listFunctionVersions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, versions)
 }
 
+func (s *Server) getFunctionVersion(w http.ResponseWriter, r *http.Request) {
+	version, err := s.service.FunctionVersion(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, controlplane.ErrFunctionVersionNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, version)
+}
+
 func (s *Server) deployFunction(w http.ResponseWriter, r *http.Request) {
 	var request deployFunctionRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
@@ -120,9 +133,9 @@ func (s *Server) deployFunction(w http.ResponseWriter, r *http.Request) {
 
 	version, err := s.service.DeployFunction(r.Context(), r.PathValue("id"), controlplane.FunctionVersionSpec{
 		ArtifactKey: request.ArtifactKey,
-		Image:       request.Image, Command: request.Command, Args: request.Args,
+		Image:       request.Image, Entrypoint: request.Entrypoint,
 		GPUType: request.GPUType, GPUs: request.GPUs, CPUs: request.CPUs,
-		MemoryGB: request.MemoryGB, DurationSeconds: request.DurationSeconds,
+		MemoryGB: request.MemoryGB, TimeoutSeconds: request.TimeoutSeconds,
 		MaxAttempts: request.MaxAttempts, RetryBackoffSeconds: request.RetryBackoffSeconds,
 	})
 	if err != nil {
@@ -149,7 +162,7 @@ func (s *Server) invokeFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, err := s.service.InvokeFunction(r.Context(), r.PathValue("id"), request.VersionID, request.ID, request.Priority)
+	job, err := s.service.InvokeFunction(r.Context(), r.PathValue("id"), request.VersionID, request.ID, request.Priority, request.Input)
 	if err != nil {
 		switch {
 		case errors.Is(err, controlplane.ErrFunctionVersionNotFound):

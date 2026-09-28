@@ -31,13 +31,7 @@ func TestJobEndpoints(t *testing.T) {
 			"id":"job-1",
 			"function_version_id":"test-function-version",
 			"priority":5,
-			"gpus":0,
-			"cpus":2,
-			"memory_gb":4,
-			"duration_seconds":1,
-			"image":"alpine:3.20",
-			"command":"echo",
-			"args":[]
+            "input":{"args":[],"kwargs":{}}
 		}`),
 	)
 	submitResponse := httptest.NewRecorder()
@@ -51,7 +45,7 @@ func TestJobEndpoints(t *testing.T) {
 	if err := json.NewDecoder(submitResponse.Body).Decode(&submitted); err != nil {
 		t.Fatalf("decode submit response: %v", err)
 	}
-	if submitted.ID != "job-1" || jobmodel.Status(submitted.Status) != jobmodel.Pending || submitted.Image != "alpine:3.20" {
+	if submitted.ID != "job-1" || jobmodel.Status(submitted.Status) != jobmodel.Pending || submitted.FunctionVersionID != testdb.FunctionVersionID {
 		t.Fatalf("submitted job = %+v, want ID job-1 with pending status", submitted)
 	}
 
@@ -171,11 +165,7 @@ func TestListJobsOnlyLimitsResponseWhenRequested(t *testing.T) {
 
 	for index := 0; index < 105; index++ {
 		if _, err := server.service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
-			ID:       fmt.Sprintf("job-%03d", index),
-			CPUs:     1,
-			MemoryGB: 1,
-			Image:    "alpine:3.20",
-			Command:  "echo",
+			ID: fmt.Sprintf("job-%03d", index),
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -264,8 +254,7 @@ func TestCancelJobEndpoint(t *testing.T) {
 	server := newTestServer(t)
 	ctx := context.Background()
 	if _, err := server.service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
-		ID: "job-cancel", CPUs: 1, MemoryGB: 1,
-		Image: "alpine:3.20", Command: "sleep", Args: []string{"30"},
+		ID: "job-cancel",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +295,7 @@ func TestSubmitIdempotentRetryAndConflict(t *testing.T) {
 		return response
 	}
 
-	body := `{"id":"job-1","function_version_id":"test-function-version","cpus":1,"memory_gb":1,"image":"alpine:3.20","command":"echo"}`
+	body := `{"id":"job-1","function_version_id":"test-function-version","input":{"args":[],"kwargs":{}}}`
 	first := submit(body)
 	retry := submit(body)
 	if first.Code != http.StatusAccepted || retry.Code != http.StatusAccepted {
@@ -316,7 +305,7 @@ func TestSubmitIdempotentRetryAndConflict(t *testing.T) {
 		t.Fatalf("retry response = %s, want %s", retry.Body.String(), first.Body.String())
 	}
 
-	conflict := submit(`{"id":"job-1","function_version_id":"test-function-version","cpus":2,"memory_gb":1,"image":"alpine:3.20","command":"echo"}`)
+	conflict := submit(`{"id":"job-1","function_version_id":"test-function-version","input":{"args":[2],"kwargs":{}}}`)
 	if conflict.Code != http.StatusConflict {
 		t.Fatalf("conflicting submit status = %d, want %d; body = %s", conflict.Code, http.StatusConflict, conflict.Body.String())
 	}
@@ -330,6 +319,57 @@ func TestSubmitIdempotentRetryAndConflict(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("job count = %d, want 1", count)
+	}
+}
+
+func TestJobResultEndpoint(t *testing.T) {
+	server := newTestServer(t)
+	ctx := context.Background()
+	if _, err := server.service.Submit(ctx, jobmodel.Spec{ID: "result-job", FunctionVersionID: testdb.FunctionVersionID}); err != nil {
+		t.Fatal(err)
+	}
+	getResult := func() *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/v1/jobs/result-job/result", nil))
+		return response
+	}
+	if response := getResult(); response.Code != http.StatusAccepted {
+		t.Fatalf("result before completion status=%d body=%s", response.Code, response.Body.String())
+	}
+	done := make(chan struct{})
+	runCtx, cancel := context.WithCancel(ctx)
+	go func() { server.service.Run(runCtx); close(done) }()
+	defer func() { cancel(); <-done }()
+	var assignment domain.Assignment
+	var found bool
+	var err error
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		assignment, found, err = server.service.Claim(ctx, "node-a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !found {
+		t.Fatal("job was not assigned")
+	}
+	if err := server.service.Complete(ctx, assignment, json.RawMessage(`{"answer":42}`)); err != nil {
+		t.Fatal(err)
+	}
+	response := getResult()
+	if response.Code != http.StatusOK {
+		t.Fatalf("result status=%d body=%s", response.Code, response.Body.String())
+	}
+	var result postgresdb.JobResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.JobID != "result-job" || string(result.OutputJson) != `{"answer": 42}` && string(result.OutputJson) != `{"answer":42}` {
+		t.Fatalf("result=%+v", result)
 	}
 }
 

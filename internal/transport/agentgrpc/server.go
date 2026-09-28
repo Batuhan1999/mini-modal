@@ -150,16 +150,16 @@ func (s *Server) Claim(ctx context.Context, req *agentv1.ClaimRequest) (*agentv1
 
 	return &agentv1.ClaimResponse{
 		Assignment: &agentv1.Assignment{
-			JobId:           assignment.JobID,
-			NodeId:          assignment.NodeID,
-			Attempt:         assignment.Attempt,
-			Command:         assignment.Command,
-			Args:            assignment.Args,
-			Image:           assignment.Image,
-			Cpus:            assignment.CPUs,
-			MemoryGb:        assignment.MemoryGB,
-			DurationSeconds: assignment.DurationSeconds,
-			ArtifactKey:     assignment.ArtifactKey,
+			JobId:          assignment.JobID,
+			NodeId:         assignment.NodeID,
+			Attempt:        assignment.Attempt,
+			Entrypoint:     assignment.Entrypoint,
+			InputJson:      assignment.InputJSON,
+			Image:          assignment.Image,
+			Cpus:           assignment.CPUs,
+			MemoryGb:       assignment.MemoryGB,
+			TimeoutSeconds: assignment.TimeoutSeconds,
+			ArtifactKey:    assignment.ArtifactKey,
 		},
 	}, nil
 }
@@ -178,7 +178,7 @@ func (s *Server) Complete(ctx context.Context, req *agentv1.CompleteRequest) (*a
 	if err := s.service.Complete(ctx, domain.Assignment{
 		JobID:   jobID,
 		Attempt: attempt,
-	}); err != nil {
+	}, req.GetOutputJson()); err != nil {
 		return nil, assignmentRPCError("complete", err)
 	}
 

@@ -39,7 +39,6 @@ const elements = {
   functionDeployButton: document.querySelector("#function-deploy-button"),
   functionDeployResult: document.querySelector("#function-deploy-result"),
   functionArtifactKey: document.querySelector("#function-artifact-key"),
-  functionArgs: document.querySelector("#function-args"),
   functionInvokeForm: document.querySelector("#function-invoke-form"),
   functionInvokeButton: document.querySelector("#function-invoke-button"),
   functionInvokeResult: document.querySelector("#function-invoke-result"),
@@ -66,6 +65,7 @@ const elements = {
   detailLogAttempt: document.querySelector("#detail-log-attempt"),
   detailLogTerminal: document.querySelector("#detail-log-terminal"),
   detailFields: document.querySelector("#detail-fields"),
+  detailResult: document.querySelector("#detail-result"),
   detailEvents: document.querySelector("#detail-events"),
   detailEventsCount: document.querySelector("#detail-events-count"),
 };
@@ -85,6 +85,10 @@ const state = {
   inlineLogs: new Map(),
   detailJobID: jobIDFromPath(),
   detailJob: null,
+  detailVersion: null,
+  detailVersionError: "",
+  detailResult: null,
+  detailResultError: "",
   detailLogs: new Map(),
   detailEvents: [],
   cancellingJobIDs: new Set(),
@@ -117,7 +121,7 @@ if (state.detailJobID) {
   elements.functionFile.addEventListener("change", () => {
     const file = elements.functionFile.files?.[0];
     if (file?.name.endsWith(".py")) {
-      elements.functionArgs.value = JSON.stringify([file.name, "world"]);
+      elements.functionDeployForm.elements.namedItem("entrypoint").value = `${file.name.slice(0, -3)}:greet`;
     }
   });
   elements.devClusterForm.addEventListener("submit", startDevCluster);
@@ -188,6 +192,27 @@ async function refreshDetail() {
     ]);
     const statusChanged = state.detailJob?.status !== job.status;
     state.detailJob = job;
+    if (state.detailVersion?.id !== job.function_version_id) {
+      try {
+        state.detailVersion = await fetchJSON(`/v1/function-versions/${encodeURIComponent(job.function_version_id)}`);
+        state.detailVersionError = "";
+      } catch (error) {
+        state.detailVersion = null;
+        state.detailVersionError = error.message;
+      }
+    }
+    if (job.status === "succeeded" && state.detailResult?.job_id !== job.id) {
+      try {
+        state.detailResult = await fetchJSON(`/v1/jobs/${encodeURIComponent(job.id)}/result`);
+        state.detailResultError = "";
+      } catch (error) {
+        state.detailResult = null;
+        state.detailResultError = error.message;
+      }
+    } else if (job.status !== "succeeded") {
+      state.detailResult = null;
+      state.detailResultError = "";
+    }
     state.detailEvents = events;
     renderJobDetail(job);
     const active = ["assigned", "running", "cancelling"].includes(job.status);
@@ -352,7 +377,7 @@ function renderJobs(changedJobs = new Set()) {
     titleLine.append(expandButton, jobLink);
     idCell.append(
       titleLine,
-      createElement("span", "job-meta", `${job.image} · priority ${job.priority}`),
+      createElement("span", "job-meta", `priority ${job.priority}`),
     );
 
     const statusCell = tableCell("State");
@@ -369,11 +394,7 @@ function renderJobs(changedJobs = new Set()) {
       placementCell.classList.add("node-id");
     }
 
-    const request = [`${job.cpus} CPU`, `${job.memory_gb} GB`];
-    if (job.gpus > 0) {
-      request.push(`${job.gpus} GPU`);
-    }
-    const requestCell = tableCell("Request", request.join(" · "));
+    const requestCell = tableCell("Function version", job.function_version_id.slice(0, 12));
     const attemptCell = tableCell("Executions", String(job.execution_attempts));
     const leaseCell = tableCell("Lease");
     const lease = formatLease(job);
@@ -506,7 +527,9 @@ function renderJobDetail(job) {
   elements.detailError.hidden = true;
   elements.detailContent.hidden = false;
   elements.detailJobID.textContent = job.id;
-  elements.detailCommand.textContent = formatCommand(job);
+  elements.detailCommand.textContent = state.detailVersion
+    ? `${state.detailVersion.function_id} · ${state.detailVersion.entrypoint} · ${state.detailVersion.image}`
+    : formatCommand(job);
   elements.detailStatus.className = `status status-${job.status}`;
   elements.detailStatus.textContent = job.status;
   renderDetailCancelAction(job);
@@ -514,12 +537,28 @@ function renderJobDetail(job) {
     ? `${job.attempt} ${job.attempt === 1 ? "assignment" : "assignments"}`
     : "No assignments";
   document.title = `${job.id} · Mini Modal`;
+  renderDetailResult(job);
   renderDetailFields(job);
   renderDetailEvents(state.detailEvents);
   renderDetailLogs(job);
 }
 
+function renderDetailResult(job) {
+  if (state.detailResult && Object.hasOwn(state.detailResult, "output_json")) {
+    elements.detailResult.textContent = JSON.stringify(state.detailResult.output_json, null, 2);
+  } else if (state.detailResultError) {
+    elements.detailResult.textContent = `Could not load result: ${state.detailResultError}`;
+  } else if (job.status === "succeeded") {
+    elements.detailResult.textContent = "Result is being saved";
+  } else if (["failed", "cancelled", "unschedulable"].includes(job.status)) {
+    elements.detailResult.textContent = "No result; see logs and last error";
+  } else {
+    elements.detailResult.textContent = "Waiting for execution";
+  }
+}
+
 function renderDetailFields(job) {
+  const version = state.detailVersion;
   const groups = [
     ["Identity", [
       ["Job ID", job.id],
@@ -528,28 +567,27 @@ function renderDetailFields(job) {
       ["Priority", String(job.priority)],
       ["Updated at", formatTimestamp(job.updated_at)],
     ]],
+    ["Function version", version ? [
+      ["Function", version.function_id],
+      ["Entrypoint", version.entrypoint],
+      ["Image", version.image],
+      ["Artifact key", version.artifact_key],
+      ["CPUs", String(version.cpus)],
+      ["Memory", `${version.memory_gb} GB`],
+      ["GPUs", version.gpus ? `${version.gpus} ${version.gpu_type || "GPU"}` : "None"],
+      ["Timeout", version.timeout_seconds ? `${version.timeout_seconds} seconds` : "None"],
+      ["Max attempts", String(version.max_attempts)],
+      ["Retry backoff", `${version.retry_backoff_seconds} seconds`],
+    ] : [["Status", state.detailVersionError || "Loading version"]]],
     ["Placement", [
       ["Node ID", job.node_id || "Unassigned"],
       ["Assignment generation", job.attempt > 0 ? String(job.attempt) : "None"],
       ["Lease expires", formatLeaseTimestamp(job.lease_expires_at)],
       ["Lease remaining", formatLease(job).label],
     ]],
-    ["Resources", [
-      ["CPUs", String(job.cpus)],
-      ["Memory", `${job.memory_gb} GB`],
-      ["GPUs", String(job.gpus)],
-      ["GPU type", job.gpu_type || "None"],
-    ]],
     ["Execution", [
       ["Executions started", String(job.execution_attempts)],
-      ["Image", job.image],
-      ["Duration", `${job.duration_seconds} seconds`],
-      ["Command", job.command || "None"],
-      ["Arguments", job.args || "[]"],
-    ]],
-    ["Retry policy", [
-      ["Max attempts", String(job.max_attempts)],
-      ["Backoff", `${job.retry_backoff_seconds} seconds`],
+      ["Input", JSON.stringify(job.input_json)],
       ["Next attempt", job.next_attempt_at ? formatTimestamp(job.next_attempt_at) : "Not scheduled"],
       ["Last error", job.last_error || "None"],
     ]],
@@ -899,12 +937,7 @@ function logStreamLabel(job) {
 }
 
 function formatCommand(job) {
-  try {
-    const args = JSON.parse(job.args || "[]");
-    return [job.command, ...args].join(" ");
-  } catch {
-    return job.command || "None";
-  }
+  return `Function version ${job.function_version_id}`;
 }
 
 function formatLeaseTimestamp(timestamp) {
@@ -1141,9 +1174,9 @@ function renderFunctionVersions() {
     ["Created", formatFunctionDate(selected.created_at)],
     ["Artifact key", selected.artifact_key || "None"],
     ["Image", selected.image],
-    ["Command", `${selected.command} ${selected.args}`],
-    ["Resources", `${selected.cpus} CPU · ${selected.memory_gb} GB memory · ${selected.gpus} GPU`],
-    ["Timeout", `${selected.duration_seconds}s`],
+    ["Entrypoint", selected.entrypoint],
+    ["Resources", `${selected.cpus} CPU · ${selected.memory_gb} GB memory · ${selected.gpus} GPU${selected.gpu_type ? ` (${selected.gpu_type})` : ""}`],
+    ["Timeout", `${selected.timeout_seconds}s`],
     ["Retries", `${selected.max_attempts} max attempts · ${selected.retry_backoff_seconds}s backoff`],
   ];
   const list = createElement("dl", "function-version-fields");
@@ -1197,10 +1230,6 @@ async function deployFunction(event) {
   setBusy(elements.functionDeployButton, true, "Deploying");
   setFormResult(elements.functionDeployResult, "", "");
   try {
-    const args = JSON.parse(String(form.get("args") || "[]"));
-    if (!Array.isArray(args) || args.some((value) => typeof value !== "string")) {
-      throw new Error("Arguments must be a JSON array of strings");
-    }
     await selectFunction(functionID);
     const version = await fetchJSON(`/v1/functions/${encodeURIComponent(functionID)}/versions`, {
       method: "POST",
@@ -1208,12 +1237,14 @@ async function deployFunction(event) {
       body: JSON.stringify({
         artifact_key: String(form.get("artifact_key") || "").trim(),
         image: String(form.get("image") || "").trim(),
-        command: String(form.get("command") || "").trim(),
-        args,
+        entrypoint: String(form.get("entrypoint") || "").trim(),
         cpus: Number(form.get("cpus")),
         memory_gb: Number(form.get("memory_gb")),
-        duration_seconds: Number(form.get("duration_seconds")),
+        gpu_type: String(form.get("gpu_type") || "").trim(),
+        gpus: Number(form.get("gpus")),
+        timeout_seconds: Number(form.get("timeout_seconds")),
         max_attempts: Number(form.get("max_attempts")),
+        retry_backoff_seconds: Number(form.get("retry_backoff_seconds")),
       }),
     }, 10000);
     state.selectedVersionID = version.id;
@@ -1246,6 +1277,7 @@ async function invokeFunction(event) {
         id: String(form.get("id") || "").trim(),
         version_id: versionID,
         priority: Number(form.get("priority")),
+        input: parseInvocationInput(form.get("input")),
       }),
     }, 10000);
     const link = createElement("a", "inline-detail-link", `View job ${job.id}`);
@@ -1266,6 +1298,16 @@ function formatFunctionDate(timestamp) {
   return new Date(Number(timestamp)).toLocaleString();
 }
 
+function parseInvocationInput(raw) {
+  const input = JSON.parse(String(raw || "{}"));
+  const args = input?.args ?? [];
+  const kwargs = input?.kwargs ?? {};
+  if (!input || Array.isArray(input) || typeof input !== "object" || !Array.isArray(args) || !kwargs || Array.isArray(kwargs) || typeof kwargs !== "object" || Object.keys(input).some((key) => key !== "args" && key !== "kwargs")) {
+    throw new Error("Input must be a JSON object with args array and kwargs object");
+  }
+  return { args, kwargs };
+}
+
 async function submitJob(event) {
   event.preventDefault();
   const form = new FormData(elements.jobForm);
@@ -1273,35 +1315,18 @@ async function submitJob(event) {
     id: String(form.get("id") || "").trim(),
     function_version_id: String(form.get("function_version_id") || "").trim(),
     priority: Number(form.get("priority")),
-    gpus: 0,
-    cpus: Number(form.get("cpus")),
-    memory_gb: Number(form.get("memory_gb")),
-    duration_seconds: Number(form.get("duration_seconds")),
-    max_attempts: Number(form.get("max_attempts")),
-    retry_backoff_seconds: Number(form.get("retry_backoff_seconds")),
-    image: String(form.get("image") || "").trim(),
-    command: String(form.get("command") || "").trim(),
-    args: String(form.get("args") || "[]").trim(),
+    input: String(form.get("input") || "{}").trim(),
   };
 
   await sendJob(job, elements.submitJob, "Submitting", "Submit");
 }
 
 async function submitRandomJob() {
-  const duration = randomInteger(2, 10);
   const job = {
     id: nextJobID(),
     function_version_id: String(elements.jobForm.elements.namedItem("function_version_id").value || "").trim(),
     priority: randomInteger(1, 100),
-    gpus: 0,
-    cpus: randomCapacity("total_cpus", 8),
-    memory_gb: randomCapacity("total_memory_gb", 16),
-    duration_seconds: duration,
-    max_attempts: randomInteger(1, 4),
-    retry_backoff_seconds: randomInteger(1, 5),
-    image: "alpine:3.20",
-    command: "sleep",
-    args: JSON.stringify([String(duration)]),
+    input: String(elements.jobForm.elements.namedItem("input").value || "{}").trim(),
   };
 
   populateJobForm(job);
@@ -1316,11 +1341,7 @@ async function sendJob(job, button, busyLabel, idleLabel) {
     if (!job.function_version_id) {
       throw new Error("Select or deploy a function version before submitting jobs");
     }
-    const args = JSON.parse(job.args);
-    if (!Array.isArray(args) || args.some((argument) => typeof argument !== "string")) {
-      throw new Error("Arguments must be a JSON array of strings");
-    }
-    const payload = { ...job, args };
+    const payload = { ...job, input: parseInvocationInput(job.input) };
 
     const created = await fetchJSON("/v1/jobs", {
       method: "POST",

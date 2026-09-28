@@ -2,6 +2,7 @@ package agentgrpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	agentv1 "mini-modal/gen/agent/v1"
@@ -81,23 +82,24 @@ func (c *Client) Claim(ctx context.Context, nodeID string) (domain.Assignment, b
 	}
 
 	return domain.Assignment{
-		JobID:           assignment.GetJobId(),
-		NodeID:          assignment.GetNodeId(),
-		Attempt:         assignment.GetAttempt(),
-		Command:         assignment.GetCommand(),
-		Args:            assignment.GetArgs(),
-		Image:           assignment.GetImage(),
-		CPUs:            assignment.GetCpus(),
-		MemoryGB:        assignment.GetMemoryGb(),
-		DurationSeconds: assignment.GetDurationSeconds(),
-		ArtifactKey:     assignment.GetArtifactKey(),
+		JobID:          assignment.GetJobId(),
+		NodeID:         assignment.GetNodeId(),
+		Attempt:        assignment.GetAttempt(),
+		Entrypoint:     assignment.GetEntrypoint(),
+		InputJSON:      assignment.GetInputJson(),
+		Image:          assignment.GetImage(),
+		CPUs:           assignment.GetCpus(),
+		MemoryGB:       assignment.GetMemoryGb(),
+		TimeoutSeconds: assignment.GetTimeoutSeconds(),
+		ArtifactKey:    assignment.GetArtifactKey(),
 	}, true, nil
 }
 
-func (c *Client) Complete(ctx context.Context, assignment domain.Assignment) error {
+func (c *Client) Complete(ctx context.Context, assignment domain.Assignment, output json.RawMessage) error {
 	_, err := c.client.Complete(ctx, &agentv1.CompleteRequest{
-		JobId:   assignment.JobID,
-		Attempt: assignment.Attempt,
+		JobId:      assignment.JobID,
+		Attempt:    assignment.Attempt,
+		OutputJson: output,
 	})
 	return err
 }

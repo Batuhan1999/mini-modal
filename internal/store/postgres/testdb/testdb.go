@@ -24,9 +24,9 @@ func SeedFunctionVersion(t *testing.T, db *sql.DB) {
 	}
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO function_versions (
-			id, function_id, artifact_key, image, command, args,
-			gpus, cpus, memory_gb, duration_seconds, max_attempts, retry_backoff_seconds, created_at
-		) VALUES ($1, 'test-function', 'test-artifact', 'alpine:3.20', 'echo', '[]', 0, 1, 1, 0, 1, 0, 0)
+            id, function_id, artifact_key, image, entrypoint,
+            gpus, cpus, memory_gb, timeout_seconds, max_attempts, retry_backoff_seconds, created_at
+        ) VALUES ($1, 'test-function', 'test-artifact', 'python:3.13-slim', 'hello_function:greet', 0, 1, 1, 0, 1, 0, 0)
 	`, FunctionVersionID); err != nil {
 		t.Fatal(err)
 	}

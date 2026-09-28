@@ -141,17 +141,16 @@
                   <input name="image" type="text" value="python:3.13-slim" required autocomplete="off" spellcheck="false">
                 </label>
                 <label>
-                  <span>Command</span>
-                  <input name="command" type="text" value="python" required autocomplete="off" spellcheck="false">
-                </label>
-                <label class="function-field-wide">
-                  <span>Arguments (JSON array)</span>
-                  <input id="function-args" name="args" type="text" value='["hello_function.py", "world"]' required autocomplete="off" spellcheck="false">
+                  <span>Entrypoint (module:function)</span>
+                  <input name="entrypoint" type="text" value="hello_function:greet" required autocomplete="off" spellcheck="false">
                 </label>
                 <label><span>CPUs</span><input name="cpus" type="number" value="1" min="1" required></label>
                 <label><span>Memory GB</span><input name="memory_gb" type="number" value="1" min="1" required></label>
-                <label><span>Timeout s</span><input name="duration_seconds" type="number" value="30" min="0" required></label>
+                <label><span>GPU type</span><input name="gpu_type" type="text" value="" placeholder="None" autocomplete="off" spellcheck="false"></label>
+                <label><span>GPUs</span><input name="gpus" type="number" value="0" min="0" required></label>
+                <label><span>Timeout s</span><input name="timeout_seconds" type="number" value="30" min="0" required></label>
                 <label><span>Max attempts</span><input name="max_attempts" type="number" value="1" min="1" required></label>
+                <label><span>Retry backoff s</span><input name="retry_backoff_seconds" type="number" value="1" min="0" required></label>
               </div>
               <div class="function-step-footer">
                 <button type="submit" class="primary-button" id="function-deploy-button">Deploy version</button>
@@ -171,6 +170,7 @@
                 </label>
                 <label><span>Job ID</span><input id="function-job-id" name="id" type="text" required autocomplete="off" spellcheck="false"></label>
                 <label><span>Priority</span><input name="priority" type="number" value="5" min="0" required></label>
+                <label class="function-field-wide"><span>Input (JSON args and kwargs)</span><input name="input" type="text" value='{"args":["world"],"kwargs":{}}' required spellcheck="false"></label>
               </div>
               <div class="function-step-footer">
                 <button type="submit" class="primary-button" id="function-invoke-button">Create job</button>
@@ -226,37 +226,9 @@
                 <span>Priority</span>
                 <input name="priority" type="number" value="5" min="0" max="100" required>
               </label>
-              <label>
-                <span>CPUs</span>
-                <input name="cpus" type="number" value="2" min="1" max="1024" required>
-              </label>
-              <label>
-                <span>Memory GB</span>
-                <input name="memory_gb" type="number" value="4" min="1" max="8192" required>
-              </label>
-              <label>
-                <span>Timeout s</span>
-                <input name="duration_seconds" type="number" value="8" min="0" max="86400" required>
-              </label>
-              <label>
-                <span>Max attempts</span>
-                <input name="max_attempts" type="number" value="3" min="1" max="100" required>
-              </label>
-              <label>
-                <span>Retry backoff s</span>
-                <input name="retry_backoff_seconds" type="number" value="1" min="0" max="86400" required>
-              </label>
-              <label class="job-field-image">
-                <span>Container image</span>
-                <input name="image" type="text" value="alpine:3.20" required autocomplete="off" spellcheck="false">
-              </label>
-              <label class="job-field-command">
-                <span>Command</span>
-                <input name="command" type="text" value="sleep" required autocomplete="off">
-              </label>
               <label class="job-field-args">
-                <span>Arguments (JSON)</span>
-                <input name="args" type="text" value='["8"]' required autocomplete="off" spellcheck="false">
+                <span>Input (JSON args and kwargs)</span>
+                <input name="input" type="text" value='{"args":["world"],"kwargs":{}}' required autocomplete="off" spellcheck="false">
               </label>
               <div class="job-form-actions">
                 <button type="submit" class="primary-button" id="submit-job" aria-label="Submit configured job">Submit</button>
@@ -274,7 +246,7 @@
                   <th scope="col">State</th>
                   <th scope="col">Updated at</th>
                   <th scope="col">Placement</th>
-                  <th scope="col">Request</th>
+                  <th scope="col">Function version</th>
                   <th scope="col">Executions</th>
                   <th scope="col">Lease</th>
                   <th scope="col">Actions</th>
@@ -386,7 +358,7 @@
             <div>
               <p class="section-index">Job / Execution record</p>
               <h2 id="detail-job-id">Loading job</h2>
-              <p class="detail-command" id="detail-command">Waiting for command</p>
+              <p class="detail-command" id="detail-command">Waiting for function version</p>
             </div>
             <div class="detail-header-actions">
               <span class="status" id="detail-status">Unknown</span>
@@ -414,6 +386,10 @@
                   <h3 id="detail-record-title">Complete record</h3>
                 </div>
               </div>
+              <section class="detail-result" aria-labelledby="detail-result-title">
+                <h4 id="detail-result-title">Return value</h4>
+                <pre id="detail-result" aria-live="polite">Waiting for execution</pre>
+              </section>
               <div id="detail-fields"></div>
               <div class="detail-section-header detail-events-header">
                 <div>

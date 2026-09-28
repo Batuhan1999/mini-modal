@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -18,7 +19,7 @@ import (
 
 type ControlPlane interface {
 	Claim(ctx context.Context, nodeID string) (domain.Assignment, bool, error)
-	Complete(ctx context.Context, assignment domain.Assignment) error
+	Complete(ctx context.Context, assignment domain.Assignment, output json.RawMessage) error
 	Fail(ctx context.Context, assignment domain.Assignment, reason domain.FailureReason, lastError string) error
 	RenewAssignment(ctx context.Context, assignment domain.Assignment) (bool, error)
 	Cancel(ctx context.Context, assignment domain.Assignment) error
@@ -86,10 +87,10 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment,
 	var executionCtx context.Context
 	var cancelExecution context.CancelFunc
 
-	if assignment.DurationSeconds > 0 {
+	if assignment.TimeoutSeconds > 0 {
 		executionCtx, cancelExecution = context.WithTimeout(
 			ctx,
-			time.Duration(assignment.DurationSeconds)*time.Second,
+			time.Duration(assignment.TimeoutSeconds)*time.Second,
 		)
 	} else {
 		executionCtx, cancelExecution = context.WithCancel(ctx)
@@ -144,7 +145,7 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment,
 		)
 	}()
 
-	executionErr := a.executor.Run(executionCtx, assignment, stdout, stderr, systemOut)
+	output, executionErr := a.executor.Run(executionCtx, assignment, stdout, stderr, systemOut)
 
 	stopRenewing()
 	<-renewDone
@@ -205,7 +206,9 @@ func (a *Agent) runAssignment(ctx context.Context, assignment domain.Assignment,
 		return
 	}
 
-	a.reportResult(ctx, assignment, "completion", a.controlPlane.Complete)
+	a.reportResult(ctx, assignment, "completion", func(ctx context.Context, assignment domain.Assignment) error {
+		return a.controlPlane.Complete(ctx, assignment, output)
+	})
 }
 
 func (a *Agent) reportResult(

@@ -440,14 +440,6 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 			return domain.Assignment{}, err
 		}
 
-		var args []string
-		if err := json.Unmarshal([]byte(job.Args), &args); err != nil {
-			return domain.Assignment{}, fmt.Errorf(
-				"decode arguments for job %q: %w",
-				job.ID,
-				err,
-			)
-		}
 		status, err := jobmodel.ParseStatus(job.Status)
 		if err != nil {
 			return domain.Assignment{}, fmt.Errorf("read claimed job %q status: %w", job.ID, err)
@@ -467,24 +459,24 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 			return domain.Assignment{}, err
 		}
 
-		artifactKeyForJob, err := s.queries.GetArtifactKeyForJob(ctx, job.FunctionVersionID)
+		version, err := queries.GetFunctionVersion(ctx, job.FunctionVersionID)
 		if err != nil {
 			return domain.Assignment{}, fmt.Errorf("get artifact key for job %q: %w", job.ID, err)
 		}
-		if artifactKeyForJob == "" {
+		if version.ArtifactKey == "" {
 			return domain.Assignment{}, fmt.Errorf("artifact key for job %q is not found", job.ID)
 		}
 		return domain.Assignment{
-			JobID:           job.ID,
-			NodeID:          job.NodeID,
-			Attempt:         job.Attempt,
-			Command:         job.Command,
-			Args:            args,
-			Image:           job.Image,
-			CPUs:            job.Cpus,
-			MemoryGB:        job.MemoryGb,
-			DurationSeconds: job.DurationSeconds,
-			ArtifactKey:     artifactKeyForJob,
+			JobID:          job.ID,
+			NodeID:         job.NodeID,
+			Attempt:        job.Attempt,
+			Entrypoint:     version.Entrypoint,
+			InputJSON:      job.InputJson,
+			Image:          version.Image,
+			CPUs:           version.Cpus,
+			MemoryGB:       version.MemoryGb,
+			TimeoutSeconds: version.TimeoutSeconds,
+			ArtifactKey:    version.ArtifactKey,
 		}, nil
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -498,8 +490,11 @@ func (s *Service) Claim(ctx context.Context, nodeID string) (domain.Assignment, 
 	return assignment, true, nil
 }
 
-func (s *Service) Complete(ctx context.Context, assignment domain.Assignment) error {
-	return s.finish(ctx, assignment, jobmodel.EventComplete, "", "")
+func (s *Service) Complete(ctx context.Context, assignment domain.Assignment, output json.RawMessage) error {
+	if !json.Valid(output) {
+		return fmt.Errorf("job result must be valid JSON")
+	}
+	return s.finish(ctx, assignment, jobmodel.EventComplete, "", "", output)
 }
 
 func (s *Service) Fail(
@@ -508,7 +503,7 @@ func (s *Service) Fail(
 	reason domain.FailureReason,
 	lastError string,
 ) error {
-	return s.finish(ctx, assignment, jobmodel.EventFail, reason, lastError)
+	return s.finish(ctx, assignment, jobmodel.EventFail, reason, lastError, nil)
 }
 
 func (s *Service) finish(
@@ -517,6 +512,7 @@ func (s *Service) finish(
 	event jobmodel.Event,
 	failureReason domain.FailureReason,
 	lastError string,
+	output json.RawMessage,
 ) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -533,11 +529,15 @@ func (s *Service) finish(
 		if stored.Attempt != assignment.Attempt {
 			return postgresdb.Job{}, fmt.Errorf("%w: job %q is not at attempt %d", ErrStaleAssignment, assignment.JobID, assignment.Attempt)
 		}
+		version, err := queries.GetFunctionVersion(ctx, stored.FunctionVersionID)
+		if err != nil {
+			return postgresdb.Job{}, err
+		}
 		current, err := jobmodel.ParseStatus(stored.Status)
 		if err != nil {
 			return postgresdb.Job{}, err
 		}
-		if event == jobmodel.EventFail && stored.ExecutionAttempts < stored.MaxAttempts {
+		if event == jobmodel.EventFail && stored.ExecutionAttempts < version.MaxAttempts {
 			event = jobmodel.EventScheduleRetry
 		}
 		next, err := current.Next(event)
@@ -553,6 +553,9 @@ func (s *Service) finish(
 				AssignmentAttempt: assignment.Attempt,
 			})
 			if err == nil {
+				err = queries.CreateJobResult(ctx, postgresdb.CreateJobResultParams{JobID: finished.ID, Attempt: finished.Attempt, OutputJson: output})
+			}
+			if err == nil {
 				err = recordJobEvent(ctx, queries, finished, jobmodel.HistoryCompleted, "Job completed successfully", now)
 			}
 		case jobmodel.Failed:
@@ -565,7 +568,7 @@ func (s *Service) finish(
 				err = recordJobEvent(ctx, queries, finished, jobmodel.HistoryFailed, failureHistoryMessage(lastError), now)
 			}
 		case jobmodel.Retrying:
-			retryBackoff := time.Duration(stored.RetryBackoffSeconds) * time.Second
+			retryBackoff := time.Duration(version.RetryBackoffSeconds) * time.Second
 			finished, err = queries.RetryJob(ctx, postgresdb.RetryJobParams{
 				JobID:             assignment.JobID,
 				AssignmentAttempt: assignment.Attempt,
@@ -676,6 +679,10 @@ func (s *Service) Job(ctx context.Context, jobID string) (postgresdb.Job, error)
 		return postgresdb.Job{}, fmt.Errorf("get job %q: %w", jobID, err)
 	}
 	return job, nil
+}
+
+func (s *Service) JobResult(ctx context.Context, jobID string) (postgresdb.JobResult, error) {
+	return s.queries.GetJobResult(ctx, jobID)
 }
 
 func (s *Service) Jobs(ctx context.Context) ([]postgresdb.Job, error) {
@@ -798,7 +805,7 @@ func (s *Service) scheduleLocked(ctx context.Context) (err error) {
 	}
 
 	for _, job := range possiblyUnschedulable {
-		if len(allNodes) == 0 || canAnyNodePossiblyRun(allNodes, job) {
+		if len(allNodes) == 0 || canAnyNodePossiblyRun(allNodes, domain.Resources{GPUType: job.GpuType, GPUs: job.Gpus, CPUs: job.Cpus, MemoryGB: job.MemoryGb}) {
 			continue
 		}
 		if _, err := s.queries.MarkJobUnschedulable(ctx, job.ID); err != nil {
@@ -843,7 +850,7 @@ func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]dom
 		if !exists {
 			continue
 		}
-		node.Reserve(job)
+		node.Reserve(domain.Resources{GPUType: job.GpuType, GPUs: job.Gpus, CPUs: job.Cpus, MemoryGB: job.MemoryGb})
 		nodeByID[node.ID] = node
 	}
 
@@ -921,7 +928,7 @@ func (s *Service) expireAssignmentsLocked(ctx context.Context, now time.Time) (i
 				queries,
 				job,
 				jobmodel.HistoryRetryScheduled,
-				"Retry scheduled in "+(time.Duration(job.RetryBackoffSeconds)*time.Second).String(),
+				"Retry scheduled after assignment lease expired",
 				now,
 			); err != nil {
 				return expirationResult{}, err
@@ -1025,36 +1032,26 @@ func createJobParams(spec jobmodel.Spec) (postgresdb.CreateJobParams, error) {
 	if strings.TrimSpace(spec.FunctionVersionID) == "" {
 		return postgresdb.CreateJobParams{}, fmt.Errorf("job %q requires a function version ID", spec.ID)
 	}
-	args := spec.Args
-	if args == nil {
-		args = make([]string, 0)
+	var fields map[string]json.RawMessage
+	if len(spec.Input) > 0 {
+		if err := json.Unmarshal(spec.Input, &fields); err != nil {
+			return postgresdb.CreateJobParams{}, fmt.Errorf("decode input for job %q: %w", spec.ID, err)
+		}
 	}
-	encodedArgs, err := json.Marshal(args)
+	args := fields["args"]
+	if len(args) == 0 {
+		args = json.RawMessage(`[]`)
+	}
+	kwargs := fields["kwargs"]
+	if len(kwargs) == 0 {
+		kwargs = json.RawMessage(`{}`)
+	}
+	input, err := json.Marshal(map[string]json.RawMessage{"args": args, "kwargs": kwargs})
 	if err != nil {
-		return postgresdb.CreateJobParams{}, fmt.Errorf("encode arguments for job %q: %w", spec.ID, err)
-	}
-	maxAttempts := spec.MaxAttempts
-	if maxAttempts == 0 {
-		maxAttempts = defaultMaxAttempts
-	}
-	retryBackoffSeconds := spec.RetryBackoffSeconds
-	if retryBackoffSeconds == 0 {
-		retryBackoffSeconds = defaultRetryBackoffSeconds
+		return postgresdb.CreateJobParams{}, fmt.Errorf("encode input for job %q: %w", spec.ID, err)
 	}
 	return postgresdb.CreateJobParams{
-		ID:                  spec.ID,
-		FunctionVersionID:   spec.FunctionVersionID,
-		Priority:            spec.Priority,
-		GpuType:             spec.GPUType,
-		Gpus:                spec.GPUs,
-		Cpus:                spec.CPUs,
-		MemoryGb:            spec.MemoryGB,
-		DurationSeconds:     spec.DurationSeconds,
-		Command:             spec.Command,
-		Args:                string(encodedArgs),
-		Image:               spec.Image,
-		MaxAttempts:         maxAttempts,
-		RetryBackoffSeconds: retryBackoffSeconds,
+		ID: spec.ID, FunctionVersionID: spec.FunctionVersionID, Priority: spec.Priority, InputJson: input,
 	}, nil
 }
 
@@ -1146,7 +1143,7 @@ func validateNode(node domain.Node) error {
 	return nil
 }
 
-func canAnyNodePossiblyRun(nodes []domain.Node, job postgresdb.Job) bool {
+func canAnyNodePossiblyRun(nodes []domain.Node, job domain.Resources) bool {
 	for _, node := range nodes {
 		if node.CanPossiblyRun(job) {
 			return true

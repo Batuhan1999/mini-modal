@@ -6,6 +6,7 @@ package postgresdb
 
 import (
 	"database/sql"
+	"encoding/json"
 )
 
 type Function struct {
@@ -18,40 +19,31 @@ type FunctionVersion struct {
 	FunctionID          string `json:"function_id"`
 	ArtifactKey         string `json:"artifact_key"`
 	Image               string `json:"image"`
-	Command             string `json:"command"`
-	Args                string `json:"args"`
 	GpuType             string `json:"gpu_type"`
 	Gpus                int64  `json:"gpus"`
 	Cpus                int64  `json:"cpus"`
 	MemoryGb            int64  `json:"memory_gb"`
-	DurationSeconds     int64  `json:"duration_seconds"`
 	MaxAttempts         int64  `json:"max_attempts"`
 	RetryBackoffSeconds int64  `json:"retry_backoff_seconds"`
 	CreatedAt           int64  `json:"created_at"`
+	Entrypoint          string `json:"entrypoint"`
+	TimeoutSeconds      int64  `json:"timeout_seconds"`
 }
 
 type Job struct {
-	ID                  string `json:"id"`
-	Priority            int64  `json:"priority"`
-	GpuType             string `json:"gpu_type"`
-	Gpus                int64  `json:"gpus"`
-	Cpus                int64  `json:"cpus"`
-	MemoryGb            int64  `json:"memory_gb"`
-	DurationSeconds     int64  `json:"duration_seconds"`
-	Status              string `json:"status"`
-	NodeID              string `json:"node_id"`
-	Attempt             int64  `json:"attempt"`
-	LeaseExpiresAt      int64  `json:"lease_expires_at"`
-	Command             string `json:"command"`
-	Args                string `json:"args"`
-	UpdatedAt           int64  `json:"updated_at"`
-	Image               string `json:"image"`
-	MaxAttempts         int64  `json:"max_attempts"`
-	RetryBackoffSeconds int64  `json:"retry_backoff_seconds"`
-	NextAttemptAt       int64  `json:"next_attempt_at"`
-	LastError           string `json:"last_error"`
-	ExecutionAttempts   int64  `json:"execution_attempts"`
-	FunctionVersionID   string `json:"function_version_id"`
+	ID                string          `json:"id"`
+	Priority          int64           `json:"priority"`
+	Status            string          `json:"status"`
+	NodeID            string          `json:"node_id"`
+	Attempt           int64           `json:"attempt"`
+	LeaseExpiresAt    int64           `json:"lease_expires_at"`
+	UpdatedAt         int64           `json:"updated_at"`
+	NextAttemptAt     int64           `json:"next_attempt_at"`
+	LastError         string          `json:"last_error"`
+	ExecutionAttempts int64           `json:"execution_attempts"`
+	FunctionVersionID string          `json:"function_version_id"`
+	InputJson         json.RawMessage `json:"input_json"`
+	CreatedAt         int64           `json:"created_at"`
 }
 
 type JobEvent struct {
@@ -73,6 +65,13 @@ type JobLog struct {
 	Source    string `json:"source"`
 	Data      string `json:"data"`
 	CreatedAt int64  `json:"created_at"`
+}
+
+type JobResult struct {
+	JobID      string          `json:"job_id"`
+	Attempt    int64           `json:"attempt"`
+	OutputJson json.RawMessage `json:"output_json"`
+	CreatedAt  int64           `json:"created_at"`
 }
 
 type Node struct {

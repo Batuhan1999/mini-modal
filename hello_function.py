@@ -1,11 +1,8 @@
-import sys
-
-
-def main() -> None:
-    name = sys.argv[1] if len(sys.argv) > 1 else "mini-modal"
+def greet(name: str = "mini-modal") -> str:
     print(f"Hello, {name}!", flush=True)
     print("This code came from an uploaded function artifact.", flush=True)
+    return f"Hello, {name}!"
 
 
 if __name__ == "__main__":
-    main()
+    greet()

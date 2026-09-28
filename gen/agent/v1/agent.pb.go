@@ -123,19 +123,19 @@ func (LogSource) EnumDescriptor() ([]byte, []int) {
 }
 
 type Assignment struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	JobId           string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	NodeId          string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	Attempt         int64                  `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
-	Command         string                 `protobuf:"bytes,4,opt,name=command,proto3" json:"command,omitempty"`
-	Args            []string               `protobuf:"bytes,5,rep,name=args,proto3" json:"args,omitempty"`
-	Image           string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
-	Cpus            int64                  `protobuf:"varint,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
-	MemoryGb        int64                  `protobuf:"varint,8,opt,name=memory_gb,json=memoryGb,proto3" json:"memory_gb,omitempty"`
-	DurationSeconds int64                  `protobuf:"varint,9,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
-	ArtifactKey     string                 `protobuf:"bytes,10,opt,name=artifact_key,json=artifactKey,proto3" json:"artifact_key,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	JobId          string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	NodeId         string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Attempt        int64                  `protobuf:"varint,3,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	Image          string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
+	Cpus           int64                  `protobuf:"varint,7,opt,name=cpus,proto3" json:"cpus,omitempty"`
+	MemoryGb       int64                  `protobuf:"varint,8,opt,name=memory_gb,json=memoryGb,proto3" json:"memory_gb,omitempty"`
+	TimeoutSeconds int64                  `protobuf:"varint,9,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
+	ArtifactKey    string                 `protobuf:"bytes,10,opt,name=artifact_key,json=artifactKey,proto3" json:"artifact_key,omitempty"`
+	Entrypoint     string                 `protobuf:"bytes,11,opt,name=entrypoint,proto3" json:"entrypoint,omitempty"`
+	InputJson      []byte                 `protobuf:"bytes,12,opt,name=input_json,json=inputJson,proto3" json:"input_json,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Assignment) Reset() {
@@ -189,20 +189,6 @@ func (x *Assignment) GetAttempt() int64 {
 	return 0
 }
 
-func (x *Assignment) GetCommand() string {
-	if x != nil {
-		return x.Command
-	}
-	return ""
-}
-
-func (x *Assignment) GetArgs() []string {
-	if x != nil {
-		return x.Args
-	}
-	return nil
-}
-
 func (x *Assignment) GetImage() string {
 	if x != nil {
 		return x.Image
@@ -224,9 +210,9 @@ func (x *Assignment) GetMemoryGb() int64 {
 	return 0
 }
 
-func (x *Assignment) GetDurationSeconds() int64 {
+func (x *Assignment) GetTimeoutSeconds() int64 {
 	if x != nil {
-		return x.DurationSeconds
+		return x.TimeoutSeconds
 	}
 	return 0
 }
@@ -236,6 +222,20 @@ func (x *Assignment) GetArtifactKey() string {
 		return x.ArtifactKey
 	}
 	return ""
+}
+
+func (x *Assignment) GetEntrypoint() string {
+	if x != nil {
+		return x.Entrypoint
+	}
+	return ""
+}
+
+func (x *Assignment) GetInputJson() []byte {
+	if x != nil {
+		return x.InputJson
+	}
+	return nil
 }
 
 type ClaimRequest struct {
@@ -330,6 +330,7 @@ type CompleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	Attempt       int64                  `protobuf:"varint,2,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	OutputJson    []byte                 `protobuf:"bytes,3,opt,name=output_json,json=outputJson,proto3" json:"output_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -376,6 +377,13 @@ func (x *CompleteRequest) GetAttempt() int64 {
 		return x.Attempt
 	}
 	return 0
+}
+
+func (x *CompleteRequest) GetOutputJson() []byte {
+	if x != nil {
+		return x.OutputJson
+	}
+	return nil
 }
 
 type CompleteResponse struct {
@@ -1034,29 +1042,34 @@ var File_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\x99\x02\n" +
+	"\x14agent/v1/agent.proto\x12\x12minimodal.agent.v1\"\xb4\x02\n" +
 	"\n" +
 	"Assignment\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12\x18\n" +
-	"\aattempt\x18\x03 \x01(\x03R\aattempt\x12\x18\n" +
-	"\acommand\x18\x04 \x01(\tR\acommand\x12\x12\n" +
-	"\x04args\x18\x05 \x03(\tR\x04args\x12\x14\n" +
+	"\aattempt\x18\x03 \x01(\x03R\aattempt\x12\x14\n" +
 	"\x05image\x18\x06 \x01(\tR\x05image\x12\x12\n" +
 	"\x04cpus\x18\a \x01(\x03R\x04cpus\x12\x1b\n" +
-	"\tmemory_gb\x18\b \x01(\x03R\bmemoryGb\x12)\n" +
-	"\x10duration_seconds\x18\t \x01(\x03R\x0fdurationSeconds\x12!\n" +
+	"\tmemory_gb\x18\b \x01(\x03R\bmemoryGb\x12'\n" +
+	"\x0ftimeout_seconds\x18\t \x01(\x03R\x0etimeoutSeconds\x12!\n" +
 	"\fartifact_key\x18\n" +
-	" \x01(\tR\vartifactKey\"'\n" +
+	" \x01(\tR\vartifactKey\x12\x1e\n" +
+	"\n" +
+	"entrypoint\x18\v \x01(\tR\n" +
+	"entrypoint\x12\x1d\n" +
+	"\n" +
+	"input_json\x18\f \x01(\fR\tinputJsonJ\x04\b\x04\x10\x05J\x04\b\x05\x10\x06\"'\n" +
 	"\fClaimRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"O\n" +
 	"\rClaimResponse\x12>\n" +
 	"\n" +
 	"assignment\x18\x01 \x01(\v2\x1e.minimodal.agent.v1.AssignmentR\n" +
-	"assignment\"B\n" +
+	"assignment\"c\n" +
 	"\x0fCompleteRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +
-	"\aattempt\x18\x02 \x01(\x03R\aattempt\"\x12\n" +
+	"\aattempt\x18\x02 \x01(\x03R\aattempt\x12\x1f\n" +
+	"\voutput_json\x18\x03 \x01(\fR\n" +
+	"outputJson\"\x12\n" +
 	"\x10CompleteResponse\"\x98\x01\n" +
 	"\vFailRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +

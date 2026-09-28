@@ -66,10 +66,6 @@ func TestClaimAndComplete(t *testing.T) {
 	job := jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
 		ID:       "job-1",
 		Priority: 1,
-		CPUs:     1,
-		MemoryGB: 1,
-		Image:    "alpine:3.20",
-		Command:  "echo",
 	}
 	if _, err := service.Submit(context.Background(), job); err != nil {
 		t.Fatalf("submit job: %v", err)
@@ -93,13 +89,13 @@ func TestClaimAndComplete(t *testing.T) {
 	if assignment.GetAttempt() <= 0 {
 		t.Fatalf("assignment attempt = %d, want a positive attempt", assignment.GetAttempt())
 	}
-	if assignment.GetImage() != job.Image || assignment.GetCpus() != job.CPUs || assignment.GetMemoryGb() != job.MemoryGB {
+	if assignment.GetImage() != "python:3.13-slim" || assignment.GetCpus() != 1 || assignment.GetMemoryGb() != 1 || assignment.GetEntrypoint() != "hello_function:greet" {
 		t.Fatalf("assignment runtime configuration = %+v", assignment)
 	}
 
 	if _, err := server.Complete(
 		context.Background(),
-		&agentv1.CompleteRequest{JobId: job.ID, Attempt: assignment.GetAttempt()},
+		&agentv1.CompleteRequest{JobId: job.ID, Attempt: assignment.GetAttempt(), OutputJson: []byte(`null`)},
 	); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
@@ -112,7 +108,7 @@ func TestClaimAndComplete(t *testing.T) {
 		t.Fatalf("job status = %q, want %q", record.Status, jobmodel.Succeeded)
 	}
 	if _, err := server.Complete(context.Background(), &agentv1.CompleteRequest{
-		JobId: job.ID, Attempt: assignment.GetAttempt(),
+		JobId: job.ID, Attempt: assignment.GetAttempt(), OutputJson: []byte(`null`),
 	}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("repeat completion code = %s, want %s", status.Code(err), codes.FailedPrecondition)
 	}
@@ -131,8 +127,7 @@ func TestRenewAndAcknowledgeCancellation(t *testing.T) {
 	ctx := context.Background()
 	server, service := newTestServer(t)
 	if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID,
-		ID: "job-1", CPUs: 1, MemoryGB: 1,
-		Image: "alpine:3.20", Command: "sleep", Args: []string{"30"},
+		ID: "job-1",
 	}); err != nil {
 		t.Fatal(err)
 	}

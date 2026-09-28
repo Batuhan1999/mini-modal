@@ -1,27 +1,29 @@
 package executor
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	artifactpkg "mini-modal/internal/artifact"
 	"mini-modal/internal/domain"
 )
 
 type Executor interface {
-	Run(context context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer, systemOut io.Writer) error
+	Run(context.Context, domain.Assignment, io.Writer, io.Writer, io.Writer) (json.RawMessage, error)
 }
 
 type Fake struct{}
 
-func (Fake) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer, systemOut io.Writer) error {
+func (Fake) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer, systemOut io.Writer) (json.RawMessage, error) {
 	fmt.Printf("running job %s on node %s\n",
 		assignment.JobID,
 		assignment.NodeID,
@@ -30,24 +32,41 @@ func (Fake) Run(ctx context.Context, assignment domain.Assignment, stdout io.Wri
 	select {
 	case <-time.After(2 * time.Second):
 		fmt.Printf("finished job %s\n", assignment.JobID)
-		return nil
+		return json.RawMessage("null"), nil
 
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }
 
 type ProcessExecutor struct {
+	Artifacts ArtifactStore
 }
 
-func (ProcessExecutor) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer, systemOut io.Writer) error {
-	cmd := exec.CommandContext(ctx, assignment.Command, assignment.Args...)
+func (e ProcessExecutor) Run(ctx context.Context, assignment domain.Assignment, stdout io.Writer, stderr io.Writer, systemOut io.Writer) (json.RawMessage, error) {
+	if err := validateEntrypoint(assignment.Entrypoint); err != nil {
+		return nil, err
+	}
+	directory, cleanup, err := artifactDirectory(ctx, e.Artifacts, assignment)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	outputDirectory, cleanupOutput, err := resultDirectory()
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupOutput()
+	cmd := exec.CommandContext(ctx, "python3", "-c", pythonRunner)
+	cmd.Dir = directory
+	cmd.Env = append(os.Environ(), "MINI_MODAL_ENTRYPOINT="+assignment.Entrypoint, "MINI_MODAL_RESULT_PATH="+filepath.Join(outputDirectory, "result.json"))
+	cmd.Stdin = bytes.NewReader(assignment.InputJSON)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run job %q: %w", assignment.JobID, err)
+		return nil, fmt.Errorf("run job %q: %w", assignment.JobID, err)
 	}
-	return nil
+	return readResult(outputDirectory)
 }
 
 const dockerCleanupTimeout = 10 * time.Second
@@ -67,39 +86,30 @@ func (e DockerExecutor) Run(
 	stdout io.Writer,
 	stderr io.Writer,
 	systemOut io.Writer,
-) (result error) {
+) (output json.RawMessage, result error) {
 
 	containerName := dockerContainerName(assignment)
 
 	if !e.checkImageExixts(ctx, e.binary(), assignment.Image) {
 		pullErr := e.pullImage(ctx, e.binary(), assignment.Image, systemOut)
 		if pullErr != nil {
-			return fmt.Errorf("pull image %q: %w", assignment.Image, pullErr)
+			return nil, fmt.Errorf("pull image %q: %w", assignment.Image, pullErr)
 		}
 	}
 
-	var artifactDirectory string
-	if assignment.ArtifactKey != "" {
-		if e.Artifacts == nil {
-			return fmt.Errorf("download artifact for job %q: artifact storage is not configured", assignment.JobID)
-		}
-		archive, err := e.Artifacts.Download(ctx, assignment.ArtifactKey)
-		if err != nil {
-			return fmt.Errorf("download artifact for job %q: %w", assignment.JobID, err)
-		}
-		artifactDirectory, err = os.MkdirTemp("", "mini-modal-artifact-")
-		if err != nil {
-			return fmt.Errorf("create artifact directory for job %q: %w", assignment.JobID, err)
-		}
-		defer func() {
-			if err := os.RemoveAll(artifactDirectory); err != nil {
-				result = errors.Join(result, fmt.Errorf("remove artifact directory for job %q: %w", assignment.JobID, err))
-			}
-		}()
-		if err := artifactpkg.ExtractArchive(archive, artifactDirectory); err != nil {
-			return fmt.Errorf("extract artifact for job %q: %w", assignment.JobID, err)
-		}
+	if err := validateEntrypoint(assignment.Entrypoint); err != nil {
+		return nil, err
 	}
+	artifactDir, cleanup, err := artifactDirectory(ctx, e.Artifacts, assignment)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	outputDirectory, cleanupOutput, err := resultDirectory()
+	if err != nil {
+		return nil, err
+	}
+	defer cleanupOutput()
 
 	args := []string{
 		"run",
@@ -107,16 +117,17 @@ func (e DockerExecutor) Run(
 		"--cpus", strconv.FormatInt(assignment.CPUs, 10),
 		"--memory", fmt.Sprintf("%dg", assignment.MemoryGB),
 	}
-	if artifactDirectory != "" {
-		args = append(args,
-			"--mount", fmt.Sprintf("type=bind,source=%s,target=/workspace,readonly", artifactDirectory),
-			"--workdir", "/workspace",
-		)
-	}
-	args = append(args, assignment.Image, assignment.Command)
-	args = append(args, assignment.Args...)
+	args = append(args,
+		"--mount", fmt.Sprintf("type=bind,source=%s,target=/workspace,readonly", artifactDir),
+		"--mount", fmt.Sprintf("type=bind,source=%s,target=/mini-modal-output", outputDirectory),
+		"--workdir", "/workspace", "-i",
+		"-e", "MINI_MODAL_ENTRYPOINT="+assignment.Entrypoint,
+		"-e", "MINI_MODAL_RESULT_PATH=/mini-modal-output/result.json",
+		assignment.Image, "python", "-c", pythonRunner,
+	)
 
 	cmd := exec.CommandContext(ctx, e.binary(), args...)
+	cmd.Stdin = bytes.NewReader(assignment.InputJSON)
 
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -130,7 +141,10 @@ func (e DockerExecutor) Run(
 	if cleanupErr != nil {
 		cleanupErr = fmt.Errorf("clean up Docker container for job %q: %w", assignment.JobID, cleanupErr)
 	}
-	return errors.Join(runErr, cleanupErr)
+	if err := errors.Join(runErr, cleanupErr); err != nil {
+		return nil, err
+	}
+	return readResult(outputDirectory)
 }
 
 func (e DockerExecutor) checkImageExixts(ctx context.Context, dockerBinary string, image string) bool {
