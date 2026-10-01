@@ -1,6 +1,8 @@
 import hashlib
 import io
 import os
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -11,6 +13,8 @@ from unittest.mock import Mock, patch
 import requests
 
 from mini_modal import App, Client, FunctionFailedError, JobHandle, combine_sources_into_tarball
+from mini_modal._deployment_cache import cached_version, save_version
+from mini_modal._packaging import collect_local_sources
 
 
 def _sdk_test_greet(name):
@@ -20,9 +24,9 @@ def _sdk_test_greet(name):
 def _generated_artifact_key(source: str) -> str:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        module = root / "_sdk_test_greet.py"
-        module.write_text(source, encoding="utf-8")
-        archive = combine_sources_into_tarball(root, [module])
+        archive = combine_sources_into_tarball(
+            root, {"_sdk_test_greet.py": source.encode("utf-8")}
+        )
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     return f"functions/demo/artifacts/{digest}.tar.gz"
 
@@ -30,6 +34,12 @@ def _generated_artifact_key(source: str) -> str:
 class AppTests(unittest.TestCase):
     def setUp(self):
         self.client = Client("http://localhost:8080")
+        cache_lookup = patch("mini_modal.cached_version", return_value=None)
+        cache_save = patch("mini_modal.save_version")
+        cache_lookup.start()
+        cache_save.start()
+        self.addCleanup(cache_lookup.stop)
+        self.addCleanup(cache_save.stop)
 
     @patch("mini_modal.requests.get")
     @patch("mini_modal.requests.post")
@@ -254,6 +264,108 @@ class AppTests(unittest.TestCase):
         self.assertEqual(len(uploaded_paths), 1)
         self.assertFalse(uploaded_paths[0].exists())
 
+    def test_deploy_preserves_package_paths_and_entrypoint(self):
+        app = App("demo", self.client)
+        app.function()(_sdk_test_greet)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = root / "example"
+            package.mkdir()
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            source = package / "app.py"
+            source.write_text(
+                "from .helpers import greet\n"
+                "def _sdk_test_greet(name):\n"
+                "    return greet(name)\n",
+                encoding="utf-8",
+            )
+            (package / "helpers.py").write_text(
+                "from .formatting import suffix\n"
+                "def greet(name):\n"
+                "    return name + suffix()\n",
+                encoding="utf-8",
+            )
+            (package / "formatting.py").write_text(
+                "def suffix():\n    return '!'\n", encoding="utf-8"
+            )
+
+            def check_upload(function_id, archive_path):
+                with tarfile.open(archive_path, "r:gz") as archive:
+                    self.assertEqual(archive.getnames(), [
+                        "example/__init__.py",
+                        "example/_sdk_test_greet.py",
+                        "example/formatting.py",
+                        "example/helpers.py",
+                    ])
+                    self.assertIn(
+                        b"from .helpers import greet",
+                        archive.extractfile("example/_sdk_test_greet.py").read(),
+                    )
+                    runtime = root / "runtime"
+                    runtime.mkdir()
+                    archive.extractall(runtime)
+                result = subprocess.run(
+                    [sys.executable, "-c", "from example._sdk_test_greet import _sdk_test_greet; print(_sdk_test_greet('Ada'))"],
+                    cwd=runtime,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.stdout.strip(), "Ada!")
+                return {"artifact_key": "artifact-1"}
+
+            with patch("mini_modal.inspect.getsourcefile", return_value=str(source)), \
+                    patch.object(self.client, "get_function_versions", return_value=[]), \
+                    patch.object(self.client, "upload_function", side_effect=check_upload), \
+                    patch.object(self.client, "deploy_function", return_value={"id": "version-1"}) as create:
+                app.deploy()
+
+            self.assertEqual(
+                create.call_args.kwargs["entrypoint"],
+                "example._sdk_test_greet:_sdk_test_greet",
+            )
+
+    def test_decorator_includes_dynamic_import_package(self):
+        app = App("demo", self.client)
+        app.function(include_modules=("plugins",))(_sdk_test_greet)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "app.py"
+            source.write_text(
+                "import importlib\n"
+                "def _sdk_test_greet(name):\n"
+                "    return importlib.import_module('plugins.' + name).VALUE\n",
+                encoding="utf-8",
+            )
+            plugins = root / "plugins"
+            plugins.mkdir()
+            (plugins / "__init__.py").write_text("", encoding="utf-8")
+            (plugins / "first.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            def check_upload(function_id, archive_path):
+                with tarfile.open(archive_path, "r:gz") as archive:
+                    self.assertEqual(archive.getnames(), [
+                        "_sdk_test_greet.py", "plugins/__init__.py", "plugins/first.py"
+                    ])
+                    runtime = root / "runtime"
+                    runtime.mkdir()
+                    archive.extractall(runtime)
+                result = subprocess.run(
+                    [sys.executable, "-c", "from _sdk_test_greet import _sdk_test_greet; print(_sdk_test_greet('first'))"],
+                    cwd=runtime,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.stdout.strip(), "1")
+                return {"artifact_key": "artifact-1"}
+
+            with patch("mini_modal.inspect.getsourcefile", return_value=str(source)), \
+                    patch.object(self.client, "get_function_versions", return_value=[]), \
+                    patch.object(self.client, "upload_function", side_effect=check_upload), \
+                    patch.object(self.client, "deploy_function", return_value={"id": "version-1"}):
+                app.deploy()
+
     def test_archive_bytes_ignore_file_mtimes_and_change_with_helper_content(self):
         archives = []
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
@@ -265,11 +377,15 @@ class AppTests(unittest.TestCase):
                 helper.write_text("value = 1\n", encoding="utf-8")
                 os.utime(entry, (100 + index, 100 + index))
                 os.utime(helper, (200 + index, 200 + index))
-                archives.append(combine_sources_into_tarball(root, [helper, entry]).read_bytes())
+                archives.append(combine_sources_into_tarball(root, {
+                    "entry.py": entry.read_bytes(), "helpers.py": helper.read_bytes()
+                }).read_bytes())
 
             self.assertEqual(archives[0], archives[1])
             helper.write_text("value = 2\n", encoding="utf-8")
-            changed = combine_sources_into_tarball(Path(second), [helper, entry]).read_bytes()
+            changed = combine_sources_into_tarball(Path(second), {
+                "entry.py": entry.read_bytes(), "helpers.py": helper.read_bytes()
+            }).read_bytes()
             self.assertNotEqual(archives[0], changed)
 
     def test_deploy_skips_unchanged_content_and_uploads_changed_helper(self):
@@ -312,6 +428,201 @@ class AppTests(unittest.TestCase):
         self.assertNotEqual(first.version_id, changed.version_id)
         self.assertEqual(len(uploaded_archives), 2)
         self.assertEqual(len(remote_versions), 2)
+
+
+class DeploymentCacheTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.cache_dir = self.root / ".mini-modal"
+        self.client = Client("http://localhost:8080")
+
+    def app(self, *, cpus=1):
+        app = App("demo", self.client, cache_dir=self.cache_dir)
+        decorated = app.function(cpus=cpus)(_sdk_test_greet)
+        return app, decorated
+
+    def test_cache_is_scoped_and_corrupt_entries_are_ignored(self):
+        save_version(self.cache_dir, self.client.base_url, "demo.greet", "fingerprint-1", "version-1")
+        self.assertEqual(
+            cached_version(self.cache_dir, self.client.base_url, "demo.greet", "fingerprint-1"),
+            "version-1",
+        )
+        self.assertIsNone(cached_version(self.cache_dir, "http://other:8080", "demo.greet", "fingerprint-1"))
+        self.assertIsNone(cached_version(self.cache_dir, self.client.base_url, "demo.other", "fingerprint-1"))
+        self.assertIsNone(cached_version(self.cache_dir, self.client.base_url, "demo.greet", "fingerprint-2"))
+        next((self.cache_dir / "deployments").glob("*.json")).write_text("{broken", encoding="utf-8")
+        self.assertIsNone(cached_version(self.cache_dir, self.client.base_url, "demo.greet", "fingerprint-1"))
+
+    def test_unchanged_restart_uses_persisted_version_without_network(self):
+        first_app, _ = self.app()
+        with patch("mini_modal.inspect.getsourcefile", return_value=__file__), \
+                patch.object(self.client, "get_function_versions", return_value=[]) as versions, \
+                patch.object(self.client, "upload_function", return_value={"artifact_key": "artifact-1"}) as upload, \
+                patch.object(self.client, "deploy_function", return_value={"id": "version-1"}) as create, \
+                redirect_stderr(io.StringIO()):
+            first_app.deploy()
+            restarted_app, decorated = self.app()
+            restarted_app.deploy()
+
+        self.assertEqual(decorated.version_id, "version-1")
+        versions.assert_called_once()
+        upload.assert_called_once()
+        create.assert_called_once()
+        self.assertEqual(len(list((self.cache_dir / "deployments").glob("*.json"))), 1)
+
+    def test_helper_or_settings_change_invalidates_only_matching_fingerprint(self):
+        source = self.root / "main.py"
+        helper = self.root / "helper.py"
+        source.write_text(
+            "from helper import suffix\n"
+            "def _sdk_test_greet(name):\n"
+            "    return name + suffix()\n",
+            encoding="utf-8",
+        )
+        helper.write_text("def suffix(): return '!'\n", encoding="utf-8")
+        remote_versions = []
+
+        def upload(function_id, path):
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            return {"artifact_key": f"functions/demo/artifacts/{digest}.tar.gz"}
+
+        def create(function_id, **spec):
+            version = {"id": f"version-{len(remote_versions) + 1}", **spec}
+            remote_versions.append(version)
+            return version
+
+        with patch("mini_modal.inspect.getsourcefile", return_value=str(source)), \
+                patch.object(self.client, "get_function_versions", side_effect=lambda _: list(remote_versions)) as versions, \
+                patch.object(self.client, "upload_function", side_effect=upload) as uploads, \
+                patch.object(self.client, "deploy_function", side_effect=create) as creates, \
+                redirect_stderr(io.StringIO()):
+            first, _ = self.app()
+            first.deploy()
+            unchanged, _ = self.app()
+            unchanged.deploy()
+            helper.write_text("def suffix(): return '?'\n", encoding="utf-8")
+            changed_source, _ = self.app()
+            changed_source.deploy()
+            changed_settings, decorated = self.app(cpus=2)
+            changed_settings.deploy()
+            unchanged_settings, _ = self.app(cpus=2)
+            unchanged_settings.deploy()
+
+        self.assertEqual(decorated.version_id, "version-3")
+        self.assertEqual(versions.call_count, 3)
+        self.assertEqual(uploads.call_count, 2)
+        self.assertEqual(creates.call_count, 3)
+
+    def test_missing_cached_version_refreshes_and_retries_invocation(self):
+        remote_versions = []
+        created = 0
+
+        def create(function_id, **spec):
+            nonlocal created
+            created += 1
+            version = {"id": f"version-{created}", **spec}
+            remote_versions.append(version)
+            return version
+
+        with patch("mini_modal.inspect.getsourcefile", return_value=__file__), \
+                patch.object(self.client, "get_function_versions", side_effect=lambda _: list(remote_versions)) as versions, \
+                patch.object(self.client, "upload_function", return_value={"artifact_key": "artifact-1"}) as upload, \
+                patch.object(self.client, "deploy_function", side_effect=create), \
+                redirect_stderr(io.StringIO()):
+            first, _ = self.app()
+            first.deploy()
+            restarted, decorated = self.app()
+            restarted.deploy()
+            remote_versions.clear()  # Simulate a reset control plane after the local cache was read.
+            response = requests.Response()
+            response.status_code = 404
+            missing = requests.HTTPError(response=response)
+            with patch.object(
+                self.client, "spawn_function", side_effect=[missing, {"id": "job-1"}]
+            ) as spawn:
+                job = decorated.spawn("Ada")
+
+        self.assertEqual(job.job_id, "job-1")
+        self.assertEqual(decorated.version_id, "version-2")
+        self.assertEqual(versions.call_count, 2)
+        self.assertEqual(upload.call_count, 2)
+        self.assertEqual([call.args[1] for call in spawn.call_args_list], ["version-1", "version-2"])
+
+
+class PackagingTests(unittest.TestCase):
+    def test_transitive_and_function_local_imports_are_included(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "helpers.py").write_text(
+                "from formatting import suffix\n"
+                "def greet(name):\n    return name + suffix()\n",
+                encoding="utf-8",
+            )
+            (root / "formatting.py").write_text("def suffix():\n    return '!'\n", encoding="utf-8")
+            source = "def greet(name):\n    from helpers import greet as helper\n    return helper(name)\n"
+            files = collect_local_sources(root, Path("greet.py"), source, ())
+            self.assertEqual(set(files), {"greet.py", "helpers.py", "formatting.py"})
+            first_archive = combine_sources_into_tarball(root, files).read_bytes()
+            (root / "formatting.py").write_text("def suffix():\n    return '?'\n", encoding="utf-8")
+            changed_files = collect_local_sources(root, Path("greet.py"), source, ())
+            changed_archive = combine_sources_into_tarball(root, changed_files).read_bytes()
+            self.assertNotEqual(first_archive, changed_archive)
+
+    def test_explicit_include_bundles_dynamic_import_package(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plugins = root / "plugins"
+            plugins.mkdir()
+            (plugins / "__init__.py").write_text("", encoding="utf-8")
+            (plugins / "first.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (plugins / "second.py").write_text("VALUE = 2\n", encoding="utf-8")
+            source = (
+                "import importlib\n"
+                "def run(name):\n"
+                "    return importlib.import_module('plugins.' + name).VALUE\n"
+            )
+            omitted = collect_local_sources(root, Path("run.py"), source, ())
+            self.assertEqual(set(omitted), {"run.py"})
+            included = collect_local_sources(root, Path("run.py"), source, ("plugins",))
+            self.assertEqual(set(included), {
+                "run.py", "plugins/__init__.py", "plugins/first.py", "plugins/second.py"
+            })
+
+    def test_nested_packages_keep_distinct_modules_with_same_basename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "pkg").mkdir()
+            (root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+            for name in ("alpha", "beta"):
+                package = root / "pkg" / name
+                package.mkdir()
+                (package / "__init__.py").write_text("", encoding="utf-8")
+                (package / "helpers.py").write_text(
+                    f"VALUE = {name!r}\n", encoding="utf-8"
+                )
+            files = collect_local_sources(
+                root,
+                Path("run.py"),
+                "import pkg.alpha.helpers\nimport pkg.beta.helpers\n",
+                (),
+            )
+            self.assertEqual(set(files), {
+                "run.py", "pkg/__init__.py",
+                "pkg/alpha/__init__.py", "pkg/alpha/helpers.py",
+                "pkg/beta/__init__.py", "pkg/beta/helpers.py",
+            })
+            self.assertNotEqual(
+                files["pkg/alpha/helpers.py"], files["pkg/beta/helpers.py"]
+            )
+
+    def test_missing_explicit_include_is_an_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "was not found"):
+                collect_local_sources(
+                    Path(directory), Path("run.py"), "def run(): pass", ("missing",)
+                )
 
 
 class ClientTests(unittest.TestCase):

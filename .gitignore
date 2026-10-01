@@ -7,3 +7,5 @@
 /.env
 __pycache__/
 *.py[cod]
+*.egg-info/
+.mini-modal/

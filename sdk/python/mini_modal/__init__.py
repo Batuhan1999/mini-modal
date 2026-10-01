@@ -4,22 +4,23 @@ from __future__ import annotations
 
 import ast
 import copy
-import gzip
 import hashlib
 import inspect
-import io
 import sys
-import tarfile
 import tempfile
 import time
 from dataclasses import asdict, dataclass
 from functools import update_wrapper
 from pathlib import Path
+from threading import Lock
 from typing import Any, Callable
 from urllib.parse import quote
 from uuid import uuid4
 
 import requests
+
+from ._deployment_cache import cached_version, fingerprint, save_version
+from ._packaging import collect_local_sources, combine_sources_into_tarball, source_package
 
 __all__ = ["App", "Client", "Function", "FunctionFailedError", "JobHandle"]
 
@@ -245,38 +246,65 @@ class DecoratedFunction:
         source: Callable[..., Any],
         settings: FunctionSettings,
         client: Client,
+        include_modules: tuple[str, ...],
     ):
         update_wrapper(self, source)
         self.id = function_id
         self.source = source
         self.settings = settings
         self.client = client
+        self.include_modules = include_modules
         self.version_id: str | None = None
+        self._version_from_cache = False
+        self._refresh_stale_version: Callable[[str], None] | None = None
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.source(*args, **kwargs)
 
-    def bind_version(self, version_id: str) -> None:
+    def bind_version(self, version_id: str, *, from_cache: bool = False) -> None:
         if not version_id:
             raise ValueError("version ID is required")
         self.version_id = version_id
+        self._version_from_cache = from_cache
 
     def spawn(self, *args: Any, **kwargs: Any) -> JobHandle:
         if self.version_id is None:
             raise RuntimeError(f"function {self.id!r} has no deployed version yet")
-        return self.client.function(self.id, self.version_id).spawn(*args, **kwargs)
+        stale_version = self.version_id
+        try:
+            return self.client.function(self.id, stale_version).spawn(*args, **kwargs)
+        except requests.HTTPError as error:
+            response = error.response
+            if (
+                not self._version_from_cache
+                or response is None
+                or response.status_code != 404
+                or self._refresh_stale_version is None
+            ):
+                raise
+            self._refresh_stale_version(stale_version)
+            if self.version_id is None:
+                raise RuntimeError(f"function {self.id!r} has no deployed version yet") from error
+            return self.client.function(self.id, self.version_id).spawn(*args, **kwargs)
 
     def remote(self, *args: Any, **kwargs: Any) -> Any:
         return self.spawn(*args, **kwargs).get()
 
 
 class App:
-    def __init__(self, name: str, client: Client | None = None):
+    def __init__(self, name: str, client: Client | None = None, *, cache_dir: str | Path | None = None):
         if not name.strip():
             raise ValueError("app name is required")
         self.name = name
         self.client = client if client is not None else Client()
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
+        self._refresh_lock = Lock()
         self.functions: dict[str, DecoratedFunction] = {}
+
+    def _refresh_stale(self, decorated: DecoratedFunction, stale_version: str) -> None:
+        with self._refresh_lock:
+            if decorated.version_id == stale_version:
+                self.deploy(force=True)
 
     def function(
         self,
@@ -289,7 +317,10 @@ class App:
         timeout_seconds: int = 300,
         max_attempts: int = 1,
         retry_backoff_seconds: int = 0,
+        include_modules: tuple[str, ...] = (),
     ) -> Callable[[Callable[..., Any]], DecoratedFunction]:
+        if isinstance(include_modules, str):
+            raise TypeError("include_modules must be a tuple of module names")
         settings = FunctionSettings(
             image=image,
             cpus=cpus,
@@ -305,14 +336,18 @@ class App:
             if source.__name__ in self.functions:
                 raise ValueError(f"function {source.__name__!r} is already registered")
             decorated = DecoratedFunction(
-                f"{self.name}.{source.__name__}", source, settings, self.client
+                f"{self.name}.{source.__name__}", source, settings, self.client,
+                tuple(include_modules),
+            )
+            decorated._refresh_stale_version = (
+                lambda stale_version: self._refresh_stale(decorated, stale_version)
             )
             self.functions[source.__name__] = decorated
             return decorated
 
         return register
 
-    def deploy(self) -> dict[str, Function]:
+    def deploy(self, *, force: bool = False) -> dict[str, Function]:
         if not self.functions:
             raise ValueError("app has no registered functions")
 
@@ -425,19 +460,7 @@ class App:
             selected_nodes = [
                 copy.deepcopy(node) for node in tree.body if id(node) in selected_ids
             ]
-            local_modules: set[Path] = set()
             for node in selected_nodes:
-                if isinstance(node, ast.Import):
-                    module_names = [alias.name for alias in node.names]
-                elif isinstance(node, ast.ImportFrom):
-                    module_names = [node.module] if node.module else []
-                else:
-                    module_names = []
-
-                for module_name in module_names:
-                    candidate = Path(source_file).parent / (module_name.replace(".", "/") + ".py")
-                    if candidate.is_file():
-                        local_modules.add(candidate)
                 if isinstance(node, ast.FunctionDef):
                     node.decorator_list = [
                         decorator
@@ -447,13 +470,34 @@ class App:
 
             reduced_module = ast.Module(body=selected_nodes, type_ignores=[])
             reduced_source = ast.unparse(reduced_module)
+            project_root, package = source_package(Path(source_file))
+            cache_dir = self.cache_dir if self.cache_dir is not None else project_root / ".mini-modal"
+            entry_path = Path(*package, f"{name}.py")
+            entrypoint = f"{'.'.join((*package, name))}:{name}"
             with tempfile.TemporaryDirectory(prefix="mini-modal-") as directory:
                 temporary_root = Path(directory)
-                tmp_path = write_to_tmp(temporary_root, name, reduced_source)
+                sources = collect_local_sources(
+                    project_root, entry_path, reduced_source, decorated.include_modules
+                )
                 combined_tarball = combine_sources_into_tarball(
-                    temporary_root, list(local_modules) + [tmp_path]
+                    temporary_root, sources
                 )
                 content_hash = hashlib.sha256(combined_tarball.read_bytes()).hexdigest()
+
+                settings = asdict(decorated.settings)
+                settings["max_attempts"] = settings["max_attempts"] or _DEFAULT_MAX_ATTEMPTS
+                settings["retry_backoff_seconds"] = settings["retry_backoff_seconds"] or _DEFAULT_RETRY_BACKOFF_SECONDS
+                current_fingerprint = fingerprint(content_hash, entrypoint, settings)
+                if not force:
+                    version_id = cached_version(
+                        cache_dir, self.client.base_url, decorated.id, current_fingerprint
+                    )
+                    if version_id is not None:
+                        remote = self.client.function(decorated.id, version_id)
+                        decorated.bind_version(version_id, from_cache=True)
+                        deployed[name] = remote
+                        print(f"{decorated.id}: using locally cached version {version_id}", file=sys.stderr, flush=True)
+                        continue
 
                 print(f"{decorated.id}: checking for changes...", file=sys.stderr, flush=True)
                 versions = self.client.get_function_versions(decorated.id)
@@ -472,12 +516,9 @@ class App:
                     artifact_key = uploaded["artifact_key"]
                 else:
                     print(f"{decorated.id}: content unchanged; skipping upload", file=sys.stderr, flush=True)
-            settings = asdict(decorated.settings)
-            settings["max_attempts"] = settings["max_attempts"] or _DEFAULT_MAX_ATTEMPTS
-            settings["retry_backoff_seconds"] = settings["retry_backoff_seconds"] or _DEFAULT_RETRY_BACKOFF_SECONDS
             spec = {
                 "artifact_key": artifact_key,
-                "entrypoint": f"{name}:{name}",
+                "entrypoint": entrypoint,
                 **settings,
             }
 
@@ -495,28 +536,15 @@ class App:
                 print(f"{decorated.id}: created version {remote.version_id}", file=sys.stderr, flush=True)
             decorated.bind_version(remote.version_id)
             deployed[name] = remote
+            try:
+                save_version(
+                    cache_dir, self.client.base_url, decorated.id, current_fingerprint, remote.version_id
+                )
+            except OSError as error:
+                print(f"{decorated.id}: could not save deployment cache: {error}", file=sys.stderr, flush=True)
 
 
         return deployed
-
-def combine_sources_into_tarball(directory: Path, modules: list[Path]) -> Path:
-    tmp_path = directory / "combined.tar.gz"
-    with tmp_path.open("wb") as output:
-        with gzip.GzipFile(fileobj=output, mode="wb", filename="", mtime=0) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w") as tar:
-                for module in sorted(modules, key=lambda path: path.name):
-                    content = module.read_bytes()
-                    header = tarfile.TarInfo(name=module.name)
-                    header.size = len(content)
-                    header.mode = 0o644
-                    header.mtime = 0
-                    tar.addfile(header, io.BytesIO(content))
-    return tmp_path
-
-def write_to_tmp(directory: Path, name: str, source: str) -> Path:
-    tmp_path = directory / f"{name}.py"
-    tmp_path.write_text(source, encoding="utf-8")
-    return tmp_path
 
 
 class JobHandle:

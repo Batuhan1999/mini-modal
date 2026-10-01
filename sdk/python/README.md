@@ -63,13 +63,42 @@ if __name__ == "__main__":
     print(greet.remote("Ada"))
 ```
 
-The decorator only registers the function locally. `app.deploy()` uploads the
-Python source file, creates a version for each registered function, and binds
-its version ID so `spawn()` and `remote()` can invoke it. Registered functions
-must be defined at module level in a `.py` file. Deployment prints progress
-for each function. If the uploaded artifact and all version settings match an
-existing version, it reuses that version ID; otherwise it creates a new one.
-It still uploads the source to check its content-addressed artifact key.
+The decorator only registers the function locally. `app.deploy()` creates a
+function-specific archive containing the function, its referenced definitions
+from the same file, and local Python modules imported by those sources. It
+follows imports in local modules transitively and preserves package paths.
+Registered functions must be defined at module level in a `.py` file. The
+archive's content hash determines whether it needs uploading; an unchanged
+artifact and version settings reuse the existing version ID. Deployment prints
+the upload and version status for each function.
+
+`app.deploy()` also stores a local fingerprint and version ID in
+`.mini-modal/deployments/` beside the source package. On a later process start,
+it rebuilds the function artifact and fingerprints its contents, entrypoint,
+and effective settings. If these match the local record, it binds the known
+version without contacting the control plane. Different control-plane URLs have
+separate records. The cache is generated and safe to delete; use
+`app.deploy(force=True)` to check the control plane explicitly. If a cached
+version is gone after a database reset, the decorated function's first
+`spawn()` refreshes the deployment and retries once. Set
+`App(..., cache_dir=path)` to place the cache elsewhere. This does not make
+`spawn()` deploy a never-deployed function:
+call `app.deploy()` at least once before invoking it.
+
+Imports constructed at runtime cannot always be discovered from source. Include
+their local module or package explicitly; a package includes its `.py` files:
+
+```python
+@app.function(include_modules=("plugins",))
+def run_plugin(name):
+    import importlib
+    return importlib.import_module("plugins." + name).run()
+```
+
+`include_modules` resolves names from the source file's import root. A normal
+Python package (with `__init__.py`) keeps its dotted module path in the worker.
+Third-party libraries still need to be installed in the worker image.
+
 Keep the deployment call under `if __name__ == "__main__"` so importing the
 module in a worker does not deploy it again. Both `@app.function()` and
 `deploy_python_file()` use `mini-modal-python:dev` by default. You can still
