@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import ast
+import copy
+import gzip
+import hashlib
 import inspect
+import io
 import sys
+import tarfile
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from functools import update_wrapper
@@ -310,30 +317,170 @@ class App:
             raise ValueError("app has no registered functions")
 
         deployed: dict[str, Function] = {}
-        for name, decorated in self.functions.items():
-            source = decorated.source
-            if source.__qualname__ != source.__name__:
-                raise ValueError(f"function {name!r} must be defined at module level")
-            source_path = inspect.getsourcefile(source)
-            if source_path is None:
-                raise ValueError(f"could not find source file for function {name!r}")
-            path = Path(source_path)
-            if path.suffix != ".py" or not path.stem.isidentifier():
-                raise ValueError(f"function {name!r} must be defined in a Python module")
 
-            print(f"{decorated.id}: uploading source...", file=sys.stderr, flush=True)
-            uploaded = self.client.upload_function(decorated.id, path)
+        for name, decorated in self.functions.items():
+            if decorated.source.__qualname__ != decorated.source.__name__:
+                raise ValueError(f"function {name!r} must be defined at module level")
+            source_file = inspect.getsourcefile(decorated.source)
+            if source_file is None:
+                raise ValueError(f"Cannot find source for {name}")
+
+            source_text = Path(source_file).read_text(encoding="utf-8")
+            tree = ast.parse(source_text, filename=source_file)
+
+            definitions: dict[str, ast.stmt] = {}
+
+            for statement in tree.body:
+                if isinstance(statement, ast.FunctionDef):
+                    definitions[statement.name] = statement
+                elif isinstance(statement, ast.Assign):
+                    for target in statement.targets:
+                        if isinstance(target, ast.Name):
+                            definitions[target.id] = statement
+                elif isinstance(statement, ast.Import):
+                    for alias in statement.names:
+                        bound_name = alias.asname or alias.name.split(".")[0]
+                        definitions[bound_name] = statement
+                elif isinstance(statement, ast.ImportFrom):
+                    for alias in statement.names:
+                        bound_name = alias.asname or alias.name.split(".")[0]
+                        definitions[bound_name] = statement
+
+            dependencies: dict[str, ast.stmt] = {}
+            visited: set[str] = set()
+
+            def find_dependencies(definition_name: str) -> None:
+                if definition_name in visited:
+                    return
+                visited.add(definition_name)
+
+                node = definitions[definition_name]
+
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    return
+                if isinstance(node, ast.FunctionDef):
+                    read_names = {
+                        child.id
+                        for statement in node.body
+                        for child in ast.walk(statement)
+                        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)
+                    }
+                    local_names = {
+                        child.id
+                        for statement in node.body
+                        for child in ast.walk(statement)
+                        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)
+                    }
+                    parameter_names = {
+                        arg.arg
+                        for arg in (
+                            *node.args.posonlyargs,
+                            *node.args.args,
+                            *node.args.kwonlyargs,
+                        )
+                    }
+                    if node.args.vararg is not None:
+                        parameter_names.add(node.args.vararg.arg)
+                    if node.args.kwarg is not None:
+                        parameter_names.add(node.args.kwarg.arg)
+                else:
+                    read_names = {
+                        child.id
+                        for child in ast.walk(node.value)
+                        if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load)
+                    }
+                    local_names = set()
+                    parameter_names = set()
+
+                referenced_definitions = (
+                    read_names - local_names - parameter_names
+                ) & definitions.keys()
+                for dependency in sorted(referenced_definitions):
+                    if dependency in visited:
+                        continue
+                    dependencies[dependency] = definitions[dependency]
+                    find_dependencies(dependency)
+
+            find_dependencies(name)
+
+            def app_function_receiver(decorator: ast.expr) -> str | None:
+                target = decorator.func if isinstance(decorator, ast.Call) else decorator
+                if (
+                    isinstance(target, ast.Attribute)
+                    and target.attr == "function"
+                    and isinstance(target.value, ast.Name)
+                ):
+                    return target.value.id
+                return None
+
+            root = definitions[name]
+            app_names = set()
+            if isinstance(root, ast.FunctionDef):
+                for decorator in root.decorator_list:
+                    app_name = app_function_receiver(decorator)
+                    if app_name is not None:
+                        app_names.add(app_name)
+
+            selected_ids = {id(root)} | {id(node) for node in dependencies.values()}
+            selected_nodes = [
+                copy.deepcopy(node) for node in tree.body if id(node) in selected_ids
+            ]
+            local_modules: set[Path] = set()
+            for node in selected_nodes:
+                if isinstance(node, ast.Import):
+                    module_names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    module_names = [node.module] if node.module else []
+                else:
+                    module_names = []
+
+                for module_name in module_names:
+                    candidate = Path(source_file).parent / (module_name.replace(".", "/") + ".py")
+                    if candidate.is_file():
+                        local_modules.add(candidate)
+                if isinstance(node, ast.FunctionDef):
+                    node.decorator_list = [
+                        decorator
+                        for decorator in node.decorator_list
+                        if app_function_receiver(decorator) not in app_names
+                    ]
+
+            reduced_module = ast.Module(body=selected_nodes, type_ignores=[])
+            reduced_source = ast.unparse(reduced_module)
+            with tempfile.TemporaryDirectory(prefix="mini-modal-") as directory:
+                temporary_root = Path(directory)
+                tmp_path = write_to_tmp(temporary_root, name, reduced_source)
+                combined_tarball = combine_sources_into_tarball(
+                    temporary_root, list(local_modules) + [tmp_path]
+                )
+                content_hash = hashlib.sha256(combined_tarball.read_bytes()).hexdigest()
+
+                print(f"{decorated.id}: checking for changes...", file=sys.stderr, flush=True)
+                versions = self.client.get_function_versions(decorated.id)
+                artifact_key = next(
+                    (
+                        version["artifact_key"]
+                        for version in versions
+                        if version.get("artifact_key", "").rsplit("/", 1)[-1]
+                        == f"{content_hash}.tar.gz"
+                    ),
+                    None,
+                )
+                if artifact_key is None:
+                    print(f"{decorated.id}: uploading new artifact...", file=sys.stderr, flush=True)
+                    uploaded = self.client.upload_function(decorated.id, combined_tarball)
+                    artifact_key = uploaded["artifact_key"]
+                else:
+                    print(f"{decorated.id}: content unchanged; skipping upload", file=sys.stderr, flush=True)
             settings = asdict(decorated.settings)
             settings["max_attempts"] = settings["max_attempts"] or _DEFAULT_MAX_ATTEMPTS
             settings["retry_backoff_seconds"] = settings["retry_backoff_seconds"] or _DEFAULT_RETRY_BACKOFF_SECONDS
             spec = {
-                "artifact_key": uploaded["artifact_key"],
-                "entrypoint": f"{path.stem}:{source.__name__}",
+                "artifact_key": artifact_key,
+                "entrypoint": f"{name}:{name}",
                 **settings,
             }
 
-            print(f"{decorated.id}: checking versions...", file=sys.stderr, flush=True)
-            versions = self.client.get_function_versions(decorated.id)
             existing = next(
                 (version for version in versions if all(version.get(key) == value for key, value in spec.items())),
                 None,
@@ -349,7 +496,27 @@ class App:
             decorated.bind_version(remote.version_id)
             deployed[name] = remote
 
+
         return deployed
+
+def combine_sources_into_tarball(directory: Path, modules: list[Path]) -> Path:
+    tmp_path = directory / "combined.tar.gz"
+    with tmp_path.open("wb") as output:
+        with gzip.GzipFile(fileobj=output, mode="wb", filename="", mtime=0) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w") as tar:
+                for module in sorted(modules, key=lambda path: path.name):
+                    content = module.read_bytes()
+                    header = tarfile.TarInfo(name=module.name)
+                    header.size = len(content)
+                    header.mode = 0o644
+                    header.mtime = 0
+                    tar.addfile(header, io.BytesIO(content))
+    return tmp_path
+
+def write_to_tmp(directory: Path, name: str, source: str) -> Path:
+    tmp_path = directory / f"{name}.py"
+    tmp_path.write_text(source, encoding="utf-8")
+    return tmp_path
 
 
 class JobHandle:

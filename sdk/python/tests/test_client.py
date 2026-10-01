@@ -1,4 +1,7 @@
+import hashlib
 import io
+import os
+import tarfile
 import tempfile
 import unittest
 from contextlib import redirect_stderr
@@ -7,11 +10,21 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from mini_modal import App, Client, FunctionFailedError, JobHandle
+from mini_modal import App, Client, FunctionFailedError, JobHandle, combine_sources_into_tarball
 
 
 def _sdk_test_greet(name):
     return f"Hello, {name}!"
+
+
+def _generated_artifact_key(source: str) -> str:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        module = root / "_sdk_test_greet.py"
+        module.write_text(source, encoding="utf-8")
+        archive = combine_sources_into_tarball(root, [module])
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    return f"functions/demo/artifacts/{digest}.tar.gz"
 
 
 class AppTests(unittest.TestCase):
@@ -90,9 +103,17 @@ class AppTests(unittest.TestCase):
 
         self.assertEqual(deployed["_sdk_test_greet"].version_id, "version-1")
         self.assertEqual(greet.version_id, "version-1")
-        self.assertEqual(post.call_args_list[0].kwargs["data"], b"def _sdk_test_greet(name): return name\n")
+        upload_request = post.call_args_list[0].kwargs
+        self.assertIsNone(upload_request["params"])
+        self.assertEqual(upload_request["headers"], {"Content-Type": "application/gzip"})
+        with tarfile.open(fileobj=io.BytesIO(upload_request["data"]), mode="r:gz") as archive:
+            self.assertEqual(archive.getnames(), ["_sdk_test_greet.py"])
+            self.assertEqual(
+                archive.extractfile("_sdk_test_greet.py").read(),
+                b"def _sdk_test_greet(name):\n    return name",
+            )
         version_request = post.call_args_list[1].kwargs["json"]
-        self.assertEqual(version_request["entrypoint"], "greeting:_sdk_test_greet")
+        self.assertEqual(version_request["entrypoint"], "_sdk_test_greet:_sdk_test_greet")
         self.assertEqual(version_request["image"], "mini-modal-python:dev")
         self.assertEqual(version_request["cpus"], 2)
         self.assertEqual(version_request["retry_backoff_seconds"], 1)
@@ -102,10 +123,13 @@ class AppTests(unittest.TestCase):
     def test_deploy_reuses_matching_version_and_reports_it(self):
         app = App("demo", self.client)
         greet = app.function(cpus=2, max_attempts=0)(_sdk_test_greet)
+        artifact_key = _generated_artifact_key(
+            "def _sdk_test_greet(name):\n    return f'Hello, {name}!'"
+        )
         existing = {
             "id": "version-1",
-            "artifact_key": "artifact-1",
-            "entrypoint": "test_client:_sdk_test_greet",
+            "artifact_key": artifact_key,
+            "entrypoint": "_sdk_test_greet:_sdk_test_greet",
             "image": "mini-modal-python:dev",
             "cpus": 2,
             "memory_gb": 1,
@@ -118,7 +142,7 @@ class AppTests(unittest.TestCase):
         progress = io.StringIO()
 
         with patch("mini_modal.inspect.getsourcefile", return_value=__file__), \
-                patch.object(self.client, "upload_function", return_value={"artifact_key": "artifact-1"}), \
+                patch.object(self.client, "upload_function") as upload, \
                 patch.object(self.client, "get_function_versions", return_value=[existing]), \
                 patch.object(self.client, "deploy_function") as create, \
                 redirect_stderr(progress):
@@ -126,14 +150,18 @@ class AppTests(unittest.TestCase):
 
         self.assertEqual(deployed["_sdk_test_greet"].version_id, "version-1")
         self.assertEqual(greet.version_id, "version-1")
+        upload.assert_not_called()
         create.assert_not_called()
         self.assertIn("reused version version-1", progress.getvalue())
 
     def test_deploy_creates_version_when_source_or_settings_change(self):
+        matching_key = _generated_artifact_key(
+            "def _sdk_test_greet(name):\n    return f'Hello, {name}!'"
+        )
         existing = {
             "id": "version-1",
-            "artifact_key": "artifact-1",
-            "entrypoint": "test_client:_sdk_test_greet",
+            "artifact_key": matching_key,
+            "entrypoint": "_sdk_test_greet:_sdk_test_greet",
             "image": "mini-modal-python:dev",
             "cpus": 1,
             "memory_gb": 1,
@@ -143,19 +171,24 @@ class AppTests(unittest.TestCase):
             "max_attempts": 1,
             "retry_backoff_seconds": 1,
         }
-        for artifact_key, cpus in [("artifact-2", 1), ("artifact-1", 2)]:
-            with self.subTest(artifact_key=artifact_key, cpus=cpus):
+        for remote_key, cpus, expected_key, should_upload in [
+            ("old-artifact", 1, "artifact-2", True),
+            (matching_key, 2, matching_key, False),
+        ]:
+            with self.subTest(remote_key=remote_key, cpus=cpus):
                 app = App("demo", self.client)
                 greet = app.function(cpus=cpus)(_sdk_test_greet)
+                existing_version = {**existing, "artifact_key": remote_key}
                 with patch("mini_modal.inspect.getsourcefile", return_value=__file__), \
-                        patch.object(self.client, "upload_function", return_value={"artifact_key": artifact_key}), \
-                        patch.object(self.client, "get_function_versions", return_value=[existing]), \
+                        patch.object(self.client, "upload_function", return_value={"artifact_key": expected_key}) as upload, \
+                        patch.object(self.client, "get_function_versions", return_value=[existing_version]), \
                         patch.object(self.client, "deploy_function", return_value={"id": "version-2"}) as create, \
                         redirect_stderr(io.StringIO()):
                     app.deploy()
 
                 self.assertEqual(greet.version_id, "version-2")
-                self.assertEqual(create.call_args.kwargs["artifact_key"], artifact_key)
+                self.assertEqual(upload.call_count, int(should_upload))
+                self.assertEqual(create.call_args.kwargs["artifact_key"], expected_key)
                 self.assertEqual(create.call_args.kwargs["cpus"], cpus)
 
     def test_deploy_rejects_nested_function_before_upload(self):
@@ -170,6 +203,115 @@ class AppTests(unittest.TestCase):
                 app.deploy()
         deploy.assert_not_called()
         self.assertIsNone(nested.version_id)
+
+    def test_deploy_removes_temporary_source_when_upload_fails(self):
+        app = App("demo", self.client)
+        app.function()(_sdk_test_greet)
+
+        with patch.object(self.client, "upload_function", side_effect=RuntimeError("upload failed")) as upload:
+            with self.assertRaisesRegex(RuntimeError, "upload failed"):
+                app.deploy()
+
+        temporary_source = upload.call_args.args[1]
+        self.assertEqual(temporary_source.name, "combined.tar.gz")
+        self.assertFalse(temporary_source.exists())
+
+    def test_deploy_bundles_local_import_and_removes_temporary_archive(self):
+        app = App("demo", self.client)
+        app.function()(_sdk_test_greet)
+        uploaded_paths = []
+
+        def inspect_upload(function_id, path):
+            self.assertEqual(function_id, "demo._sdk_test_greet")
+            self.assertTrue(path.is_file())
+            uploaded_paths.append(path)
+            with tarfile.open(path, "r:gz") as archive:
+                self.assertEqual(
+                    archive.getnames(), ["_sdk_test_greet.py", "helpers.py"]
+                )
+                self.assertIn(
+                    b"from helpers import helper",
+                    archive.extractfile("_sdk_test_greet.py").read(),
+                )
+            return {"artifact_key": "artifact-1"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "main.py"
+            source.write_text(
+                "from helpers import helper\n"
+                "def _sdk_test_greet(name):\n"
+                "    return helper(name)\n"
+            )
+            (Path(directory) / "helpers.py").write_text(
+                "def helper(name):\n    return name\n"
+            )
+            with patch("mini_modal.inspect.getsourcefile", return_value=str(source)), \
+                    patch.object(self.client, "upload_function", side_effect=inspect_upload), \
+                    patch.object(self.client, "get_function_versions", return_value=[]), \
+                    patch.object(self.client, "deploy_function", return_value={"id": "version-1"}):
+                app.deploy()
+
+        self.assertEqual(len(uploaded_paths), 1)
+        self.assertFalse(uploaded_paths[0].exists())
+
+    def test_archive_bytes_ignore_file_mtimes_and_change_with_helper_content(self):
+        archives = []
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            for index, directory in enumerate((first, second)):
+                root = Path(directory)
+                entry = root / "entry.py"
+                helper = root / "helpers.py"
+                entry.write_text("from helpers import value\n", encoding="utf-8")
+                helper.write_text("value = 1\n", encoding="utf-8")
+                os.utime(entry, (100 + index, 100 + index))
+                os.utime(helper, (200 + index, 200 + index))
+                archives.append(combine_sources_into_tarball(root, [helper, entry]).read_bytes())
+
+            self.assertEqual(archives[0], archives[1])
+            helper.write_text("value = 2\n", encoding="utf-8")
+            changed = combine_sources_into_tarball(Path(second), [helper, entry]).read_bytes()
+            self.assertNotEqual(archives[0], changed)
+
+    def test_deploy_skips_unchanged_content_and_uploads_changed_helper(self):
+        app = App("demo", self.client)
+        app.function()(_sdk_test_greet)
+        remote_versions = []
+        uploaded_archives = []
+
+        def upload(function_id, path):
+            content = path.read_bytes()
+            uploaded_archives.append(content)
+            digest = hashlib.sha256(content).hexdigest()
+            return {"artifact_key": f"functions/demo/artifacts/{digest}.tar.gz"}
+
+        def create(function_id, **spec):
+            version = {"id": f"version-{len(remote_versions) + 1}", **spec}
+            remote_versions.append(version)
+            return version
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "main.py"
+            source.write_text(
+                "from helpers import helper\n"
+                "def _sdk_test_greet(name):\n"
+                "    return helper(name)\n"
+            )
+            helper = Path(directory) / "helpers.py"
+            helper.write_text("def helper(name):\n    return name\n")
+
+            with patch("mini_modal.inspect.getsourcefile", return_value=str(source)), \
+                    patch.object(self.client, "upload_function", side_effect=upload), \
+                    patch.object(self.client, "get_function_versions", side_effect=lambda function_id: list(remote_versions)), \
+                    patch.object(self.client, "deploy_function", side_effect=create):
+                first = app.deploy()["_sdk_test_greet"]
+                unchanged = app.deploy()["_sdk_test_greet"]
+                helper.write_text("def helper(name):\n    return name.upper()\n")
+                changed = app.deploy()["_sdk_test_greet"]
+
+        self.assertEqual(first.version_id, unchanged.version_id)
+        self.assertNotEqual(first.version_id, changed.version_id)
+        self.assertEqual(len(uploaded_archives), 2)
+        self.assertEqual(len(remote_versions), 2)
 
 
 class ClientTests(unittest.TestCase):
