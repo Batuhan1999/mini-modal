@@ -61,6 +61,14 @@ WHERE j.status = 'pending'
   AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
 ORDER BY j.priority DESC, j.id;
 
+-- name: ListCapacityDemand :many
+SELECT j.id, j.priority, v.gpu_type, v.gpus, v.cpus, v.memory_gb
+FROM jobs AS j
+JOIN function_versions AS v ON v.id = j.function_version_id
+WHERE j.status IN ('pending', 'unschedulable')
+  AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
+ORDER BY j.priority DESC, j.id;
+
 -- name: ListActiveJobs :many
 SELECT j.id, j.node_id, j.status, j.lease_expires_at, v.gpu_type, v.gpus, v.cpus, v.memory_gb
 FROM jobs AS j

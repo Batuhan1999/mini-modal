@@ -15,6 +15,19 @@ import (
 )
 
 const FunctionVersionID = "test-function-version"
+const NodePoolID = "test-pool"
+
+func SeedNodePool(t *testing.T, db *sql.DB) {
+	t.Helper()
+	if _, err := db.ExecContext(context.Background(), `
+		INSERT INTO node_pools (
+			id, gpus_per_node, cpus_per_node, memory_gb_per_node,
+			min_nodes, max_nodes, desired_nodes, idle_timeout_seconds
+		) VALUES ($1, 0, 8, 16, 0, 32, 0, 0)
+	`, NodePoolID); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func SeedFunctionVersion(t *testing.T, db *sql.DB) {
 	t.Helper()

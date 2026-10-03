@@ -7,6 +7,7 @@ import (
 
 type Node struct {
 	ID                string
+	PoolID            string
 	GPUType           string
 	TotalGPUs         int64
 	AvailableGPUs     int64

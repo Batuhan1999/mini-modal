@@ -33,13 +33,14 @@ func TestClaimReturnsNoAssignmentWhenNoWorkIsAvailable(t *testing.T) {
 func TestRegisterNodeReturnsPersistedDrainFlag(t *testing.T) {
 	ctx := context.Background()
 	db := testdb.Open(t)
+	testdb.SeedNodePool(t, db)
 	queries := postgresdb.New(db)
 	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, controlplane.NewMetrics(prometheus.NewRegistry()), nil)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
 	server := NewServer(service)
-	request := &agentv1.RegisterNodeRequest{NodeId: "node-a", TotalCpus: 4, TotalMemoryGb: 8}
+	request := &agentv1.RegisterNodeRequest{NodeId: "node-a", PoolId: testdb.NodePoolID, TotalCpus: 4, TotalMemoryGb: 8}
 
 	response, err := server.RegisterNode(ctx, request)
 	if err != nil {
@@ -218,6 +219,7 @@ func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 	ctx := context.Background()
 	db := testdb.Open(t)
 	testdb.SeedFunctionVersion(t, db)
+	testdb.SeedNodePool(t, db)
 
 	metrics := controlplane.NewMetrics(prometheus.NewRegistry())
 	service := controlplane.NewService(controlplane.NewRuntimeState(), postgresdb.New(db), db, metrics, nil)
@@ -225,7 +227,7 @@ func newTestServer(t *testing.T) (*Server, *controlplane.Service) {
 		t.Fatal(err)
 	}
 	if _, err := service.RegisterNode(ctx, domain.Node{
-		ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8,
+		ID: "node-a", PoolID: testdb.NodePoolID, TotalCPUs: 4, TotalMemoryGB: 8,
 	}); err != nil {
 		t.Fatal(err)
 	}

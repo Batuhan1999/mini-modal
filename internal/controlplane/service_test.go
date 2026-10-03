@@ -423,7 +423,7 @@ func TestFailureBudgetCountsExecutionsNotPlacements(t *testing.T) {
 func TestRegisterNodeReturnsPersistedDrainState(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t, nil)
-	node := domain.Node{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}
+	node := domain.Node{ID: "node-a", PoolID: testdb.NodePoolID, TotalCPUs: 4, TotalMemoryGB: 8}
 
 	shouldDrain, err := service.RegisterNode(ctx, node)
 	if err != nil {
@@ -478,10 +478,11 @@ func TestServiceRejectsInvalidJobs(t *testing.T) {
 
 func TestServiceKeepsRunningJobsAfterRestart(t *testing.T) {
 	ctx := context.Background()
-	node := domain.Node{ID: "node-a", TotalCPUs: 4, TotalMemoryGB: 8}
+	node := domain.Node{ID: "node-a", PoolID: testdb.NodePoolID, TotalCPUs: 4, TotalMemoryGB: 8}
 
 	db, databaseURL := testdb.OpenWithDSN(t)
 	testdb.SeedFunctionVersion(t, db)
+	testdb.SeedNodePool(t, db)
 	service := NewService(NewRuntimeState(), postgresdb.New(db), db, newTestMetrics(), nil)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
@@ -810,12 +811,14 @@ func newTestServiceWithMetrics(t *testing.T, nodes []domain.Node, metrics *Metri
 	ctx := context.Background()
 	db := testdb.Open(t)
 	testdb.SeedFunctionVersion(t, db)
+	testdb.SeedNodePool(t, db)
 
 	service := NewService(NewRuntimeState(), postgresdb.New(db), db, metrics, nil)
 	if err := service.Initialize(ctx); err != nil {
 		t.Fatal(err)
 	}
 	for _, node := range nodes {
+		node.PoolID = testdb.NodePoolID
 		if _, err := service.RegisterNode(ctx, node); err != nil {
 			t.Fatal(err)
 		}

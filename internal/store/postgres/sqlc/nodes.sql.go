@@ -9,8 +9,20 @@ import (
 	"context"
 )
 
+const deleteNode = `-- name: DeleteNode :execrows
+DELETE FROM nodes WHERE id = $1
+`
+
+func (q *Queries) DeleteNode(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteNode, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getNode = `-- name: GetNode :one
-SELECT id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain FROM nodes WHERE id = $1
+SELECT id, pool_id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain FROM nodes WHERE id = $1
 `
 
 func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
@@ -18,6 +30,7 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 	var i Node
 	err := row.Scan(
 		&i.ID,
+		&i.PoolID,
 		&i.GpuType,
 		&i.TotalGpus,
 		&i.TotalCpus,
@@ -28,7 +41,7 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 }
 
 const listActiveNodes = `-- name: ListActiveNodes :many
-SELECT id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain FROM nodes WHERE should_drain = FALSE ORDER BY id
+SELECT id, pool_id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain FROM nodes WHERE should_drain = FALSE ORDER BY id
 `
 
 func (q *Queries) ListActiveNodes(ctx context.Context) ([]Node, error) {
@@ -42,6 +55,7 @@ func (q *Queries) ListActiveNodes(ctx context.Context) ([]Node, error) {
 		var i Node
 		if err := rows.Scan(
 			&i.ID,
+			&i.PoolID,
 			&i.GpuType,
 			&i.TotalGpus,
 			&i.TotalCpus,
@@ -62,7 +76,7 @@ func (q *Queries) ListActiveNodes(ctx context.Context) ([]Node, error) {
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain FROM nodes ORDER BY id
+SELECT id, pool_id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain FROM nodes ORDER BY id
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -76,6 +90,7 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 		var i Node
 		if err := rows.Scan(
 			&i.ID,
+			&i.PoolID,
 			&i.GpuType,
 			&i.TotalGpus,
 			&i.TotalCpus,
@@ -97,7 +112,7 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 
 const updateNodeDrain = `-- name: UpdateNodeDrain :one
 UPDATE nodes SET should_drain = $1 WHERE id = $2
-RETURNING id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain
+RETURNING id, pool_id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain
 `
 
 type UpdateNodeDrainParams struct {
@@ -110,6 +125,7 @@ func (q *Queries) UpdateNodeDrain(ctx context.Context, arg UpdateNodeDrainParams
 	var i Node
 	err := row.Scan(
 		&i.ID,
+		&i.PoolID,
 		&i.GpuType,
 		&i.TotalGpus,
 		&i.TotalCpus,
@@ -120,18 +136,20 @@ func (q *Queries) UpdateNodeDrain(ctx context.Context, arg UpdateNodeDrainParams
 }
 
 const upsertNode = `-- name: UpsertNode :one
-INSERT INTO nodes (id, gpu_type, total_gpus, total_cpus, total_memory_gb)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO nodes (id, pool_id, gpu_type, total_gpus, total_cpus, total_memory_gb)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (id) DO UPDATE SET
+    pool_id = excluded.pool_id,
     gpu_type = excluded.gpu_type,
     total_gpus = excluded.total_gpus,
     total_cpus = excluded.total_cpus,
     total_memory_gb = excluded.total_memory_gb
-RETURNING id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain
+RETURNING id, pool_id, gpu_type, total_gpus, total_cpus, total_memory_gb, should_drain
 `
 
 type UpsertNodeParams struct {
 	ID            string `json:"id"`
+	PoolID        string `json:"pool_id"`
 	GpuType       string `json:"gpu_type"`
 	TotalGpus     int64  `json:"total_gpus"`
 	TotalCpus     int64  `json:"total_cpus"`
@@ -141,6 +159,7 @@ type UpsertNodeParams struct {
 func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, error) {
 	row := q.db.QueryRowContext(ctx, upsertNode,
 		arg.ID,
+		arg.PoolID,
 		arg.GpuType,
 		arg.TotalGpus,
 		arg.TotalCpus,
@@ -149,6 +168,7 @@ func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, e
 	var i Node
 	err := row.Scan(
 		&i.ID,
+		&i.PoolID,
 		&i.GpuType,
 		&i.TotalGpus,
 		&i.TotalCpus,

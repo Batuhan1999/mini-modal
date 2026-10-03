@@ -92,6 +92,7 @@ message RegisterNodeRequest {
   int32 total_gpus = 3;
   int32 total_cpus = 4;
   int32 total_memory_gb = 5;
+  string pool_id = 6;
 }
 
 message RegisterNodeResponse {

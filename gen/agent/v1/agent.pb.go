@@ -749,6 +749,7 @@ type RegisterNodeRequest struct {
 	TotalGpus     int32                  `protobuf:"varint,3,opt,name=total_gpus,json=totalGpus,proto3" json:"total_gpus,omitempty"`
 	TotalCpus     int32                  `protobuf:"varint,4,opt,name=total_cpus,json=totalCpus,proto3" json:"total_cpus,omitempty"`
 	TotalMemoryGb int32                  `protobuf:"varint,5,opt,name=total_memory_gb,json=totalMemoryGb,proto3" json:"total_memory_gb,omitempty"`
+	PoolId        string                 `protobuf:"bytes,6,opt,name=pool_id,json=poolId,proto3" json:"pool_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -816,6 +817,13 @@ func (x *RegisterNodeRequest) GetTotalMemoryGb() int32 {
 		return x.TotalMemoryGb
 	}
 	return 0
+}
+
+func (x *RegisterNodeRequest) GetPoolId() string {
+	if x != nil {
+		return x.PoolId
+	}
+	return ""
 }
 
 type RegisterNodeResponse struct {
@@ -1090,7 +1098,7 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"\rCancelRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x18\n" +
 	"\aattempt\x18\x02 \x01(\x03R\aattempt\"\x10\n" +
-	"\x0eCancelResponse\"\xaf\x01\n" +
+	"\x0eCancelResponse\"\xc8\x01\n" +
 	"\x13RegisterNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x19\n" +
 	"\bgpu_type\x18\x02 \x01(\tR\agpuType\x12\x1d\n" +
@@ -1098,7 +1106,8 @@ const file_agent_v1_agent_proto_rawDesc = "" +
 	"total_gpus\x18\x03 \x01(\x05R\ttotalGpus\x12\x1d\n" +
 	"\n" +
 	"total_cpus\x18\x04 \x01(\x05R\ttotalCpus\x12&\n" +
-	"\x0ftotal_memory_gb\x18\x05 \x01(\x05R\rtotalMemoryGb\"9\n" +
+	"\x0ftotal_memory_gb\x18\x05 \x01(\x05R\rtotalMemoryGb\x12\x17\n" +
+	"\apool_id\x18\x06 \x01(\tR\x06poolId\"9\n" +
 	"\x14RegisterNodeResponse\x12!\n" +
 	"\fshould_drain\x18\x01 \x01(\bR\vshouldDrain\"X\n" +
 	"\x16RenewAssignmentRequest\x12>\n" +

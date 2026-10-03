@@ -286,6 +286,7 @@ func (s *Service) RegisterNode(ctx context.Context, node domain.Node) (bool, err
 
 	stored, err := s.queries.UpsertNode(ctx, postgresdb.UpsertNodeParams{
 		ID:            node.ID,
+		PoolID:        node.PoolID,
 		GpuType:       node.GPUType,
 		TotalGpus:     node.TotalGPUs,
 		TotalCpus:     node.TotalCPUs,
@@ -348,6 +349,16 @@ func (s *Service) SetNodeDrain(ctx context.Context, nodeID string, shouldDrain b
 	case s.wakeup <- struct{}{}:
 	default:
 	}
+	return nil
+}
+
+func (s *Service) UnregisterNode(ctx context.Context, nodeID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.queries.DeleteNode(ctx, nodeID); err != nil {
+		return fmt.Errorf("delete node %q: %w", nodeID, err)
+	}
+	s.runtime.ForgetNode(nodeID)
 	return nil
 }
 
@@ -829,6 +840,7 @@ func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]dom
 	for _, stored := range storedNodes {
 		nodeByID[stored.ID] = domain.Node{
 			ID:                stored.ID,
+			PoolID:            stored.PoolID,
 			GPUType:           stored.GpuType,
 			TotalGPUs:         stored.TotalGpus,
 			AvailableGPUs:     stored.TotalGpus,
@@ -1130,6 +1142,9 @@ func (s *Service) refreshMetricsLocked(ctx context.Context) error {
 func validateNode(node domain.Node) error {
 	if strings.TrimSpace(node.ID) == "" {
 		return fmt.Errorf("node ID is required")
+	}
+	if strings.TrimSpace(node.PoolID) == "" {
+		return fmt.Errorf("node pool ID is required")
 	}
 	if node.TotalGPUs < 0 {
 		return fmt.Errorf("node %q cannot have negative GPUs", node.ID)

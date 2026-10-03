@@ -155,6 +155,7 @@ func failureReasonToProto(reason domain.FailureReason) agentv1.FailureReason {
 func (c *Client) RegisterNode(ctx context.Context, node domain.Node) (bool, error) {
 	response, err := c.client.RegisterNode(ctx, &agentv1.RegisterNodeRequest{
 		NodeId:        node.ID,
+		PoolId:        node.PoolID,
 		GpuType:       node.GPUType,
 		TotalGpus:     int32(node.TotalGPUs),
 		TotalCpus:     int32(node.TotalCPUs),

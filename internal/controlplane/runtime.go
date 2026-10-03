@@ -27,6 +27,12 @@ func (s *RuntimeState) RegisterNode(nodeID string, now time.Time) {
 	s.nodeLastSeen[nodeID] = now
 }
 
+func (s *RuntimeState) ForgetNode(nodeID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.nodeLastSeen, nodeID)
+}
+
 func (s *RuntimeState) Heartbeat(nodeID string, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

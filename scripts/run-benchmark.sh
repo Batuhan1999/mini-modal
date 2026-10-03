@@ -43,6 +43,10 @@ case "${scenario}" in
         ;;
 esac
 
+case "${agent_count}" in
+    ''|*[!0-9]*) echo "agent count must be a non-negative integer" >&2; exit 2 ;;
+esac
+
 commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 git_dirty=false
 untracked_source_files="$(
@@ -94,6 +98,7 @@ go build -o "${bin_dir}/simulator" ./cmd/simulator
 "${bin_dir}/controlplane" \
     -database-url "${database_url}" \
     -db-max-open-conns "${DB_MAX_OPEN_CONNS:-20}" \
+    -auto-provision=false \
     -agent-binary "${bin_dir}/agent" \
     >"${run_dir}/controlplane.log" 2>&1 &
 control_plane_pid=$!
@@ -112,11 +117,14 @@ if [ "${ready}" != true ]; then
     exit 1
 fi
 
+psql -X -v ON_ERROR_STOP=1 -c "INSERT INTO node_pools (id, gpu_type, gpus_per_node, cpus_per_node, memory_gb_per_node, min_nodes, max_nodes, desired_nodes, idle_timeout_seconds) VALUES ('benchmark', '', 0, 8, 16, 0, 100000, ${agent_count}, 0)"
+
 index=1
 while [ "${index}" -le "${agent_count}" ]; do
     node_id="benchmark-node-$(printf '%02d' "${index}")"
     "${bin_dir}/agent" \
         -node-id "${node_id}" \
+        -pool-id benchmark \
         -executor "${executor}" \
         -cpus 8 \
         -memory-gb 16 \

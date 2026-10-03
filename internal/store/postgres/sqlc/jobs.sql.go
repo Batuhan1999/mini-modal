@@ -495,6 +495,54 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]ListActiveJobsRow, erro
 	return items, nil
 }
 
+const listCapacityDemand = `-- name: ListCapacityDemand :many
+SELECT j.id, j.priority, v.gpu_type, v.gpus, v.cpus, v.memory_gb
+FROM jobs AS j
+JOIN function_versions AS v ON v.id = j.function_version_id
+WHERE j.status IN ('pending', 'unschedulable')
+  AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
+ORDER BY j.priority DESC, j.id
+`
+
+type ListCapacityDemandRow struct {
+	ID       string `json:"id"`
+	Priority int64  `json:"priority"`
+	GpuType  string `json:"gpu_type"`
+	Gpus     int64  `json:"gpus"`
+	Cpus     int64  `json:"cpus"`
+	MemoryGb int64  `json:"memory_gb"`
+}
+
+func (q *Queries) ListCapacityDemand(ctx context.Context) ([]ListCapacityDemandRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCapacityDemand)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCapacityDemandRow
+	for rows.Next() {
+		var i ListCapacityDemandRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Priority,
+			&i.GpuType,
+			&i.Gpus,
+			&i.Cpus,
+			&i.MemoryGb,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listJobs = `-- name: ListJobs :many
 SELECT id, priority, status, node_id, attempt, lease_expires_at, updated_at, next_attempt_at, last_error, execution_attempts, function_version_id, input_json, created_at
 FROM jobs

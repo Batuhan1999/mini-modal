@@ -4,6 +4,7 @@ import "net/http"
 
 type nodeResponse struct {
 	ID                string `json:"id"`
+	PoolID            string `json:"pool_id"`
 	GPUType           string `json:"gpu_type"`
 	TotalGPUs         int64  `json:"total_gpus"`
 	AvailableGPUs     int64  `json:"available_gpus"`
@@ -25,6 +26,7 @@ func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	for _, node := range nodes {
 		response = append(response, nodeResponse{
 			ID:                node.ID,
+			PoolID:            node.PoolID,
 			GPUType:           node.GPUType,
 			TotalGPUs:         node.TotalGPUs,
 			AvailableGPUs:     node.AvailableGPUs,

@@ -76,9 +76,23 @@ type JobResult struct {
 
 type Node struct {
 	ID            string `json:"id"`
+	PoolID        string `json:"pool_id"`
 	GpuType       string `json:"gpu_type"`
 	TotalGpus     int64  `json:"total_gpus"`
 	TotalCpus     int64  `json:"total_cpus"`
 	TotalMemoryGb int64  `json:"total_memory_gb"`
 	ShouldDrain   bool   `json:"should_drain"`
+}
+
+type NodePool struct {
+	ID                 string `json:"id"`
+	GpuType            string `json:"gpu_type"`
+	GpusPerNode        int64  `json:"gpus_per_node"`
+	CpusPerNode        int64  `json:"cpus_per_node"`
+	MemoryGbPerNode    int64  `json:"memory_gb_per_node"`
+	MinNodes           int64  `json:"min_nodes"`
+	MaxNodes           int64  `json:"max_nodes"`
+	DesiredNodes       int64  `json:"desired_nodes"`
+	IdleTimeoutSeconds int64  `json:"idle_timeout_seconds"`
+	AutoscaleEnabled   bool   `json:"autoscale_enabled"`
 }

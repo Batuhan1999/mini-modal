@@ -272,6 +272,7 @@ func (s *Server) RegisterNode(ctx context.Context, req *agentv1.RegisterNodeRequ
 
 	node := domain.Node{
 		ID:            nodeID,
+		PoolID:        strings.TrimSpace(req.GetPoolId()),
 		GPUType:       strings.TrimSpace(req.GetGpuType()),
 		TotalGPUs:     int64(req.GetTotalGpus()),
 		TotalCPUs:     int64(req.GetTotalCpus()),

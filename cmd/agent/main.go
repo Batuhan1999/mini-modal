@@ -25,6 +25,7 @@ import (
 
 func main() {
 	nodeID := flag.String("node-id", "", "ID of the node this agent represents")
+	poolID := flag.String("pool-id", "", "node pool this agent belongs to")
 	controlPlaneAddress := flag.String(
 		"control-plane-address",
 		"localhost:9090",
@@ -41,6 +42,10 @@ func main() {
 	*nodeID = strings.TrimSpace(*nodeID)
 	if *nodeID == "" {
 		log.Fatal("-node-id is required")
+	}
+	*poolID = strings.TrimSpace(*poolID)
+	if *poolID == "" {
+		log.Fatal("-pool-id is required")
 	}
 	if *totalGPUs < 0 {
 		log.Fatal("-gpus cannot be negative")
@@ -91,6 +96,7 @@ func main() {
 	client := agentgrpc.NewClient(conn)
 	node := domain.Node{
 		ID:            *nodeID,
+		PoolID:        *poolID,
 		GPUType:       strings.TrimSpace(*gpuType),
 		TotalGPUs:     *totalGPUs,
 		TotalCPUs:     *totalCPUs,
