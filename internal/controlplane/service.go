@@ -126,9 +126,7 @@ func (s *Service) Cancel(ctx context.Context, assignment domain.Assignment) erro
 	s.metrics.RecordJobFinished(job.ID, string(jobmodel.Cancelled), now)
 	select {
 	case s.wakeup <- struct{}{}:
-		// Notification was queued.
 	default:
-		// Channel is already full; a notification is already pending.
 	}
 	return nil
 }
@@ -174,12 +172,10 @@ func (s *Service) Run(ctx context.Context) {
 				return
 
 			case <-batchTimer.C:
-				// Batching window finished.
 			}
 			s.mu.Lock()
 			select {
 			case <-s.wakeup:
-				// Coalesced notification consumed.
 			default:
 			}
 
@@ -276,9 +272,7 @@ func (s *Service) CancelJob(ctx context.Context, jobID string) error {
 	if result.schedule {
 		select {
 		case s.wakeup <- struct{}{}:
-			// Notification was queued.
 		default:
-			// Channel is already full; a notification is already pending.
 		}
 		return nil
 	}
@@ -311,9 +305,7 @@ func (s *Service) RegisterNode(ctx context.Context, node domain.Node) (bool, err
 	}
 	select {
 	case s.wakeup <- struct{}{}:
-		// Notification was queued.
 	default:
-		// Channel is already full; a notification is already pending.
 	}
 	return stored.ShouldDrain, nil
 }
@@ -356,9 +348,7 @@ func (s *Service) SetNodeDrain(ctx context.Context, nodeID string, shouldDrain b
 	}
 	select {
 	case s.wakeup <- struct{}{}:
-		// Notification was queued.
 	default:
-		// Channel is already full; a notification is already pending.
 	}
 	return nil
 }
@@ -434,9 +424,7 @@ func (s *Service) Submit(ctx context.Context, spec jobmodel.Spec) (postgresdb.Jo
 	s.metrics.RecordJobSubmitted(params.ID, now)
 	select {
 	case s.wakeup <- struct{}{}:
-		// Notification was queued.
 	default:
-		// Channel is already full; a notification is already pending.
 	}
 	return job, nil
 }

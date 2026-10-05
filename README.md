@@ -26,6 +26,9 @@ provisioner that starts agent **processes**, not VMs.
 The [high-level design](docs/architecture/README.md) has a diagram and links
 to the low-level designs. The [Python SDK guide](sdk/python/README.md) shows
 `@app.function`, `spawn()`, and `remote()`.
+The [story outline](docs/blog/story-outline.md) follows one invocation through
+submission, scheduling, capacity, provisioning, execution, and recovery. Its
+diagrams include editable Excalidraw scenes and a browser walkthrough.
 
 ## Run locally
 
@@ -72,18 +75,10 @@ PostgreSQL URL. Those tests create isolated schemas; without the variable they
 are skipped. The Python command also needs the SDK dependency installed
 (`python3 -m pip install -e sdk/python`).
 
-The fixed-container benchmark harness has separate resource limits for the
-application and PostgreSQL. It resets **only** its benchmark database. See
-[methodology](docs/benchmarking.md) and [results](benchmarks/results/README.md).
-Do not compare an admission-only run with an end-to-end run: they measure
-different paths.
-The [hello-world process benchmark](docs/benchmark-hello-process-2026-10-03.md)
-is the main end-to-end measurement: real agent processes, a short Python
-function, and CPU/memory traces for the app and PostgreSQL. The accompanying
-[engineering write-up](docs/blog/a-hello-world-function-found-my-scheduler.md)
-explains the queue-size bottleneck. Older [baseline](docs/benchmark-2026-10-03.md)
-and [claim-polling](docs/benchmark-claim-polling-2026-10-03.md) reports remain
-as historical diagnostics.
+The [benchmark methodology](docs/benchmarking.md) and [end-to-end report](docs/benchmark-hello-process-2026-10-03.md)
+record a bounded-container hello-world run, including incomplete runs and
+resource traces. The numbers describe this setup, not a production capacity
+claim. Raw results are [indexed here](benchmarks/results/README.md).
 
 ## Where the code lives
 

@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1360 790" role="img" aria-labelledby="title description">
+  <title id="title">Mini-modal: one invocation, three control loops</title>
+  <desc id="description">The Python SDK submits through HTTP to a control plane containing admission, scheduler, capacity manager, and provisioner. PostgreSQL stores job and desired node state. The provisioner starts agent processes, which claim over gRPC, use an S3 artifact, and run Python in Docker.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#345b74" stroke-width="1.7"/></marker>
+    <style>
+      .bg{fill:#f8f7f3}.ink{fill:#173143}.muted{fill:#687a83}.blue{fill:#e7eff1;stroke:#345b74}.amber{fill:#fff0d8;stroke:#bf7a3b}.green{fill:#e7efdc;stroke:#64834c}.frame{fill:#fffdfa;stroke:#c5d1d2}.line{fill:none;stroke:#345b74;stroke-width:2;marker-end:url(#arrow)}.dash{fill:none;stroke:#9a9e91;stroke-width:1.8;stroke-dasharray:6 6;marker-end:url(#arrow)}.rule{stroke:#c5d1d2}.mono{font-family:Menlo,Consolas,monospace}.sans{font-family:Inter,Arial,sans-serif}.title{font-size:31px;font-weight:700}.label{font-size:21px;font-weight:650}.small{font-size:16px}.tag{font-size:13px;letter-spacing:1.8px;font-weight:700}.node{stroke-width:1.5;rx:8}
+    </style>
+  </defs>
+  <rect class="bg" width="1360" height="790"/>
+  <text x="60" y="66" class="sans title ink">One function call, three control loops</text>
+  <text x="60" y="98" class="sans small muted">A request becomes durable work before a worker exists.</text>
+  <line x1="60" y1="122" x2="1300" y2="122" class="rule"/>
+
+  <rect x="60" y="292" width="195" height="132" class="node blue"/>
+  <text x="82" y="331" class="mono tag ink">CLIENT</text>
+  <text x="82" y="369" class="sans label ink">Python SDK</text>
+  <text x="82" y="396" class="sans small muted">deploy · spawn · get</text>
+
+  <rect x="319" y="153" width="648" height="421" rx="13" class="frame" stroke-width="1.6"/>
+  <text x="345" y="188" class="mono tag muted">ONE CONTROL-PLANE PROCESS</text>
+
+  <rect x="345" y="211" width="275" height="132" class="node blue"/>
+  <text x="365" y="244" class="mono tag ink">HTTP ADMISSION</text>
+  <text x="365" y="279" class="sans label ink">Submission</text>
+  <text x="365" y="309" class="sans small muted">commit pending job</text>
+
+  <rect x="667" y="211" width="275" height="132" class="node blue"/>
+  <text x="687" y="244" class="mono tag ink">PLACEMENT LOOP</text>
+  <text x="687" y="279" class="sans label ink">Scheduler</text>
+  <text x="687" y="309" class="sans small muted">reserve healthy node</text>
+
+  <rect x="345" y="397" width="275" height="132" class="node blue"/>
+  <text x="365" y="430" class="mono tag ink">CAPACITY LOOP</text>
+  <text x="365" y="465" class="sans label ink">Capacity manager</text>
+  <text x="365" y="495" class="sans small muted">set desired node count</text>
+
+  <rect x="667" y="397" width="275" height="132" class="node blue"/>
+  <text x="687" y="430" class="mono tag ink">RECONCILIATION LOOP</text>
+  <text x="687" y="465" class="sans label ink">Provisioner</text>
+  <text x="687" y="495" class="sans small muted">start · drain agents</text>
+
+  <rect x="1036" y="218" width="264" height="148" class="node green"/>
+  <text x="1058" y="254" class="mono tag ink">DATA PLANE</text>
+  <text x="1058" y="291" class="sans label ink">Node agent</text>
+  <text x="1058" y="320" class="sans small muted">claim · renew · report</text>
+  <text x="1058" y="343" class="sans small muted">gRPC to control plane</text>
+
+  <rect x="1036" y="418" width="264" height="111" class="node green"/>
+  <text x="1058" y="454" class="mono tag ink">EXECUTION</text>
+  <text x="1058" y="491" class="sans label ink">Docker / Python</text>
+
+  <rect x="345" y="637" width="391" height="103" class="node amber"/>
+  <text x="368" y="673" class="mono tag ink">SOURCE OF TRUTH</text>
+  <text x="368" y="705" class="sans label ink">PostgreSQL</text>
+  <text x="540" y="706" class="sans small muted">jobs · leases · desired nodes</text>
+
+  <rect x="862" y="637" width="438" height="103" class="node amber"/>
+  <text x="885" y="673" class="mono tag ink">FUNCTION ARCHIVES</text>
+  <text x="885" y="705" class="sans label ink">S3-compatible store</text>
+
+  <path d="M255 358 H344" class="line"/>
+  <text x="271" y="338" class="mono tag muted">HTTP</text>
+  <path d="M942 463 H995 V293 H1035" class="line"/>
+  <path d="M1168 366 V417" class="line"/>
+  <path d="M548 574 V636" class="line"/>
+  <path d="M817 574 V607 H675 V636" class="dash"/>
+  <path d="M1135 529 V636" class="dash"/>
+  <text x="60" y="765" class="sans small muted">Solid arrows: request or action. Dashed arrows: independent reconciliation / shared state. Wakeups are hints, not a second queue.</text>
+</svg>

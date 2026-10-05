@@ -218,7 +218,8 @@ class AppTests(unittest.TestCase):
         app = App("demo", self.client)
         app.function()(_sdk_test_greet)
 
-        with patch.object(self.client, "upload_function", side_effect=RuntimeError("upload failed")) as upload:
+        with patch.object(self.client, "get_function_versions", return_value=[]), \
+                patch.object(self.client, "upload_function", side_effect=RuntimeError("upload failed")) as upload:
             with self.assertRaisesRegex(RuntimeError, "upload failed"):
                 app.deploy()
 

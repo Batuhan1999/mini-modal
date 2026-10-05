@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini-modal — from submission to execution</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #f8f7f3; color: #173143; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1440px; margin: auto; padding: 36px clamp(18px, 5vw, 72px) 44px; }
+    .eyebrow { color: #b26730; font: 700 12px/1.3 ui-monospace, Menlo, monospace; letter-spacing: .18em; }
+    h1 { max-width: 900px; margin: 12px 0 9px; font-size: clamp(28px, 4vw, 48px); letter-spacing: -.045em; line-height: 1.08; }
+    .lead { margin: 0 0 24px; max-width: 750px; color: #647780; font-size: 16px; line-height: 1.5; }
+    .canvas { overflow-x: auto; border: 1px solid #cad4d2; border-radius: 12px; background: #fffdfa; }
+    svg { display: block; width: 100%; min-width: 850px; }
+    .frame { fill: #fffdfa; stroke: #c5d1d2; stroke-width: 1.5; }
+    .client, .control { fill: #e7eff1; stroke: #345b74; }
+    .store { fill: #fff0d8; stroke: #bf7a3b; }
+    .worker { fill: #e7efdc; stroke: #64834c; }
+    .node { opacity: .32; transition: opacity .5s, transform .5s; transform-box: fill-box; transform-origin: center; }
+    .node.active { opacity: 1; transform: translateY(-4px); }
+    .node rect { stroke-width: 1.5; }
+    .line { fill: none; stroke: #345b74; stroke-width: 2; marker-end: url(#arrow); }
+    .edge { opacity: .08; transition: opacity .5s; }
+    .edge.active { opacity: 1; stroke-dasharray: 10 8; animation: flow .9s linear infinite; }
+    @keyframes flow { to { stroke-dashoffset: -18; } }
+    .tag { fill: #345b74; font: 700 12px ui-monospace, Menlo, monospace; letter-spacing: .12em; }
+    .name { fill: #173143; font: 650 20px Inter, Arial, sans-serif; }
+    .detail { fill: #60747e; font: 15px Inter, Arial, sans-serif; }
+    .boundary { fill: #657680; font: 700 12px ui-monospace, Menlo, monospace; letter-spacing: .16em; }
+    .below { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 24px 2px 8px; }
+    .story { max-width: 760px; min-height: 96px; }
+    .index { color: #b26730; font: 700 13px ui-monospace, Menlo, monospace; letter-spacing: .12em; }
+    h2 { margin: 7px 0 7px; font-size: clamp(21px, 2.4vw, 28px); letter-spacing: -.03em; }
+    .story p { margin: 0; color: #546a75; line-height: 1.55; }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; padding-top: 4px; }
+    button { cursor: pointer; border: 1px solid #345b74; border-radius: 5px; background: transparent; color: #173143; padding: 11px 14px; font: 700 12px ui-monospace, Menlo, monospace; }
+    button:hover, button:focus-visible { background: #e7eff1; outline-color: #b26730; }
+    button:disabled { cursor: not-allowed; opacity: .42; }
+    .note { max-width: 900px; padding-top: 20px; border-top: 1px solid #cad4d2; color: #697b83; font-size: 13px; line-height: 1.5; }
+    @media (max-width: 800px) { .below { display: block; } .controls { justify-content: flex-start; padding-top: 18px; } }
+    @media (prefers-reduced-motion: reduce) { .node, .edge { transition: none; } .edge.active { animation: none; stroke-dasharray: none; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">MINI-MODAL / SYSTEM WALKTHROUGH</div>
+  <h1>Accepting a call is not running it.</h1>
+  <p class="lead">Follow one invocation through the durable job, independent control loops, and a worker attempt.</p>
+
+  <div class="canvas">
+    <svg viewBox="0 0 1320 750" role="img" aria-labelledby="map-title map-desc">
+      <title id="map-title">Mini-modal architecture walkthrough</title>
+      <desc id="map-desc">The Python SDK submits to a control plane. PostgreSQL holds durable state. Capacity management, provisioning, and scheduling act independently. An agent claims work, fetches an archive, and runs Python.</desc>
+      <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 9 5 1 9" fill="none" stroke="#345b74" stroke-width="1.7"/></marker></defs>
+
+      <rect x="295" y="90" width="650" height="458" rx="12" class="frame"/>
+      <text x="322" y="125" class="boundary">ONE CONTROL-PLANE PROCESS</text>
+
+      <path id="sdk-submit" class="edge line" d="M246 340 H273 V231 H322"/>
+      <path id="submit-pg" class="edge line" d="M453 290 V574"/>
+      <path id="pg-capacity" class="edge line" d="M469 574 V467"/>
+      <path id="pg-provisioner" class="edge line" d="M675 619 H797 V467"/>
+      <path id="provisioner-agent" class="edge line" d="M925 408 H975 V305 H1004"/>
+      <path id="pg-scheduler" class="edge line" d="M600 574 H781 V290"/>
+      <path id="agent-archive" class="edge line" d="M1124 365 V620 H842"/>
+      <path id="agent-docker" class="edge line" d="M1124 365 V404"/>
+
+      <g id="sdk" class="node"><rect x="45" y="293" width="200" height="96" rx="7" class="client"/><text x="66" y="324" class="tag">CLIENT</text><text x="66" y="355" class="name">Python SDK</text><text x="66" y="378" class="detail">spawn / remote</text></g>
+      <g id="submit" class="node"><rect x="322" y="170" width="260" height="120" rx="7" class="control"/><text x="343" y="203" class="tag">HTTP ADMISSION</text><text x="343" y="237" class="name">Submission</text><text x="343" y="263" class="detail">commit, then reply</text></g>
+      <g id="scheduler" class="node"><rect x="650" y="170" width="275" height="120" rx="7" class="control"/><text x="671" y="203" class="tag">PLACEMENT LOOP</text><text x="671" y="237" class="name">Scheduler</text><text x="671" y="263" class="detail">pending → assigned</text></g>
+      <g id="capacity" class="node"><rect x="322" y="347" width="260" height="120" rx="7" class="control"/><text x="343" y="380" class="tag">CAPACITY LOOP</text><text x="343" y="414" class="name">Capacity manager</text><text x="343" y="440" class="detail">plan desired nodes</text></g>
+      <g id="provisioner" class="node"><rect x="650" y="347" width="275" height="120" rx="7" class="control"/><text x="671" y="380" class="tag">RECONCILER</text><text x="671" y="414" class="name">Provisioner</text><text x="671" y="440" class="detail">start / drain processes</text></g>
+      <g id="agent" class="node"><rect x="1004" y="245" width="270" height="120" rx="7" class="worker"/><text x="1026" y="278" class="tag">DATA PLANE</text><text x="1026" y="313" class="name">Node agent</text><text x="1026" y="340" class="detail">claim · renew · report</text></g>
+      <g id="docker" class="node"><rect x="1004" y="405" width="270" height="90" rx="7" class="worker"/><text x="1026" y="440" class="tag">EXECUTE</text><text x="1026" y="470" class="name">Docker / Python</text></g>
+      <g id="pg" class="node"><rect x="322" y="574" width="384" height="94" rx="7" class="store"/><text x="343" y="609" class="tag">DURABLE STATE</text><text x="343" y="640" class="name">PostgreSQL</text><text id="pg-detail" x="500" y="641" class="detail">job: pending</text></g>
+      <g id="archive" class="node"><rect x="842" y="574" width="432" height="94" rx="7" class="store"/><text x="863" y="609" class="tag">IMMUTABLE ARTIFACT</text><text x="863" y="640" class="name">S3-compatible store</text></g>
+    </svg>
+  </div>
+
+  <div class="below">
+    <div class="story" aria-live="polite" aria-atomic="true">
+      <div class="index" id="counter">01 / 04</div>
+      <h2 id="step-title">Commit the job</h2>
+      <p id="step-copy">The HTTP response acknowledges a stored job, not a running container. PostgreSQL is the recoverable queue; the wakeup channel is only a hint.</p>
+    </div>
+    <div class="controls" aria-label="Walkthrough controls">
+      <button id="previous" type="button" aria-label="Previous step">← Previous</button>
+      <button id="play" type="button" aria-label="Pause animation">Pause</button>
+      <button id="next" type="button" aria-label="Next step">Next →</button>
+    </div>
+  </div>
+  <p class="note">The stages are an explanation, not a strict execution order. Capacity and scheduling reconcile independently; a job can be placed immediately when a healthy node already exists. For a static blog image, use <a href="../assets/system-map.svg">the SVG map</a>.</p>
+</main>
+<script>
+  const stages = [
+    { title: "Commit the job", copy: "The HTTP response acknowledges a stored job, not a running container. PostgreSQL is the recoverable queue; the wakeup channel is only a hint.", nodes: ["sdk", "submit", "pg"], edges: ["sdk-submit", "submit-pg"], state: "job: pending" },
+    { title: "Ask for capacity", copy: "If existing nodes cannot absorb the work, the capacity manager writes a desired node count. The provisioner starts a local agent process; registration is the observed state.", nodes: ["pg", "capacity", "provisioner", "agent"], edges: ["pg-capacity", "pg-provisioner", "provisioner-agent"], state: "desired nodes: 2" },
+    { title: "Place the job", copy: "The scheduler reads eligible pending work, checks healthy-node resources, and records an assignment. It chooses a node; it does not create one.", nodes: ["pg", "scheduler", "agent"], edges: ["pg-scheduler"], state: "job: assigned" },
+    { title: "Execute an attempt", copy: "The agent claims over gRPC, fetches the version archive, runs Python, streams logs, renews its lease, and reports the result. A lost lease can cause another attempt.", nodes: ["agent", "archive", "docker", "pg"], edges: ["agent-archive", "agent-docker"], state: "job: running" }
+  ];
+  const nodeIds = ["sdk", "submit", "scheduler", "capacity", "provisioner", "agent", "docker", "pg", "archive"];
+  const edgeIds = ["sdk-submit", "submit-pg", "pg-capacity", "pg-provisioner", "provisioner-agent", "pg-scheduler", "agent-archive", "agent-docker"];
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let current = 0;
+  let timer = null;
+
+  function render() {
+    const stage = stages[current];
+    for (const id of nodeIds) document.getElementById(id).classList.toggle("active", stage.nodes.includes(id));
+    for (const id of edgeIds) document.getElementById(id).classList.toggle("active", stage.edges.includes(id));
+    document.getElementById("counter").textContent = `${String(current + 1).padStart(2, "0")} / 04`;
+    document.getElementById("step-title").textContent = stage.title;
+    document.getElementById("step-copy").textContent = stage.copy;
+    document.getElementById("pg-detail").textContent = stage.state;
+    document.getElementById("previous").disabled = current === 0;
+  }
+
+  function pause() {
+    if (timer !== null) window.clearInterval(timer);
+    timer = null;
+    const button = document.getElementById("play");
+    button.textContent = "Play";
+    button.setAttribute("aria-label", "Play animation");
+  }
+
+  function play() {
+    if (timer !== null || reduceMotion.matches) return;
+    timer = window.setInterval(() => { current = (current + 1) % stages.length; render(); }, 3600);
+    const button = document.getElementById("play");
+    button.textContent = "Pause";
+    button.setAttribute("aria-label", "Pause animation");
+  }
+
+  document.getElementById("previous").addEventListener("click", () => { pause(); current = Math.max(0, current - 1); render(); });
+  document.getElementById("next").addEventListener("click", () => { pause(); current = (current + 1) % stages.length; render(); });
+  document.getElementById("play").addEventListener("click", () => { if (timer === null) play(); else pause(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) pause(); });
+  reduceMotion.addEventListener("change", () => { if (reduceMotion.matches) pause(); });
+  render();
+  if (reduceMotion.matches) pause(); else play();
+</script>
+</body>
+</html>
