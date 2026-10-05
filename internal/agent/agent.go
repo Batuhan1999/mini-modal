@@ -26,6 +26,8 @@ type ControlPlane interface {
 	StreamLogs(ctx context.Context, chunks <-chan domain.LogStream) error
 }
 
+const DefaultClaimInterval = 50 * time.Millisecond
+
 type Agent struct {
 	nodeID        string
 	controlPlane  ControlPlane
@@ -36,7 +38,7 @@ type Agent struct {
 
 func New(nodeID string, controlPlane ControlPlane, executor executor.Executor, pollInterval time.Duration) *Agent {
 	if pollInterval <= 0 {
-		pollInterval = time.Second
+		pollInterval = DefaultClaimInterval
 	}
 
 	return &Agent{

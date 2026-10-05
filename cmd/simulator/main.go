@@ -18,6 +18,7 @@ import (
 
 func main() {
 	config := simulator.Config{}
+	flag.StringVar(&config.Workload, "workload", "sleep", "function workload: sleep or hello")
 	flag.StringVar(&config.BaseURL, "base-url", "http://localhost:8080", "control-plane HTTP base URL")
 	flag.IntVar(&config.Jobs, "jobs", 100, "number of jobs to submit")
 	flag.Float64Var(&config.Rate, "rate", 10, "submissions per second; 0 submits a burst")

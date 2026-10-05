@@ -15,8 +15,9 @@ import (
 
 	agentv1 "mini-modal/gen/agent/v1"
 	"mini-modal/internal/artifact"
+	"mini-modal/internal/capacity"
 	"mini-modal/internal/controlplane"
-	"mini-modal/internal/devcluster"
+	"mini-modal/internal/provisioner"
 	"mini-modal/internal/store/postgres"
 	postgresdb "mini-modal/internal/store/postgres/sqlc"
 	"mini-modal/internal/transport/agentgrpc"
@@ -29,11 +30,18 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Fatalf("load .env: %v", err)
+		return fmt.Errorf("load .env: %w", err)
 	}
 	databaseURL := flag.String("database-url", os.Getenv("DATABASE_URL"), "Postgres connection URL")
 	dbMaxOpenConns := flag.Int("db-max-open-conns", 20, "maximum number of open Postgres connections")
+	autoProvision := flag.Bool("auto-provision", true, "run the local capacity manager and provisioner")
 	agentBinary := flag.String("agent-binary", "tmp/agent", "path to the local development agent binary")
 	agentControlPlaneAddress := flag.String(
 		"agent-control-plane-address",
@@ -47,11 +55,16 @@ func main() {
 
 	db, err := postgres.Open(ctx, *databaseURL, *dbMaxOpenConns)
 	if err != nil {
-		log.Fatalf("failed to open database: %v", err)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
 	queries := postgresdb.New(db)
+	if *autoProvision {
+		if err := queries.EnsureLocalNodePool(ctx); err != nil {
+			return fmt.Errorf("initialize local node pool: %w", err)
+		}
+	}
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewGoCollector(),
@@ -66,24 +79,21 @@ func main() {
 		Bucket:    os.Getenv("S3_BUCKET"),
 	})
 	if err != nil {
-		log.Fatalf("failed to configure artifact storage: %v", err)
+		return fmt.Errorf("configure artifact storage: %w", err)
 	}
 	service := controlplane.NewService(controlplane.NewRuntimeState(), queries, db, metrics, artifactStore)
 	if err := service.Initialize(ctx); err != nil {
-		log.Fatalf("failed to initialize control plane: %v", err)
+		return fmt.Errorf("initialize control plane: %w", err)
 	}
-	localAgents := devcluster.New(ctx, *agentBinary, *agentControlPlaneAddress)
-	defer localAgents.Stop()
 	httpServer := &http.Server{
 		Addr:              ":8080",
-		Handler:           httpapi.NewServer(service, localAgents, registry),
+		Handler:           httpapi.NewServer(service, registry),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	grpcListener, err := net.Listen("tcp", ":9090")
 	if err != nil {
-		fmt.Println("failed to listen for gRPC:", err)
-		return
+		return fmt.Errorf("listen for gRPC: %w", err)
 	}
 	grpcServer := grpc.NewServer()
 	defer grpcServer.GracefulStop()
@@ -106,11 +116,23 @@ func main() {
 	}()
 
 	go service.Run(ctx)
+	var provisionerDone chan struct{}
+	if *autoProvision {
+		localAgents := provisioner.New(ctx, *agentBinary, *agentControlPlaneAddress, queries, service)
+		capacityManager := capacity.New(queries, service.NodeHealthy)
+		go capacityManager.Run(ctx)
+		provisionerDone = make(chan struct{})
+		go func() {
+			defer close(provisionerDone)
+			localAgents.Run(ctx)
+		}()
+	}
 
+	var runErr error
 	select {
 	case <-ctx.Done():
 	case err := <-serverErrors:
-		fmt.Println("server error:", err)
+		runErr = err
 		stop()
 	}
 
@@ -118,7 +140,10 @@ func main() {
 	defer cancelShutdown()
 
 	if err := httpServer.Shutdown(shutdownContext); err != nil {
-		fmt.Println("HTTP server shutdown error:", err)
+		runErr = errors.Join(runErr, fmt.Errorf("shut down HTTP server: %w", err))
 	}
-
+	if provisionerDone != nil {
+		<-provisionerDone
+	}
+	return runErr
 }

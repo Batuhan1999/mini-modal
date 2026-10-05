@@ -1,0 +1,10 @@
+{
+  "cpu_limit": "200000 100000",
+  "memory_limit_bytes": "2147483648",
+  "started_unix_ms": 1791067568678,
+  "ended_unix_ms": 1791067968844,
+  "cpu_usage_usec": 42606720,
+  "cpu_throttled_usec": 0,
+  "memory_peak_bytes": 85671936,
+  "oom_kills": 0
+}

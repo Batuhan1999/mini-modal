@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 560" role="img" aria-labelledby="title desc">
+  <title id="title">Eight agent claim loops form a throughput gate</title>
+  <desc id="desc">A burst of 2048 pending hello-world jobs reaches eight agents. Each agent asks for at most one job every 50 milliseconds. That gives a nominal maximum of 160 starts per second, close to the 157 completed jobs per second measured across three runs. The diagram is schematic, not a sampled time series.</desc>
+  <defs>
+    <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#c6d5e6" stroke-width="1"/></pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#456b98" stroke-width="1.5"/></marker>
+    <style>
+      .bg{fill:#fbfaf7}.ink{fill:#273746}.muted{fill:#64717b}.orange{fill:#c66c36}.frame{fill:#fff;stroke:#456b98;stroke-width:1.4}.store{fill:url(#hatch);stroke:#456b98;stroke-width:1.4}.line{fill:none;stroke:#456b98;stroke-width:1.5;marker-end:url(#arrow)}.track{stroke:#a7bed6;stroke-width:1.2}.tick{fill:#fff;stroke:#456b98;stroke-width:1.5}.mono{font-family:Menlo,Consolas,monospace}.heading{font-size:23px;font-weight:700}.label{font-size:17px;font-weight:700}.small{font-size:13px}.micro{font-size:11px;letter-spacing:1.3px}.divider{stroke:#d8dedf;stroke-width:1}
+    </style>
+  </defs>
+  <rect class="bg" width="1160" height="560"/>
+  <text x="46" y="48" class="mono heading ink">THE 50 MS GATE</text>
+  <text x="46" y="75" class="mono small muted">The tiny function is fast. Starting the next function is rate-limited.</text>
+  <line x1="46" y1="94" x2="1114" y2="94" class="divider"/>
+
+  <text x="46" y="130" class="mono micro orange">BURST</text>
+  <rect x="46" y="153" width="229" height="286" rx="3" class="store"/>
+  <text x="66" y="191" class="mono label ink">2,048 jobs</text>
+  <text x="66" y="219" class="mono small ink">pending in Postgres</text>
+  <g fill="#fff" stroke="#456b98" stroke-width="1.2">
+    <rect x="68" y="260" width="36" height="26"/><rect x="114" y="260" width="36" height="26"/><rect x="160" y="260" width="36" height="26"/><rect x="206" y="260" width="36" height="26"/>
+    <rect x="68" y="298" width="36" height="26"/><rect x="114" y="298" width="36" height="26"/><rect x="160" y="298" width="36" height="26"/><rect x="206" y="298" width="36" height="26"/>
+    <rect x="68" y="336" width="36" height="26"/><rect x="114" y="336" width="36" height="26"/><rect x="160" y="336" width="36" height="26"/><rect x="206" y="336" width="36" height="26"/>
+  </g>
+  <text x="66" y="407" class="mono small muted">one function version</text>
+
+  <path d="M276 296 H340" class="line"/>
+  <text x="342" y="130" class="mono micro orange">CLAIM LOOP / EIGHT AGENTS</text>
+  <rect x="341" y="153" width="443" height="286" rx="3" class="frame"/>
+  <text x="361" y="184" class="mono small muted">one claim per tick, per agent</text>
+  <g class="mono small muted">
+    <text x="363" y="221">01</text><text x="363" y="249">02</text><text x="363" y="277">03</text><text x="363" y="305">04</text>
+    <text x="363" y="333">05</text><text x="363" y="361">06</text><text x="363" y="389">07</text><text x="363" y="417">08</text>
+  </g>
+  <g class="track">
+    <line x1="398" y1="217" x2="751" y2="217"/><line x1="398" y1="245" x2="751" y2="245"/><line x1="398" y1="273" x2="751" y2="273"/><line x1="398" y1="301" x2="751" y2="301"/>
+    <line x1="398" y1="329" x2="751" y2="329"/><line x1="398" y1="357" x2="751" y2="357"/><line x1="398" y1="385" x2="751" y2="385"/><line x1="398" y1="413" x2="751" y2="413"/>
+  </g>
+  <g class="tick">
+    <circle cx="426" cy="217" r="6"/><circle cx="489" cy="217" r="6"/><circle cx="552" cy="217" r="6"/><circle cx="615" cy="217" r="6"/><circle cx="678" cy="217" r="6"/>
+    <circle cx="426" cy="245" r="6"/><circle cx="489" cy="245" r="6"/><circle cx="552" cy="245" r="6"/><circle cx="615" cy="245" r="6"/><circle cx="678" cy="245" r="6"/>
+    <circle cx="426" cy="273" r="6"/><circle cx="489" cy="273" r="6"/><circle cx="552" cy="273" r="6"/><circle cx="615" cy="273" r="6"/><circle cx="678" cy="273" r="6"/>
+    <circle cx="426" cy="301" r="6"/><circle cx="489" cy="301" r="6"/><circle cx="552" cy="301" r="6"/><circle cx="615" cy="301" r="6"/><circle cx="678" cy="301" r="6"/>
+    <circle cx="426" cy="329" r="6"/><circle cx="489" cy="329" r="6"/><circle cx="552" cy="329" r="6"/><circle cx="615" cy="329" r="6"/><circle cx="678" cy="329" r="6"/>
+    <circle cx="426" cy="357" r="6"/><circle cx="489" cy="357" r="6"/><circle cx="552" cy="357" r="6"/><circle cx="615" cy="357" r="6"/><circle cx="678" cy="357" r="6"/>
+    <circle cx="426" cy="385" r="6"/><circle cx="489" cy="385" r="6"/><circle cx="552" cy="385" r="6"/><circle cx="615" cy="385" r="6"/><circle cx="678" cy="385" r="6"/>
+    <circle cx="426" cy="413" r="6"/><circle cx="489" cy="413" r="6"/><circle cx="552" cy="413" r="6"/><circle cx="615" cy="413" r="6"/><circle cx="678" cy="413" r="6"/>
+  </g>
+  <path d="M489 463 H552" class="line"/>
+  <text x="561" y="468" class="mono small ink">50 ms per tick</text>
+
+  <path d="M785 296 H819" class="line"/>
+  <text x="820" y="130" class="mono micro orange">OUTCOME</text>
+  <rect x="820" y="153" width="294" height="286" rx="3" class="frame"/>
+  <text x="840" y="190" class="mono small muted">nominal start ceiling</text>
+  <text x="840" y="221" class="mono label ink">8 × 20 = 160/s</text>
+  <line x1="840" y1="245" x2="1094" y2="245" class="divider"/>
+  <text x="840" y="276" class="mono small muted">measured completions</text>
+  <text x="840" y="314" class="mono heading ink">157/s</text>
+  <line x1="840" y1="339" x2="1094" y2="339" class="divider"/>
+  <text x="840" y="369" class="mono small muted">p99 job duration</text>
+  <text x="840" y="409" class="mono heading orange">12.7 s</text>
+
+  <text x="46" y="518" class="mono small muted">Schematic, not a sampled timeline. 2,048 hello-world jobs; three isolated runs, eight agents, 50 ms claim interval.</text>
+</svg>

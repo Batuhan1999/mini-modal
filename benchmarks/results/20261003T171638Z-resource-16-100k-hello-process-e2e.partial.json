@@ -1,0 +1,58 @@
+{
+  "scenario": "hello-process-e2e",
+  "benchmark_label": "resource-16-100k",
+  "git_commit": "f0e8e12dce9768eb197ef3bebad9d04fb43e5634",
+  "git_dirty": true,
+  "outcome": "observer_timeout_partial_run",
+  "note": "All 100,000 jobs were submitted; the 15-minute database observer deadline expired before all jobs finished. Do not interpret the completed/s value as a full-run throughput result.",
+  "workload": {
+    "submitted": 100000,
+    "submission_errors": 0,
+    "submission_elapsed_seconds": 9.766,
+    "agents": 16,
+    "executor": "process",
+    "node_cpus_advertised": 64,
+    "node_memory_gb_advertised": 128
+  },
+  "jobs_at_shutdown": {
+    "succeeded": 46548,
+    "pending": 52444,
+    "assigned": 989,
+    "running": 19,
+    "other_terminal": 0,
+    "first_submitted_unix_ms": 1791047807847,
+    "last_succeeded_unix_ms": 1791048718316,
+    "successful_span_ms": 910469,
+    "partial_completed_per_second": 51.13
+  },
+  "application_cgroup": {
+    "cpu_limit_cores": 4,
+    "memory_limit_bytes": 6442450944,
+    "sample_start_unix_ms": 1791047807829,
+    "sample_end_unix_ms": 1791048708801,
+    "cpu_usage_usec": 1041005181,
+    "cpu_average_cores": 1.155,
+    "memory_peak_bytes": 435384320,
+    "samples": 8734
+  },
+  "postgres_cgroup": {
+    "cpu_limit_cores": 4,
+    "memory_limit_bytes": 4294967296,
+    "sample_end_unix_ms": 1791048708739,
+    "cpu_usage_usec": 906133388,
+    "cpu_average_cores": 1.006,
+    "memory_peak_bytes": 832888832,
+    "samples": 8578
+  },
+  "prometheus_snapshot_before_shutdown": {
+    "scheduler_duration_seconds_sum": 631.6685919880008,
+    "scheduler_duration_seconds_count": 2335,
+    "assignment_lease_expirations_total": 640
+  },
+  "post_run_explain_pending_query": {
+    "remaining_pending_rows": 52444,
+    "execution_time_ms": 236.166,
+    "sort_method": "external merge",
+    "sort_disk_kib": 4216
+  }
+}

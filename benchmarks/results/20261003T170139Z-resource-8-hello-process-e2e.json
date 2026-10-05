@@ -1,0 +1,89 @@
+{
+  "schema_version": 3,
+  "timestamp": "20261003T170139Z",
+  "benchmark_label": "resource-8",
+  "scenario": "hello-process-e2e",
+  "git_commit": "f0e8e12dce9768eb197ef3bebad9d04fb43e5634",
+  "git_dirty": true,
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 35469333,
+    "memory_peak_bytes": 249663488,
+    "pids_peak": 118,
+    "oom_kills": 0
+  },
+  "workload_usage": {
+    "started_unix_ms": 1791046907961,
+    "ended_unix_ms": 1791046921191,
+    "cpu_usage_usec": 32131327,
+    "cpu_throttled_usec": 505074,
+    "cpu_pressure_some_usec": 447989,
+    "memory_start_bytes": 140836864,
+    "memory_end_bytes": 191082496,
+    "memory_peak_bytes": 228057088,
+    "io_read_bytes": 0,
+    "io_write_bytes": 74215424,
+    "io_read_ops": 0,
+    "io_write_ops": 141,
+    "io_pressure_some_usec": 538,
+    "io_pressure_full_usec": 483,
+    "sampled_peak_cpu_millicores": 4457,
+    "sampled_peak_io_read_bytes_per_sec": 0,
+    "sampled_peak_io_write_bytes_per_sec": 713412923,
+    "sample_count": 129
+  },
+  "workload": {
+    "jobs": 2048,
+    "concurrency": 32,
+    "rate_per_second": 0,
+    "agents": 8,
+    "node_cpus": 64,
+    "node_memory_gb": 128,
+    "executor": "process",
+    "function": "hello",
+    "db_max_open_conns": 20
+  },
+  "timing": {
+    "first_submitted_unix_ms": 1791046907975,
+    "last_terminal_unix_ms": 1791046920980,
+    "terminal_span_ms": 13005,
+    "job_duration_p50_ms": 6456,
+    "job_duration_p95_ms": 12250.25,
+    "job_duration_p99_ms": 12717.96
+  },
+  "storage": {
+    "database_bytes": 15351143,
+    "jobs": 2048,
+    "failure_reasons": [],
+    "failed_job_events": []
+  },
+  "result": {
+    "submitted": 2048,
+    "submission_errors": 0,
+    "statuses": {
+      "succeeded": 2048
+    },
+    "submission_elapsed_ns": 179683250,
+    "elapsed_ns": 13192888922,
+    "submission_latency_p50_ns": 2199792,
+    "submission_latency_p95_ns": 4372875,
+    "submission_latency_p99_ns": 24932542
+  },
+  "postgres_usage": {
+    "cpu_limit": "400000 100000",
+    "memory_limit_bytes": "4294967296",
+    "cpu_usage_usec": 5296291,
+    "cpu_throttled_usec": 0,
+    "memory_peak_bytes": 256122880,
+    "io_read_bytes": 0,
+    "io_write_bytes": 82010112,
+    "cpu_pressure_some_usec": 82715,
+    "io_pressure_some_usec": 235719,
+    "sample_count": 126,
+    "oom_kills": 0
+  }
+}

@@ -270,40 +270,10 @@
         </section>
 
         <div class="side-stack">
-          <section class="dev-cluster-panel" aria-labelledby="dev-cluster-title">
-            <div class="panel-header compact">
-              <div>
-                <p class="section-index">04 / Development</p>
-                <h2 id="dev-cluster-title">Local agents</h2>
-              </div>
-              <span class="dev-cluster-state" id="dev-cluster-state" data-state="stopped">Stopped</span>
-            </div>
-
-            <form id="dev-cluster-form" class="dev-cluster-form">
-              <label>
-                <span>Nodes</span>
-                <input name="node_count" type="number" value="3" min="1" max="32" required>
-              </label>
-              <label>
-                <span>CPU / node</span>
-                <input name="cpus_per_node" type="number" value="8" min="1" max="1024" required>
-              </label>
-              <label>
-                <span>Memory / node</span>
-                <input name="memory_gb_per_node" type="number" value="16" min="1" max="8192" required>
-              </label>
-              <div class="form-actions">
-                <button type="submit" class="primary-button" id="start-dev-cluster">Launch agents</button>
-                <button type="button" class="secondary-button" id="stop-dev-cluster">Stop</button>
-              </div>
-            </form>
-            <p class="form-result" id="dev-cluster-result" aria-live="polite">Launches separate agent processes that register over gRPC.</p>
-          </section>
-
           <aside class="nodes-panel" aria-labelledby="nodes-title">
             <div class="panel-header compact">
               <div>
-                <p class="section-index">05 / Data plane</p>
+                <p class="section-index">04 / Data plane</p>
                 <h2 id="nodes-title">Nodes <span class="count" id="nodes-count">0</span></h2>
               </div>
             </div>
@@ -315,14 +285,14 @@
             </div>
             <div class="empty-state compact" id="nodes-empty" hidden>
               <strong>No agents registered</strong>
-              <p>Launch local agents here or start an agent from your terminal.</p>
+              <p>Agents appear when the provisioner adds capacity for queued jobs.</p>
             </div>
           </aside>
 
           <section class="activity-panel" aria-labelledby="activity-title">
             <div class="panel-header compact">
               <div>
-                <p class="section-index">06 / Events</p>
+                <p class="section-index">05 / Events</p>
                 <h2 id="activity-title">Activity</h2>
               </div>
             </div>

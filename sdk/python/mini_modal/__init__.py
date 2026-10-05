@@ -564,7 +564,7 @@ class JobHandle:
     def events(self) -> list[dict[str, Any]]:
         return self.client.get_job_events(self.job_id)
 
-    def get(self, timeout: float = 300.0, poll_interval: float = 1.0) -> Any:
+    def get(self, timeout: float = 300.0, poll_interval: float = 0.25) -> Any:
         if timeout <= 0 or poll_interval <= 0:
             raise ValueError("timeout and poll_interval must be positive")
 

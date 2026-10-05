@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 550" role="img" aria-labelledby="title desc">
+  <title id="title">One function invocation crosses two paths</title>
+  <desc id="desc">Admission writes a durable job to PostgreSQL and returns. A later scheduling and agent path claims the assignment, downloads the artifact, executes Python, and writes the result.</desc>
+  <defs>
+    <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#c6d5e6" stroke-width="1"/></pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#456b98" stroke-width="1.5"/></marker>
+    <style>
+      .bg{fill:#fbfaf7}.ink{fill:#273746}.muted{fill:#64717b}.blue{stroke:#456b98}.orange{fill:#c66c36}.box{fill:#fff;stroke:#456b98;stroke-width:1.4}.store{fill:url(#hatch);stroke:#456b98;stroke-width:1.4}.line{fill:none;stroke:#456b98;stroke-width:1.6;marker-end:url(#arrow)}.hint{fill:none;stroke:#c66c36;stroke-width:1.5;stroke-dasharray:5 5;marker-end:url(#arrow)}.mono{font-family:Menlo,Consolas,monospace}.heading{font-size:23px;font-weight:700}.label{font-size:17px;font-weight:700}.small{font-size:13px}.micro{font-size:11px;letter-spacing:1.4px}.divider{stroke:#d8dedf;stroke-width:1}
+    </style>
+  </defs>
+  <rect class="bg" width="1160" height="550"/>
+  <text x="46" y="48" class="mono heading ink">ONE INVOCATION, TWO PATHS</text>
+  <text x="46" y="75" class="mono small muted">The HTTP reply does not mean the function has run.</text>
+  <line x1="46" y1="94" x2="1114" y2="94" class="divider"/>
+
+  <text x="46" y="128" class="mono micro orange">01 / ADMISSION</text>
+  <rect x="46" y="153" width="216" height="112" rx="3" class="box"/>
+  <text x="65" y="187" class="mono label ink">Python SDK</text>
+  <text x="65" y="215" class="mono small muted">function.spawn(...)</text>
+  <text x="65" y="239" class="mono small muted">version + input</text>
+
+  <path d="M263 209 H334" class="line"/>
+  <text x="276" y="192" class="mono small muted">HTTP</text>
+  <rect x="335" y="153" width="236" height="112" rx="3" class="box"/>
+  <text x="354" y="187" class="mono label ink">Control plane</text>
+  <text x="354" y="215" class="mono small muted">validate + commit</text>
+  <text x="354" y="239" class="mono small orange">reply: accepted</text>
+
+  <path d="M572 209 H667" class="line"/>
+  <text x="586" y="192" class="mono small muted">INSERT</text>
+  <rect x="668" y="153" width="222" height="112" rx="3" class="store"/>
+  <text x="687" y="187" class="mono label ink">PostgreSQL</text>
+  <text x="687" y="215" class="mono small ink">job: pending</text>
+  <text x="687" y="239" class="mono small muted">durable queue state</text>
+
+  <path d="M454 265 V300 H154 V338" class="hint"/>
+  <text x="181" y="292" class="mono small orange">coalesced wakeup hint</text>
+  <line x1="46" y1="316" x2="1114" y2="316" class="divider"/>
+  <text x="46" y="350" class="mono micro orange">02 / EXECUTION</text>
+
+  <rect x="46" y="370" width="205" height="104" rx="3" class="box"/>
+  <text x="65" y="405" class="mono label ink">Scheduler</text>
+  <text x="65" y="433" class="mono small muted">place pending job</text>
+  <text x="65" y="455" class="mono small muted">on healthy node</text>
+
+  <path d="M252 422 H318" class="line"/>
+  <rect x="319" y="370" width="205" height="104" rx="3" class="store"/>
+  <text x="338" y="405" class="mono label ink">PostgreSQL</text>
+  <text x="338" y="433" class="mono small ink">job: assigned</text>
+  <text x="338" y="455" class="mono small muted">attempt + lease</text>
+
+  <path d="M591 422 H525" class="line"/>
+  <text x="533" y="402" class="mono small muted">claim</text>
+  <rect x="592" y="370" width="205" height="104" rx="3" class="box"/>
+  <text x="611" y="405" class="mono label ink">Node agent</text>
+  <text x="611" y="433" class="mono small muted">gRPC / artifact</text>
+  <text x="611" y="455" class="mono small muted">logs + completion</text>
+
+  <path d="M798 422 H864" class="line"/>
+  <rect x="865" y="370" width="249" height="104" rx="3" class="box"/>
+  <text x="884" y="405" class="mono label ink">Python process</text>
+  <text x="884" y="433" class="mono small muted">print("Hello, world")</text>
+  <text x="884" y="455" class="mono small muted">return JSON result</text>
+
+  <text x="46" y="516" class="mono small muted">The wakeup is not the queue. PostgreSQL owns the job; the agent owns an attempted execution.</text>
+</svg>

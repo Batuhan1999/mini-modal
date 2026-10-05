@@ -1,274 +1,117 @@
 # mini-modal
 
-A learning project for building a small Modal-like compute platform in Go.
+A small function platform built to learn what sits between `submit()` and a
+running container. The control plane is Go; function code is Python. Jobs and
+function versions live in PostgreSQL, archives live in an S3-compatible store,
+and node agents talk to the control plane over gRPC.
 
-The curated [learning roadmap](docs/learning-roadmap.md) connects each project
-milestone to official architecture documentation, engineering articles, videos,
-open-source implementations and distributed-systems material.
+This is a working prototype, not a hosted service or a secure multi-tenant
+sandbox. It has no authentication, a single control-plane process, and a local
+provisioner that starts agent **processes**, not VMs.
 
-The current version has a PostgreSQL-backed control plane, a public HTTP API, gRPC
-communication with polling node agents, durable assignment leases, retries,
-cancellation, streamed logs, a Docker executor, Prometheus metrics, and a
-browser dashboard with a local development-agent launcher. There is no real
-GPU execution yet.
+## What happens to a function call?
 
-## Run it
+1. The Python SDK packages the function and its reachable local imports. A
+   content hash lets unchanged deployments reuse an existing version.
+2. An invocation creates a job referencing that immutable version. The HTTP
+   request returns after the job is stored; it does not wait for execution.
+3. The scheduler assigns work to a healthy node with enough free resources.
+   The capacity manager adjusts each pool's desired node count; the local
+   provisioner starts or drains agents to follow it.
+4. An agent claims its assignment over gRPC, downloads the archive, and runs
+   the function in Docker. It streams logs and renews its lease while running.
+5. The agent reports a result, failure, or cancellation. A lost lease can
+   cause another attempt, so callers must not assume exactly-once execution.
 
-```bash
-cp -n .env.example .env
+The [high-level design](docs/architecture/README.md) has a diagram and links
+to the low-level designs. The [Python SDK guide](sdk/python/README.md) shows
+`@app.function`, `spawn()`, and `remote()`.
+
+## Run locally
+
+You need Go 1.27 and Docker with Compose. Copy the development configuration,
+start PostgreSQL and the object store, then build the worker image and start
+the control plane:
+
+```sh
+cp .env.example .env
 docker compose -f compose.dev.yml up -d --wait postgres
 make objectstore-up
+docker build -t mini-modal-python:dev sdk/python
 go tool air
 ```
 
-The local Compose file starts only Postgres. The Go control plane and agents run
-on your Mac. Air and `go run ./cmd/controlplane` read `DATABASE_URL` from
-`.env`; the file is ignored by Git. Existing SQLite jobs are not copied to
-Postgres. The named Docker volume persists data across `docker compose down`;
-stop the database with
-`docker compose -f compose.dev.yml down` when finished.
+Air builds both Go binaries and restarts the control plane on source changes.
+The dashboard is at [localhost:8080](http://localhost:8080). It can upload a
+Python file, deploy a function version, invoke it, and show its jobs, events,
+logs, and result. Agents appear only when the capacity manager requests them.
+The gRPC listener is on `localhost:9090`.
 
-MinIO is a separate, persistent local S3-compatible service. Its API is at
-`http://127.0.0.1:9000` and its console is at `http://127.0.0.1:9001`.
-The development credentials and bucket are in `.env.example`; change them in
-your ignored `.env` if needed. `make objectstore-up` creates the
-`mini-modal-artifacts` bucket if it does not exist. `make objectstore-stop`
-stops MinIO without deleting its volume. The benchmark containers use the
-same MinIO instance over Docker's `mini-modal-objectstore` network at
-`http://minio:9000`. The control plane uses the S3-compatible API to store
-function archives.
-This Mac already has the pinned MinIO image cached. The Compose file uses that
-local image because pulls from MinIO's published registries failed during
-setup; do not prune that image unless you arrange another image source first.
+To run without Air, build the agent first and then start the control plane:
 
-Open [http://localhost:8080](http://localhost:8080) to use the dashboard. From
-there you can launch local agent processes, submit jobs, and watch scheduling,
-resource reservations, leases, completions, and failures update live. Launched
-agents still register, heartbeat, claim work, and report results over gRPC.
-The Functions panel lets you upload `hello_function.py` from the repository
-root, deploy a version, inspect versions, and create an invocation job. The
-Docker executor downloads each invocation's artifact, extracts it into a
-temporary directory, and mounts it read-only at `/workspace`. It calls the
-version's Python entrypoint with the job's JSON `args` and `kwargs`. Standard
-output and errors become job logs; the return value is stored separately as
-the job result. Temporary files are removed after execution.
-
-To run a real agent process against the control plane:
-
-```bash
-go run ./cmd/agent -node-id node-a -cpus 8 -memory-gb 16
+```sh
+go build -o ./tmp/agent ./cmd/agent
+go run ./cmd/controlplane
 ```
 
-For automatic rebuilds and restarts while developing:
+`.env` is ignored by Git. The example credentials are for local development
+only. PostgreSQL and object-store data live in Docker volumes; stopping their
+containers does not delete those volumes. The worker image must be available
+to the Docker daemon used by an agent.
 
-```bash
-go tool air
+## Check the system
+
+```sh
+go test ./...
+go vet ./...
+PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests
 ```
 
-Air watches Go and embedded web source files, rebuilds both executables, and
-restarts `cmd/controlplane` after a change. It is a development tool and is not
-used in production.
+For PostgreSQL-backed Go tests, set `MINI_MODAL_TEST_DATABASE_URL` to a test
+PostgreSQL URL. Those tests create isolated schemas; without the variable they
+are skipped. The Python command also needs the SDK dependency installed
+(`python3 -m pip install -e sdk/python`).
 
-### Resource-limited benchmarks
+The fixed-container benchmark harness has separate resource limits for the
+application and PostgreSQL. It resets **only** its benchmark database. See
+[methodology](docs/benchmarking.md) and [results](benchmarks/results/README.md).
+Do not compare an admission-only run with an end-to-end run: they measure
+different paths.
+The [hello-world process benchmark](docs/benchmark-hello-process-2026-10-03.md)
+is the main end-to-end measurement: real agent processes, a short Python
+function, and CPU/memory traces for the app and PostgreSQL. The accompanying
+[engineering write-up](docs/blog/a-hello-world-function-found-my-scheduler.md)
+explains the queue-size bottleneck. Older [baseline](docs/benchmark-2026-10-03.md)
+and [claim-polling](docs/benchmark-claim-polling-2026-10-03.md) reports remain
+as historical diagnostics.
 
-Develop locally using `go tool air`. Benchmarks use a short-lived application
-container (4 CPU, 6 GiB, 1,024 PIDs) and a reusable PostgreSQL container with
-its own 4-CPU / 4-GiB limit:
+## Where the code lives
 
-```bash
-make benchmark-limits
-make benchmark-admission-serial
-make benchmark-admission-concurrent
-make benchmark-fake
-make benchmark-process
-```
-
-Each run starts its own control plane and agents when needed. The benchmark
-database is recreated before every run; the dedicated PostgreSQL container
-stays up between runs and can be stopped with `make benchmark-postgres-stop`.
-The benchmark launcher starts the shared MinIO service if needed, but never
-clears its bucket.
-No persistent development container is required. See
-[docs/benchmarking.md](docs/benchmarking.md) for the methodology.
-
-The API listens on `http://localhost:8080`:
-
-```text
-POST /v1/jobs
-POST /v1/functions/{id}/artifacts
-POST /v1/functions/{id}/versions
-POST /v1/functions/{id}/jobs
-GET  /v1/functions
-GET  /v1/functions/{id}/versions
-GET  /v1/function-versions/{id}
-GET  /v1/jobs
-GET  /v1/jobs/{id}
-GET  /v1/jobs/{id}/result
-POST /v1/jobs/{id}/cancel
-GET  /v1/jobs/{id}/logs
-GET  /v1/jobs/{id}/events
-GET  /v1/nodes
-GET  /v1/dev/nodes
-PUT  /v1/dev/nodes
-DELETE /v1/dev/nodes
-GET  /metrics
-```
-
-`POST /v1/functions/{id}/artifacts` accepts a raw `.tar.gz` archive with
-`Content-Type: application/gzip`, or a single `.py` file with
-`Content-Type: text/x-python` and `?filename=hello_function.py`. Python source
-is packaged into a tar.gz archive before storage. The response includes an
-`artifact_key`, SHA-256 digest, and size. Archives are limited to 32 MiB compressed and 256 MiB uncompressed;
-only regular files and directories with safe relative paths are accepted.
-For example:
-
-```bash
-tar -czf function.tar.gz main.py
-curl -sS -X POST -H 'Content-Type: application/gzip' \
-  --data-binary @function.tar.gz \
-  http://localhost:8080/v1/functions/greet/artifacts
-```
-
-For a single Python file, upload `hello_function.py` directly in the
-dashboard; no manual `tar` step is needed.
-
-`POST /v1/functions/{id}/versions` creates an immutable, reusable runtime
-version and returns its `id`. Supply `artifact_key`, `image`, `entrypoint`
-(for example `hello_function:greet`), `cpus`, and `memory_gb`. GPU resources,
-`timeout_seconds`, and retry settings are optional. The artifact key must
-belong to that function and exist in the configured bucket.
-`POST /v1/functions/{id}/jobs` accepts `id`, `version_id`, optional
-`priority`, and `input` (for example `{"args":["Ada"],"kwargs":{}}`). Each
-job references its exact immutable version; runtime settings are read from
-the version during scheduling and claim. `GET /v1/jobs/{id}/result` returns
-the JSON return value after a successful invocation.
-Direct `POST /v1/jobs` submissions also require `function_version_id` from a
-deployed version and may include `input`. There is no legacy job format or
-database upgrade path for jobs without a version; recreate an older
-development database before running this schema.
-
-## Run a workload simulation
-
-The simulator is an HTTP client, not an in-process fake. Start the control
-plane and enough agents first, then run:
-
-```bash
-go run ./cmd/simulator -jobs 100 -rate 10 -failure-fraction 0.1 -timeout-fraction 0.1
-```
-
-Each simulator run uploads one small artifact and deploys one function version
-before the timed submission phase. All jobs in that run reference the same
-version; this setup is excluded from submission throughput and latency.
-
-`-rate 0` submits the workload as a burst. The seed is deterministic, and the
-simulator waits for its jobs to reach a terminal state before printing a
-summary. Under heavier local Docker load, increase `-timeout-headroom` so
-container startup does not turn intended successes into timeouts. See every
-option with `go run ./cmd/simulator -help`.
-
-For admission-only measurements, use concurrent submitters without retaining
-or polling every job:
-
-```bash
-go run ./cmd/simulator -jobs 10000 -rate 0 -concurrency 32 -submit-only
-```
-
-## Observe it with Prometheus and Grafana
-
-The control plane exports process, Go runtime, scheduler, queue, job, retry,
-lease, log, node-health, and resource metrics at
-[http://localhost:8080/metrics](http://localhost:8080/metrics).
-
-With the control plane running on the host, start the local observability
-stack:
-
-```bash
-docker compose -f compose.observability.yml up -d
-```
-
-- Prometheus: [http://localhost:9091](http://localhost:9091)
-- Grafana: [http://localhost:3000](http://localhost:3000)
-
-Grafana starts with an anonymous read-only login, the Prometheus data source,
-and the **Mini Modal Overview** dashboard already provisioned. Stop the stack
-with `docker compose -f compose.observability.yml down`.
-
-## Test it
-
-```bash
-MINI_MODAL_TEST_DATABASE_URL='postgres://mini_modal:mini_modal@localhost:5432/mini_modal?sslmode=disable' go test ./...
-MINI_MODAL_TEST_DATABASE_URL='postgres://mini_modal:mini_modal@localhost:5432/mini_modal?sslmode=disable' go test -race ./...
-```
-
-Integration tests create and remove their own Postgres schemas; they do not
-delete your development jobs. Without `MINI_MODAL_TEST_DATABASE_URL`, the
-Postgres-dependent tests are skipped.
-
-## Useful Go commands
-
-| TypeScript habit | Go equivalent |
+| Path | Role |
 | --- | --- |
-| `npm init` | `go mod init mini-modal` |
-| `npm run dev` | `go tool air` |
-| `npm test` | `go test ./...` |
-| `npm run build` | `go build ./...` |
-| generated code script | `go generate ./...` |
-| formatter/linter | `gofmt -w .` and `go vet ./...` |
-| install dependencies | `go get example.com/package` |
+| `cmd/controlplane`, `internal/controlplane` | HTTP/gRPC process and durable job lifecycle |
+| `internal/scheduler` | Priority-ordered first-fit placement |
+| `internal/capacity`, `internal/provisioner` | Desired node counts and local agent processes |
+| `cmd/agent`, `internal/agent`, `internal/executor` | Claim, lease renewal, log upload, execution |
+| `internal/store/postgres`, `internal/artifact` | PostgreSQL state and S3 archives |
+| `sdk/python` | Function packaging, deployment cache, invocation client |
+| `cmd/simulator`, `scripts`, `benchmarks/results` | Workload generation and measurements |
 
-## Current milestone
+## Deliberate limits
 
-The project currently:
+- One control-plane process owns in-memory node heartbeat state. Multiple
+  replicas would need shared health and coordination.
+- Local provisioning launches processes on the control-plane host. It is a
+  stand-in for a machine or VM provisioner, not one.
+- Docker execution is Python-specific and does not provide a microVM security
+  boundary. GPU requests participate in placement, but the Docker executor
+  does not yet provision real GPUs.
+- Scheduling and capacity planning scan current PostgreSQL rows. Large queues,
+  fairness, quotas, and warm pools remain open design work.
+- Historical SQLite benchmark results remain available, but PostgreSQL is the
+  only maintained persistence implementation.
 
-- sorts jobs by priority;
-- finds a node with enough CPU, memory, and GPUs;
-- checks GPU type compatibility;
-- reserves resources without exceeding capacity;
-- distinguishes temporarily pending jobs from unschedulable jobs;
-- exposes job submission and inspection through JSON over HTTP;
-- lets node agents claim assigned work;
-- stores jobs, nodes, attempts, and assignment leases in PostgreSQL;
-- connects agent processes to the control plane over gRPC;
-- runs assignments in Docker containers with CPU and memory limits;
-- streams stdout, stderr, and system logs to the control plane;
-- retries failed or lease-expired attempts with configurable backoff;
-- supports execution timeouts and cancellation;
-- requeues work after an assignment lease expires; and
-- provides a dashboard, a local development-agent process manager, a public
-  workload simulator, and Prometheus/Grafana observability.
-
-The current request path is:
-
-```text
-dashboard / HTTP API -> control-plane service -> PostgreSQL -> scheduler
-                              ^                         |
-                              |                         v
-node agent -> gRPC -> claim -> Docker executor -> completion or failure
-                              ^
-locally launched agent -------+
-```
-
-## Suggested milestones
-
-### 1. Load and reliability
-
-- Add named simulator scenarios and machine-readable result reports.
-- Measure scheduler throughput and HTTP/gRPC latency under increasing load.
-- Exercise agent loss, control-plane restart, and slow log-upload scenarios.
-
-### 2. Production persistence
-
-- Evaluate contention and correctness with multiple control-plane replicas.
-- Add idempotency keys for submission and durable node-heartbeat ownership.
-
-### 3. Isolation and images
-
-- Add image caching and warm container pools.
-- Add stronger sandboxing with a microVM runtime.
-- Add network, filesystem, and execution-policy controls.
-
-### 4. Distributed scheduling
-
-- Add scheduler leader election.
-- Add multiple queues, quotas, fairness, preemption, and gang scheduling.
-- Add an autoscaler and warm worker pools.
+The [architecture review](docs/architecture/README.md#known-gaps) separates
+these limits from implemented behaviour. The
+[learning roadmap](docs/learning-roadmap.md) records the references that
+informed the project.

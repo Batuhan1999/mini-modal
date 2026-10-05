@@ -4,13 +4,15 @@ set -eu
 
 scenario="${1:?scenario is required}"
 case "${scenario}" in
-    admission-serial|admission-concurrent|fake-e2e|process-e2e) ;;
+    admission-serial|admission-concurrent|fake-e2e|process-e2e|hello-process-e2e) ;;
     *) echo "unknown benchmark scenario: ${scenario}" >&2; exit 2 ;;
 esac
 
 benchmark_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 BENCHMARK_TIMESTAMP="${benchmark_timestamp}"
 export BENCHMARK_TIMESTAMP
+BENCHMARK_SCENARIO="${scenario}"
+export BENCHMARK_SCENARIO
 benchmark_label="${BENCHMARK_LABEL:-benchmark}"
 case "${benchmark_label}" in
     *[!a-zA-Z0-9_-]*|'') echo "benchmark label must contain only letters, digits, underscores, and hyphens" >&2; exit 2 ;;
@@ -38,7 +40,10 @@ stop_monitor() {
 }
 
 cleanup() {
+    compose rm -sf benchmark >/dev/null 2>&1 || true
     stop_monitor
+    rm -f "${result_base}.ready" "${result_base}.started" "${result_base}.submitted" \
+        "${result_base}.loadgen-stop" "${result_base}-simulator.json"
     rm -f "${monitor_dir}/stop" "${monitor_dir}/resources.csv" "${monitor_dir}/result.json"
     rmdir "${monitor_dir}"
     rmdir "${lock_dir}"
@@ -50,7 +55,7 @@ trap 'exit 143' TERM
 docker compose -f compose.objectstore.yml up -d --wait minio
 docker compose -f compose.objectstore.yml run --rm minio-init
 compose up -d --wait postgres
-compose build --quiet benchmark
+compose build --quiet benchmark loadgen
 
 # This compose project has its own benchmark-only database. Never target the
 # local-development compose project or any database supplied by the caller.
@@ -65,8 +70,40 @@ compose exec -T postgres sh /benchmark-scripts/monitor-benchmark-postgres.sh \
     >"${monitor_dir}/resources.csv" &
 monitor_pid=$!
 
-compose run --rm benchmark \
-    timeout 300s ./scripts/run-benchmark.sh "${scenario}"
+compose rm -sf benchmark >/dev/null 2>&1 || true
+compose up -d --no-recreate benchmark
+benchmark_container="$(compose ps -q benchmark)"
+if [ -z "${benchmark_container}" ]; then
+    echo "benchmark application container did not start" >&2
+    exit 1
+fi
+ready_deadline="$(( $(date +%s) + 120 ))"
+while [ ! -f "${result_base}.ready" ]; do
+    if [ "$(docker inspect -f '{{.State.Running}}' "${benchmark_container}")" != true ]; then
+        compose logs --no-color benchmark >&2
+        echo "benchmark application exited before it became ready" >&2
+        exit 1
+    fi
+    if [ "$(date +%s)" -ge "${ready_deadline}" ]; then
+        compose logs --no-color benchmark >&2
+        echo "timed out waiting for benchmark application readiness" >&2
+        exit 1
+    fi
+    sleep 0.2
+done
+
+compose run --rm loadgen sh ./scripts/run-benchmark-loadgen.sh "${scenario}"
+benchmark_exit="$(docker wait "${benchmark_container}")"
+compose logs --no-color benchmark
+if [ "${benchmark_exit}" -ne 0 ]; then
+    echo "benchmark application exited with status ${benchmark_exit}" >&2
+    exit 1
+fi
+
+jq --slurpfile loadgen "${result_base}-loadgen-usage.json" \
+    '.schema_version = 4 | .loadgen_usage = $loadgen[0]' \
+    "${result_base}.json" >"${monitor_dir}/result.json"
+mv "${monitor_dir}/result.json" "${result_base}.json"
 
 stop_monitor
 cp "${monitor_dir}/resources.csv" "${result_base}-postgres-resources.csv"
@@ -116,8 +153,11 @@ jq \
         cpu_limit: $cpu_limit,
         memory_limit_bytes: $memory_limit,
         cpu_usage_usec: $cpu_usage_usec,
+        cpu_average_cores: ($cpu_usage_usec / ((.workload_usage.ended_unix_ms - .workload_usage.started_unix_ms) * 1000)),
+        cpu_limit_utilization_percent: (100 * $cpu_usage_usec / ((.workload_usage.ended_unix_ms - .workload_usage.started_unix_ms) * 1000) / (($cpu_limit | split(" ") | map(tonumber) | .[0]) / ($cpu_limit | split(" ") | map(tonumber) | .[1]))),
         cpu_throttled_usec: $cpu_throttled_usec,
         memory_peak_bytes: $memory_peak_bytes,
+        memory_peak_percent_of_limit: (100 * $memory_peak_bytes / ($memory_limit | tonumber)),
         io_read_bytes: $io_read_bytes,
         io_write_bytes: $io_write_bytes,
         cpu_pressure_some_usec: $cpu_pressure_some_usec,
@@ -129,3 +169,7 @@ mv "${monitor_dir}/result.json" "${result_base}.json"
 
 echo "Saved ${result_base}-postgres-resources.csv"
 echo "Postgres: $1 CPU us, $3 peak bytes, $8 workload samples"
+if [ "$(jq -r '.outcome' "${result_base}.json")" = observer_timeout_partial ]; then
+    echo "benchmark did not finish all jobs; partial results and resource traces were saved" >&2
+    exit 1
+fi

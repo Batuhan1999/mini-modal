@@ -313,7 +313,6 @@ button {
 .jobs-panel,
 .functions-panel,
 .nodes-panel,
-.dev-cluster-panel,
 .activity-panel {
   min-width: 0;
   background: var(--surface);
@@ -777,15 +776,13 @@ button:disabled {
   white-space: nowrap;
 }
 
-.job-form label,
-.dev-cluster-form label {
+.job-form label {
   display: grid;
   gap: 5px;
   min-width: 0;
 }
 
-.job-form label span,
-.dev-cluster-form label span {
+.job-form label span {
   color: var(--muted);
   font-family: var(--mono);
   font-size: 9px;
@@ -793,8 +790,7 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.job-form input,
-.dev-cluster-form input {
+.job-form input {
   width: 100%;
 }
 
@@ -815,59 +811,6 @@ button:disabled {
 
 .form-result[data-state="success"] {
   color: var(--accent);
-}
-
-.dev-cluster-form {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding: 18px 20px 12px;
-}
-
-.form-actions {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.dev-cluster-panel > .form-result {
-  padding: 0 20px 18px;
-}
-
-.dev-cluster-state {
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-}
-
-.dev-cluster-state::before {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
-  content: "";
-  background: var(--faint);
-  border-radius: 50%;
-  vertical-align: 1px;
-}
-
-.dev-cluster-state[data-state="running"] {
-  color: var(--accent);
-}
-
-.dev-cluster-state[data-state="running"]::before {
-  background: var(--accent);
-}
-
-.dev-cluster-state[data-state="degraded"] {
-  color: var(--danger);
-}
-
-.dev-cluster-state[data-state="degraded"]::before {
-  background: var(--danger);
 }
 
 select {

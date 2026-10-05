@@ -1,0 +1,97 @@
+{
+  "schema_version": 3,
+  "timestamp": "20261003T175208Z",
+  "benchmark_label": "batched-20k",
+  "scenario": "hello-process-e2e",
+  "git_commit": "f0e8e12dce9768eb197ef3bebad9d04fb43e5634",
+  "git_dirty": true,
+  "outcome": "complete",
+  "limits": {
+    "cpu": "400000 100000",
+    "memory_bytes": "6442450944",
+    "pids": "1024"
+  },
+  "container_usage": {
+    "cpu_usage_usec": 291647639,
+    "memory_peak_bytes": 328372224,
+    "pids_peak": 194,
+    "oom_kills": 0
+  },
+  "workload_usage": {
+    "started_unix_ms": 1791049936675,
+    "ended_unix_ms": 1791050015479,
+    "cpu_usage_usec": 288160784,
+    "cpu_average_cores": 3.6566771229886808,
+    "cpu_limit_utilization_percent": 91.41692807471702,
+    "cpu_throttled_usec": 21212946,
+    "cpu_pressure_some_usec": 4596102,
+    "memory_start_bytes": 168099840,
+    "memory_end_bytes": 294862848,
+    "memory_peak_bytes": 320954368,
+    "memory_peak_percent_of_limit": 4.9818674723307295,
+    "io_read_bytes": 16384,
+    "io_write_bytes": 74850304,
+    "io_read_ops": 1,
+    "io_write_ops": 165,
+    "io_pressure_some_usec": 8974,
+    "io_pressure_full_usec": 8289,
+    "sampled_peak_cpu_millicores": 5240,
+    "sampled_peak_io_read_bytes_per_sec": 157538,
+    "sampled_peak_io_write_bytes_per_sec": 733023373,
+    "sample_count": 762
+  },
+  "workload": {
+    "jobs": 20000,
+    "concurrency": 32,
+    "rate_per_second": 0,
+    "agents": 16,
+    "node_cpus": 64,
+    "node_memory_gb": 128,
+    "executor": "process",
+    "function": "hello",
+    "observer": "postgres_status_counts",
+    "db_max_open_conns": 20
+  },
+  "timing": {
+    "first_submitted_unix_ms": 1791049936691,
+    "last_terminal_unix_ms": 1791050014009,
+    "terminal_span_ms": 77318,
+    "job_duration_p50_ms": 39377.5,
+    "job_duration_p95_ms": 73018.05,
+    "job_duration_p99_ms": 75258.01
+  },
+  "storage": {
+    "database_bytes": 76037479,
+    "jobs": 20000,
+    "failure_reasons": [],
+    "failed_job_events": []
+  },
+  "result": {
+    "submitted": 20000,
+    "submission_errors": 0,
+    "statuses": {
+      "succeeded": 20000
+    },
+    "submission_elapsed_ns": 1559560626,
+    "elapsed_ns": 77318000000,
+    "submission_latency_p50_ns": 2212209,
+    "submission_latency_p95_ns": 4455542,
+    "submission_latency_p99_ns": 7157083
+  },
+  "postgres_usage": {
+    "cpu_limit": "400000 100000",
+    "memory_limit_bytes": "4294967296",
+    "cpu_usage_usec": 58990319,
+    "cpu_average_cores": 0.7485701106542815,
+    "cpu_limit_utilization_percent": 18.71425276635704,
+    "cpu_throttled_usec": 0,
+    "memory_peak_bytes": 616939520,
+    "memory_peak_percent_of_limit": 14.364242553710938,
+    "io_read_bytes": 0,
+    "io_write_bytes": 883523584,
+    "cpu_pressure_some_usec": 647448,
+    "io_pressure_some_usec": 1761700,
+    "sample_count": 747,
+    "oom_kills": 0
+  }
+}

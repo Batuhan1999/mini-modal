@@ -17,6 +17,7 @@ import (
 
 type Config struct {
 	BaseURL             string
+	Workload            string
 	Jobs                int
 	Rate                float64
 	Concurrency         int
@@ -255,7 +256,7 @@ type submitRequest struct {
 
 func (r *Runner) createFunctionVersion(ctx context.Context, config Config, functionID string) (string, error) {
 	endpoint := config.BaseURL + "/v1/functions/" + url.PathEscape(functionID)
-	upload, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/artifacts?filename=benchmark.py", strings.NewReader(`import time
+	source := `import time
 def run(runtime_seconds, fail, job_id):
     print(f"{job_id} started", flush=True)
     time.sleep(runtime_seconds)
@@ -263,7 +264,14 @@ def run(runtime_seconds, fail, job_id):
         raise RuntimeError("intentional failure")
     print(f"{job_id} finished", flush=True)
     return {"job_id": job_id}
-`))
+`
+	if config.Workload == "hello" {
+		source = `def run(job_id):
+    print(f"Hello, {job_id}!", flush=True)
+    return {"message": f"Hello, {job_id}!"}
+`
+	}
+	upload, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/artifacts?filename=benchmark.py", strings.NewReader(source))
 	if err != nil {
 		return "", err
 	}
@@ -378,15 +386,19 @@ func (r *Runner) statuses(ctx context.Context, baseURL string, wanted map[string
 }
 
 func randomJob(random *rand.Rand, config Config, id string) submitRequest {
+	spec := submitRequest{
+		ID: id, Priority: int64(random.Intn(10)),
+	}
+	if config.Workload == "hello" {
+		spec.Input, _ = json.Marshal(map[string]any{"args": []any{id}, "kwargs": map[string]any{}})
+		return spec
+	}
+
 	minSeconds := int(config.MinRuntime / time.Second)
 	maxSeconds := int(config.MaxRuntime / time.Second)
 	runtimeSeconds := minSeconds
 	if spread := maxSeconds - minSeconds; spread > 0 {
 		runtimeSeconds += random.Intn(spread + 1)
-	}
-
-	spec := submitRequest{
-		ID: id, Priority: int64(random.Intn(10)),
 	}
 
 	roll := random.Float64()
@@ -403,6 +415,9 @@ func randomJob(random *rand.Rand, config Config, id string) submitRequest {
 }
 
 func withDefaults(config Config) Config {
+	if config.Workload == "" {
+		config.Workload = "sleep"
+	}
 	config.BaseURL = strings.TrimRight(config.BaseURL, "/")
 	if config.BaseURL == "" {
 		config.BaseURL = "http://localhost:8080"
@@ -447,6 +462,9 @@ func withDefaults(config Config) Config {
 }
 
 func validateConfig(config Config) error {
+	if config.Workload != "sleep" && config.Workload != "hello" {
+		return fmt.Errorf("workload must be sleep or hello")
+	}
 	parsed, err := url.ParseRequestURI(config.BaseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return fmt.Errorf("base URL must be an absolute HTTP URL")
@@ -469,6 +487,9 @@ func validateConfig(config Config) error {
 	if config.TimeoutFraction < 0 || config.FailureFraction < 0 ||
 		config.TimeoutFraction+config.FailureFraction > 1 {
 		return fmt.Errorf("timeout and failure fractions must be non-negative and total at most 1")
+	}
+	if config.Workload == "hello" && (config.TimeoutFraction != 0 || config.FailureFraction != 0) {
+		return fmt.Errorf("hello workload does not support injected failures or timeouts")
 	}
 	if config.CPUs < 1 || config.MemoryGB < 1 || config.MaxAttempts < 1 {
 		return fmt.Errorf("CPU, memory, and max attempts must be positive")

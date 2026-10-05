@@ -33,12 +33,19 @@ services:
     pids_limit: ${MINI_MODAL_BENCH_PIDS:-1024}
     shm_size: 256m
     stop_grace_period: 10s
+    command: ["sh", "-c", "timeout \"$${BENCHMARK_TIMEOUT_SECONDS:-300}s\" ./scripts/run-benchmark.sh \"$${BENCHMARK_SCENARIO}\""]
     environment:
       MINI_MODAL_ENV: benchmark-container
+      BENCHMARK_SCENARIO: "${BENCHMARK_SCENARIO:-hello-process-e2e}"
+      BENCHMARK_TIMEOUT_SECONDS: "${BENCHMARK_TIMEOUT_SECONDS:-300}"
       JOBS: "${JOBS:-}"
       CONCURRENCY: "${CONCURRENCY:-}"
       AGENTS: "${AGENTS:-}"
+      NODE_CPUS: "${NODE_CPUS:-8}"
+      NODE_MEMORY_GB: "${NODE_MEMORY_GB:-16}"
       BENCHMARK_RATE: "${BENCHMARK_RATE:-0}"
+      BENCHMARK_DB_OBSERVER: "${BENCHMARK_DB_OBSERVER:-false}"
+      BENCHMARK_OBSERVER_TIMEOUT_SECONDS: "${BENCHMARK_OBSERVER_TIMEOUT_SECONDS:-900}"
       BENCHMARK_LABEL: "${BENCHMARK_LABEL:-benchmark}"
       DB_MAX_OPEN_CONNS: "${DB_MAX_OPEN_CONNS:-20}"
       BENCHMARK_CAPTURE_LOGS: "${BENCHMARK_CAPTURE_LOGS:-false}"
@@ -63,6 +70,30 @@ services:
     networks:
       - default
       - objectstore
+
+  loadgen:
+    build:
+      context: .
+      dockerfile: Dockerfile.benchmark
+    init: true
+    working_dir: /workspace
+    cpus: "${MINI_MODAL_BENCH_LOADGEN_CPUS:-2.0}"
+    mem_limit: "${MINI_MODAL_BENCH_LOADGEN_MEMORY:-2g}"
+    memswap_limit: "${MINI_MODAL_BENCH_LOADGEN_MEMORY:-2g}"
+    pids_limit: 256
+    environment:
+      JOBS: "${JOBS:-}"
+      CONCURRENCY: "${CONCURRENCY:-}"
+      BENCHMARK_RATE: "${BENCHMARK_RATE:-0}"
+      BENCHMARK_DB_OBSERVER: "${BENCHMARK_DB_OBSERVER:-false}"
+      BENCHMARK_LABEL: "${BENCHMARK_LABEL:-benchmark}"
+      BENCHMARK_TIMESTAMP: "${BENCHMARK_TIMESTAMP:-}"
+    volumes:
+      - .:/workspace
+      - go-module-cache:/home/developer/go/pkg/mod
+      - go-build-cache:/home/developer/.cache/go-build
+    networks:
+      - default
 
 volumes:
   benchmark-postgres-data:

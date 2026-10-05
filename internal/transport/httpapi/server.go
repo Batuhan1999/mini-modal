@@ -4,35 +4,25 @@ import (
 	"net/http"
 
 	"mini-modal/internal/controlplane"
-	"mini-modal/internal/devcluster"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-type devNodeManager interface {
-	Start(devcluster.Config) (devcluster.Status, error)
-	Stop() devcluster.Status
-	Status() devcluster.Status
-}
-
 type Server struct {
-	service    *controlplane.Service
-	devCluster devNodeManager
-	mux        *http.ServeMux
-	metrics    http.Handler
+	service *controlplane.Service
+	mux     *http.ServeMux
+	metrics http.Handler
 }
 
 func NewServer(
 	service *controlplane.Service,
-	devCluster devNodeManager,
 	gatherer prometheus.Gatherer,
 ) *Server {
 	server := &Server{
-		service:    service,
-		devCluster: devCluster,
-		mux:        http.NewServeMux(),
-		metrics:    promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{}),
+		service: service,
+		mux:     http.NewServeMux(),
+		metrics: promhttp.HandlerFor(gatherer, promhttp.HandlerOpts{}),
 	}
 	server.registerRoutes()
 
@@ -61,7 +51,4 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v1/jobs/{id}/logs", s.listJobLogs)
 	s.mux.HandleFunc("GET /v1/jobs/{id}/events", s.listJobEvents)
 	s.mux.HandleFunc("GET /v1/nodes", s.listNodes)
-	s.mux.HandleFunc("GET /v1/dev/nodes", s.getDevNodes)
-	s.mux.HandleFunc("PUT /v1/dev/nodes", s.startDevNodes)
-	s.mux.HandleFunc("DELETE /v1/dev/nodes", s.stopDevNodes)
 }

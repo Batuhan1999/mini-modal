@@ -87,19 +87,19 @@ func (e DockerExecutor) Run(
 	stderr io.Writer,
 	systemOut io.Writer,
 ) (output json.RawMessage, result error) {
+	if err := validateEntrypoint(assignment.Entrypoint); err != nil {
+		return nil, err
+	}
 
 	containerName := dockerContainerName(assignment)
 
-	if !e.checkImageExixts(ctx, e.binary(), assignment.Image) {
+	if !e.imageExists(ctx, e.binary(), assignment.Image) {
 		pullErr := e.pullImage(ctx, e.binary(), assignment.Image, systemOut)
 		if pullErr != nil {
 			return nil, fmt.Errorf("pull image %q: %w", assignment.Image, pullErr)
 		}
 	}
 
-	if err := validateEntrypoint(assignment.Entrypoint); err != nil {
-		return nil, err
-	}
 	artifactDir, cleanup, err := artifactDirectory(ctx, e.Artifacts, assignment)
 	if err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func (e DockerExecutor) Run(
 	return readResult(outputDirectory)
 }
 
-func (e DockerExecutor) checkImageExixts(ctx context.Context, dockerBinary string, image string) bool {
+func (e DockerExecutor) imageExists(ctx context.Context, dockerBinary string, image string) bool {
 	cmd := exec.CommandContext(ctx, dockerBinary, "image", "inspect", image)
 	err := cmd.Run()
 	if err != nil {

@@ -3,6 +3,7 @@ package simulator
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,10 +17,13 @@ func TestRunnerSubmitsAndWaitsForJobs(t *testing.T) {
 	var mu sync.Mutex
 	jobs := make([]jobResponse, 0)
 	var uploads, deploys int
+	var uploadedSource string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/artifacts"):
 			uploads++
+			source, _ := io.ReadAll(r.Body)
+			uploadedSource = string(source)
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"artifact_key":"benchmark/artifact"}`))
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/versions"):
@@ -34,6 +38,13 @@ func TestRunnerSubmitsAndWaitsForJobs(t *testing.T) {
 			}
 			if spec.FunctionVersionID != "benchmark-version" {
 				http.Error(w, "missing benchmark version", http.StatusBadRequest)
+				return
+			}
+			var input struct {
+				Args []string `json:"args"`
+			}
+			if err := json.Unmarshal(spec.Input, &input); err != nil || len(input.Args) != 1 || input.Args[0] != spec.ID {
+				http.Error(w, "invalid hello input", http.StatusBadRequest)
 				return
 			}
 			mu.Lock()
@@ -52,6 +63,7 @@ func TestRunnerSubmitsAndWaitsForJobs(t *testing.T) {
 
 	summary, err := NewRunner(server.Client()).Run(context.Background(), Config{
 		BaseURL:      server.URL,
+		Workload:     "hello",
 		Jobs:         3,
 		Seed:         42,
 		MinRuntime:   time.Second,
@@ -67,6 +79,9 @@ func TestRunnerSubmitsAndWaitsForJobs(t *testing.T) {
 	}
 	if uploads != 1 || deploys != 1 {
 		t.Fatalf("function setup: %d uploads, %d deploys; want one each", uploads, deploys)
+	}
+	if !strings.Contains(uploadedSource, "Hello, {job_id}!") || strings.Contains(uploadedSource, "time.sleep") {
+		t.Fatalf("uploaded unexpected workload: %q", uploadedSource)
 	}
 	if summary.SubmissionThroughput() <= 0 || summary.CompletionThroughput() <= 0 {
 		t.Fatalf("throughput was not recorded: %+v", summary)

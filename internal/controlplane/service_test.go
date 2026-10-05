@@ -222,6 +222,90 @@ func TestServiceSchedulesAndReleasesResources(t *testing.T) {
 	}
 }
 
+func TestSchedulerAdvancesPastUnplaceableBatch(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, []domain.Node{{ID: "node-a", GPUType: "A100", TotalGPUs: 1, TotalCPUs: 4, TotalMemoryGB: 8}})
+	service.scheduleBatchSize = 2
+	if _, err := service.db.ExecContext(ctx, `UPDATE function_versions SET gpu_type='A100', gpus=1 WHERE id=$1`, testdb.FunctionVersionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.db.ExecContext(ctx, `
+		INSERT INTO function_versions (
+			id, function_id, artifact_key, image, entrypoint, gpu_type,
+			gpus, cpus, memory_gb, timeout_seconds, max_attempts, retry_backoff_seconds, created_at
+		) VALUES ('cpu-version', 'test-function', 'test-artifact', 'python:3.13-slim',
+			'hello_function:greet', '', 0, 1, 1, 0, 1, 0, 0)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: "gpu-running", Priority: 3}); err != nil {
+		t.Fatal(err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	for _, spec := range []jobmodel.Spec{
+		{FunctionVersionID: testdb.FunctionVersionID, ID: "gpu-high", Priority: 2},
+		{FunctionVersionID: testdb.FunctionVersionID, ID: "gpu-next", Priority: 1},
+		{FunctionVersionID: "cpu-version", ID: "cpu-low", Priority: 0},
+	} {
+		if _, err := service.Submit(ctx, spec); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	scheduleTestJobs(t, service, ctx)
+	if service.scheduleCursor.id != "gpu-next" {
+		t.Fatalf("cursor after full first batch = %q, want gpu-next", service.scheduleCursor.id)
+	}
+	scheduleTestJobs(t, service, ctx)
+	low, err := service.Job(ctx, "cpu-low")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if low.Status != string(jobmodel.Assigned) {
+		t.Fatalf("later placeable job status = %q, want assigned", low.Status)
+	}
+	if service.scheduleCursor.id != "" {
+		t.Fatalf("cursor after final short batch = %q, want reset", service.scheduleCursor.id)
+	}
+	for _, id := range []string{"gpu-high", "gpu-next"} {
+		job, err := service.Job(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job.Status != string(jobmodel.Pending) {
+			t.Fatalf("job %q status = %q, want pending", id, job.Status)
+		}
+	}
+}
+
+func TestSchedulerWrapsAfterFullBatch(t *testing.T) {
+	ctx := context.Background()
+	service := newTestService(t, nil)
+	service.scheduleBatchSize = 2
+	for _, id := range []string{"job-a", "job-b"} {
+		if _, err := service.Submit(ctx, jobmodel.Spec{FunctionVersionID: testdb.FunctionVersionID, ID: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scheduleTestJobs(t, service, ctx)
+	if service.scheduleCursor.id != "job-b" {
+		t.Fatalf("cursor after full batch = %q, want job-b", service.scheduleCursor.id)
+	}
+	if _, err := service.RegisterNode(ctx, domain.Node{ID: "node-a", PoolID: testdb.NodePoolID, TotalCPUs: 2, TotalMemoryGB: 2}); err != nil {
+		t.Fatal(err)
+	}
+	scheduleTestJobs(t, service, ctx)
+	for _, id := range []string{"job-a", "job-b"} {
+		job, err := service.Job(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job.Status != string(jobmodel.Assigned) {
+			t.Fatalf("job %q after cursor wrap = %q, want assigned", id, job.Status)
+		}
+	}
+}
+
 func TestDrainingNodeRemainsVisibleButDoesNotReceiveWork(t *testing.T) {
 	ctx := context.Background()
 	service := newTestService(t, []domain.Node{

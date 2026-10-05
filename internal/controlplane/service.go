@@ -25,19 +25,27 @@ const (
 	assignmentLeaseDuration    = 30 * time.Second
 	defaultMaxAttempts         = 3
 	defaultRetryBackoffSeconds = 1
+	defaultScheduleBatchSize   = 10_000
 )
 
 var ErrStaleAssignment = errors.New("stale assignment")
 
 type Service struct {
-	mu        sync.Mutex
-	runtime   *RuntimeState
-	queries   postgresdb.Querier
-	policy    *scheduler.Policy
-	db        *sql.DB
-	metrics   *Metrics
-	wakeup    chan struct{}
-	artifacts ArtifactStore
+	mu                sync.Mutex
+	runtime           *RuntimeState
+	queries           postgresdb.Querier
+	policy            *scheduler.Policy
+	db                *sql.DB
+	metrics           *Metrics
+	wakeup            chan struct{}
+	artifacts         ArtifactStore
+	scheduleBatchSize int64
+	scheduleCursor    pendingJobCursor
+}
+
+type pendingJobCursor struct {
+	priority int64
+	id       string
 }
 
 type ArtifactStore interface {
@@ -48,13 +56,14 @@ type ArtifactStore interface {
 func NewService(runtime *RuntimeState, queries postgresdb.Querier, db *sql.DB, metrics *Metrics, artifacts ArtifactStore) *Service {
 	wakeup := make(chan struct{}, 1)
 	return &Service{
-		runtime:   runtime,
-		queries:   queries,
-		db:        db,
-		policy:    scheduler.NewFirstFitPolicy(),
-		metrics:   metrics,
-		wakeup:    wakeup,
-		artifacts: artifacts,
+		runtime:           runtime,
+		queries:           queries,
+		db:                db,
+		policy:            scheduler.NewFirstFitPolicy(),
+		metrics:           metrics,
+		wakeup:            wakeup,
+		artifacts:         artifacts,
+		scheduleBatchSize: defaultScheduleBatchSize,
 	}
 }
 
@@ -347,7 +356,9 @@ func (s *Service) SetNodeDrain(ctx context.Context, nodeID string, shouldDrain b
 	}
 	select {
 	case s.wakeup <- struct{}{}:
+		// Notification was queued.
 	default:
+		// Channel is already full; a notification is already pending.
 	}
 	return nil
 }
@@ -629,9 +640,7 @@ func (s *Service) finish(
 
 	select {
 	case s.wakeup <- struct{}{}:
-		// Notification was queued.
 	default:
-		// Channel is already full; a notification is already pending.
 	}
 	return nil
 }
@@ -770,7 +779,7 @@ func (s *Service) scheduleLocked(ctx context.Context) (err error) {
 	startedAt := time.Now()
 	defer func() { s.metrics.RecordSchedulerRun(startedAt, err) }()
 
-	jobs, err := s.queries.ListPendingJobs(ctx)
+	jobs, err := s.pendingJobsBatchLocked(ctx)
 	if err != nil {
 		return fmt.Errorf("list pending jobs: %w", err)
 	}
@@ -823,7 +832,43 @@ func (s *Service) scheduleLocked(ctx context.Context) (err error) {
 			return fmt.Errorf("mark job %q unschedulable: %w", job.ID, err)
 		}
 	}
+	// Advance even when nothing fit, so the next pass can inspect later jobs.
+	if int64(len(jobs)) < s.scheduleBatchSize {
+		s.scheduleCursor = pendingJobCursor{}
+	} else {
+		last := jobs[len(jobs)-1]
+		s.scheduleCursor = pendingJobCursor{priority: last.Priority, id: last.ID}
+	}
 	return nil
+}
+
+func (s *Service) pendingJobsBatchLocked(ctx context.Context) ([]postgresdb.ListPendingJobsRow, error) {
+	if s.scheduleCursor.id != "" {
+		rows, err := s.queries.ListPendingJobsAfter(ctx, postgresdb.ListPendingJobsAfterParams{
+			AfterPriority: s.scheduleCursor.priority,
+			AfterID:       s.scheduleCursor.id,
+			RowLimit:      s.scheduleBatchSize,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list pending jobs after %q: %w", s.scheduleCursor.id, err)
+		}
+		if len(rows) > 0 {
+			jobs := make([]postgresdb.ListPendingJobsRow, len(rows))
+			for i, row := range rows {
+				jobs[i] = postgresdb.ListPendingJobsRow{
+					ID: row.ID, Priority: row.Priority, GpuType: row.GpuType,
+					Gpus: row.Gpus, Cpus: row.Cpus, MemoryGb: row.MemoryGb,
+				}
+			}
+			return jobs, nil
+		}
+		s.scheduleCursor = pendingJobCursor{}
+	}
+	jobs, err := s.queries.ListPendingJobs(ctx, s.scheduleBatchSize)
+	if err != nil {
+		return nil, fmt.Errorf("list first pending jobs batch: %w", err)
+	}
+	return jobs, nil
 }
 
 func (s *Service) capacityNodesLocked(ctx context.Context, now time.Time) ([]domain.Node, []domain.Node, error) {

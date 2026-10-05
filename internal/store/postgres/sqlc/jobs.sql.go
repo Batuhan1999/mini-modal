@@ -593,6 +593,7 @@ JOIN function_versions AS v ON v.id = j.function_version_id
 WHERE j.status = 'pending'
   AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
 ORDER BY j.priority DESC, j.id
+LIMIT $1::bigint
 `
 
 type ListPendingJobsRow struct {
@@ -604,8 +605,8 @@ type ListPendingJobsRow struct {
 	MemoryGb int64  `json:"memory_gb"`
 }
 
-func (q *Queries) ListPendingJobs(ctx context.Context) ([]ListPendingJobsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listPendingJobs)
+func (q *Queries) ListPendingJobs(ctx context.Context, rowLimit int64) ([]ListPendingJobsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingJobs, rowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -613,6 +614,63 @@ func (q *Queries) ListPendingJobs(ctx context.Context) ([]ListPendingJobsRow, er
 	var items []ListPendingJobsRow
 	for rows.Next() {
 		var i ListPendingJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Priority,
+			&i.GpuType,
+			&i.Gpus,
+			&i.Cpus,
+			&i.MemoryGb,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingJobsAfter = `-- name: ListPendingJobsAfter :many
+SELECT j.id, j.priority, v.gpu_type, v.gpus, v.cpus, v.memory_gb
+FROM jobs AS j
+JOIN function_versions AS v ON v.id = j.function_version_id
+WHERE j.status = 'pending'
+  AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
+  AND (j.priority < $1::bigint
+       OR (j.priority = $1::bigint AND j.id > $2::text))
+ORDER BY j.priority DESC, j.id
+LIMIT $3::bigint
+`
+
+type ListPendingJobsAfterParams struct {
+	AfterPriority int64  `json:"after_priority"`
+	AfterID       string `json:"after_id"`
+	RowLimit      int64  `json:"row_limit"`
+}
+
+type ListPendingJobsAfterRow struct {
+	ID       string `json:"id"`
+	Priority int64  `json:"priority"`
+	GpuType  string `json:"gpu_type"`
+	Gpus     int64  `json:"gpus"`
+	Cpus     int64  `json:"cpus"`
+	MemoryGb int64  `json:"memory_gb"`
+}
+
+func (q *Queries) ListPendingJobsAfter(ctx context.Context, arg ListPendingJobsAfterParams) ([]ListPendingJobsAfterRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingJobsAfter, arg.AfterPriority, arg.AfterID, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPendingJobsAfterRow
+	for rows.Next() {
+		var i ListPendingJobsAfterRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Priority,

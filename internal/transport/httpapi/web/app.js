@@ -44,11 +44,6 @@ const elements = {
   functionInvokeResult: document.querySelector("#function-invoke-result"),
   functionVersionSelect: document.querySelector("#function-version-select"),
   functionJobID: document.querySelector("#function-job-id"),
-  devClusterForm: document.querySelector("#dev-cluster-form"),
-  devClusterState: document.querySelector("#dev-cluster-state"),
-  devClusterResult: document.querySelector("#dev-cluster-result"),
-  startDevCluster: document.querySelector("#start-dev-cluster"),
-  stopDevCluster: document.querySelector("#stop-dev-cluster"),
   activityList: document.querySelector("#activity-list"),
   dashboardView: document.querySelector("#dashboard-view"),
   detailView: document.querySelector("#job-detail-view"),
@@ -78,9 +73,6 @@ const state = {
   hasSnapshot: false,
   refreshing: false,
   activity: [],
-  devClusterHydrated: false,
-  devClusterRunning: false,
-  previousProcessStates: new Map(),
   expandedJobIDs: new Set(),
   inlineLogs: new Map(),
   detailJobID: jobIDFromPath(),
@@ -124,8 +116,6 @@ if (state.detailJobID) {
       elements.functionDeployForm.elements.namedItem("entrypoint").value = `${file.name.slice(0, -3)}:greet`;
     }
   });
-  elements.devClusterForm.addEventListener("submit", startDevCluster);
-  elements.stopDevCluster.addEventListener("click", stopDevCluster);
   void refreshFunctions();
 }
 
@@ -153,11 +143,10 @@ async function refreshDashboard() {
 
   state.refreshing = true;
   try {
-    const [jobs, jobCount, nodes, devCluster] = await Promise.all([
+    const [jobs, jobCount, nodes] = await Promise.all([
       fetchJSON("/v1/jobs?limit=100"),
       fetchJSON("/v1/jobs/count"),
       fetchJSON("/v1/nodes"),
-      fetchJSON("/v1/dev/nodes"),
     ]);
 
     const changedJobs = trackJobTransitions(jobs);
@@ -168,8 +157,6 @@ async function refreshDashboard() {
     renderResources();
     renderJobs(changedJobs);
     renderNodes();
-    applyDevClusterStatus(devCluster, !state.devClusterHydrated);
-    state.devClusterHydrated = true;
     await syncExpandedJobLogs();
     setConnection(true);
   } catch (error) {
@@ -1380,93 +1367,6 @@ function randomCapacity(field, fallback) {
 
 function randomInteger(minimum, maximum) {
   return Math.floor(Math.random() * (maximum - minimum + 1)) + minimum;
-}
-
-async function startDevCluster(event) {
-  event.preventDefault();
-  setBusy(elements.startDevCluster, true, "Launching");
-  const form = new FormData(elements.devClusterForm);
-  const config = {
-    node_count: Number(form.get("node_count")),
-    cpus_per_node: Number(form.get("cpus_per_node")),
-    memory_gb_per_node: Number(form.get("memory_gb_per_node")),
-  };
-
-  try {
-    const status = await fetchJSON("/v1/dev/nodes", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(config),
-    });
-    applyDevClusterStatus(status, false);
-    addActivity(`Launched ${config.node_count} local agent processes`);
-    await refreshDashboard();
-  } catch (error) {
-    setFormResult(elements.devClusterResult, error.message, "error");
-    addActivity(`Agent launch failed: ${error.message}`);
-  } finally {
-    setBusy(elements.startDevCluster, false, state.devClusterRunning ? "Apply and restart" : "Launch agents");
-  }
-}
-
-async function stopDevCluster() {
-  setBusy(elements.stopDevCluster, true, "Stopping");
-  try {
-    const status = await fetchJSON("/v1/dev/nodes", { method: "DELETE" });
-    applyDevClusterStatus(status, false);
-    addActivity("Stopped local agents; their heartbeats will become stale");
-  } catch (error) {
-    setFormResult(elements.devClusterResult, error.message, "error");
-  } finally {
-    elements.stopDevCluster.textContent = "Stop";
-    elements.stopDevCluster.disabled = !state.devClusterRunning;
-  }
-}
-
-function applyDevClusterStatus(status, hydrateForm) {
-  const processes = status.processes || [];
-  const running = processes.filter((process) => process.running).length;
-  const degraded = processes.length > 0 && running < processes.length;
-  trackProcessTransitions(processes);
-  state.devClusterRunning = status.running;
-
-  elements.devClusterState.dataset.state = degraded
-    ? "degraded"
-    : status.running ? "running" : "stopped";
-  elements.devClusterState.textContent = degraded
-    ? "Degraded"
-    : status.running ? "Running" : "Stopped";
-  elements.startDevCluster.textContent = status.running ? "Apply and restart" : "Launch agents";
-  elements.stopDevCluster.disabled = !status.running;
-
-  if (hydrateForm && status.config) {
-    for (const [name, value] of Object.entries(status.config)) {
-      const input = elements.devClusterForm.elements.namedItem(name);
-      if (input) {
-        input.value = String(value);
-      }
-    }
-  }
-
-  const firstError = processes.find((process) => process.error)?.error;
-  const message = firstError
-    ? `${running}/${processes.length} processes running. ${firstError}`
-    : status.running
-      ? `${running}/${processes.length} agent processes running. Waiting for gRPC registration if they are not listed below yet.`
-      : "Launches separate agent processes that register over gRPC.";
-  setFormResult(elements.devClusterResult, message, firstError ? "error" : status.running ? "success" : "");
-}
-
-function trackProcessTransitions(processes) {
-  const next = new Map();
-  for (const process of processes) {
-    next.set(process.node_id, process.running);
-    const previous = state.previousProcessStates.get(process.node_id);
-    if (state.devClusterHydrated && previous === true && !process.running) {
-      addActivity(`${process.node_id} process exited${process.error ? `: ${process.error}` : ""}`);
-    }
-  }
-  state.previousProcessStates = next;
 }
 
 function addActivity(message) {

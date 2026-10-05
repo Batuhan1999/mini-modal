@@ -13,7 +13,9 @@ The application benchmark container defaults to:
 - Go 1.27 on Debian Bookworm.
 
 One PostgreSQL 15 container is reused across runs with its own 4-CPU / 4-GiB
-limit. The application container retains its 4-CPU / 6-GiB limit. The benchmark
+limit. The control plane and agents share the 4-CPU / 6-GiB application container.
+The load generator runs in a separate 2-CPU / 2-GiB container; those resources
+are not part of the application's quota. The benchmark
 database `mini_modal_benchmark` is dropped and recreated before every run;
 the Postgres container and volume remain. The separate `compose.dev.yml`
 development database is not touched.
@@ -88,28 +90,74 @@ Record these values for every architectural change:
 - terminal jobs per second;
 - peak memory, CPU, database size, and errors.
 
-Keep generated JSON summaries in `benchmarks/results/` so they can become the
-source material for graphs and the eventual blog post.
+Keep generated JSON summaries and 100-ms application/load-generator/PostgreSQL resource traces
+in `benchmarks/results/`. The JSON reports average CPU cores and utilization
+against each container's CPU limit, peak memory and percent of its limit, CPU
+throttling, process count, and OOM kills. The traces preserve bursts that an
+average would hide.
+
+The portfolio workload is `hello-process-e2e`: one uploaded Python function
+version, many invocations, real agent processes and host-process execution. It
+prints and returns a small result without sleeping. The older `process-e2e`
+scenario deliberately sleeps for one second and is not comparable. Fake
+execution and serial admission remain historical diagnostics, not headline
+platform measurements. Admission-only throughput depends strongly on client
+concurrency and does not measure job completion.
 
 ## Initial scenarios
 
-Each target starts a fresh application container with its own control plane,
-recreates the database in the shared benchmark Postgres container, then removes
-the application container when the run finishes:
+Each target recreates the database in the shared benchmark Postgres container,
+starts a fresh application container with its own control plane and agents,
+submits from a separate load-generator container, then removes the application
+container when the run finishes:
 
 ```bash
 make benchmark-admission-serial
 make benchmark-admission-concurrent
 make benchmark-fake
 make benchmark-process
+make benchmark-hello-process
 ```
 
-The admission scenarios stop after HTTP submission. The end-to-end scenarios
+The admission scenarios stop timing after HTTP submission, but background
+scheduling still runs and can affect throughput. The end-to-end scenarios
 start agents and wait for every job to reach a terminal status. Override safe
 defaults without editing scripts, for example:
 
 ```bash
 JOBS=10000 CONCURRENCY=64 make benchmark-admission-concurrent
+```
+
+To separate scheduler-advertised capacity from physical limits, set
+`NODE_CPUS` and `NODE_MEMORY_GB`. These values change placement only. They do
+not allocate CPU or RAM to an agent, and the process executor does not enforce
+them. `AGENTS` controls the number of independent claim loops. The benchmark
+application container still has 4 real CPU cores and 6 GiB regardless of the
+advertised node values.
+
+```bash
+JOBS=2048 AGENTS=16 NODE_CPUS=64 NODE_MEMORY_GB=128 \
+  BENCHMARK_LABEL=resource-16 make benchmark-hello-process
+```
+
+At 100,000 jobs, the simulator's ordinary HTTP observer would fetch the entire
+job list every second and contaminate the load. Use the benchmark-only
+PostgreSQL status-count observer instead. It still waits for all jobs, but
+reads only two aggregate counts every two seconds. `timing` in the result JSON
+comes from per-job PostgreSQL timestamps; the observer does not determine the
+reported completion rate. The longer outer timeout accommodates a sustained
+run while the app and database remain in their resource-limited containers.
+The observer waits up to 900 seconds by default (`BENCHMARK_OBSERVER_TIMEOUT_SECONDS`
+overrides this). On a timeout, the command fails **after** saving a JSON marked
+`outcome: observer_timeout_partial` and both resource traces. A partial run is
+useful diagnostic evidence, but its completed/s figure is not comparable to a
+fully drained run. Set the outer `BENCHMARK_TIMEOUT_SECONDS` higher than the
+observer timeout to leave time for final metrics and cleanup.
+
+```bash
+BENCHMARK_DB_OBSERVER=true BENCHMARK_TIMEOUT_SECONDS=1200 \
+  JOBS=100000 CONCURRENCY=32 AGENTS=16 NODE_CPUS=64 NODE_MEMORY_GB=128 \
+  BENCHMARK_LABEL=resource-16-100k make benchmark-hello-process
 ```
 
 Use `BENCHMARK_LABEL` to identify an architecture revision in filenames and
@@ -129,12 +177,15 @@ DB_MAX_OPEN_CONNS=2 BENCHMARK_LABEL=dbpool2 make benchmark-admission-concurrent
 ```
 
 Every run writes a metadata/result JSON file, a Prometheus snapshot, and separate
-100-ms cgroup traces for the application and Postgres containers to
+100-ms cgroup traces for the application, load generator, and Postgres to
 `benchmarks/results/`. The JSON `workload_usage` section measures the application
-container during the simulator invocation; `postgres_usage` measures the
-dedicated Postgres container over the same window. `container_usage` covers the
-application container's entire lifetime, including startup and builds. The
-application measurements still combine the control plane, agents, and simulator.
+container from the generator's start signal through completion observation;
+`loadgen_usage` measures the generator's own submission and observation work;
+`postgres_usage` measures Postgres over the application window.
+`container_usage` covers the application container's entire lifetime, including
+startup and builds. Application CPU now combines only the control plane and agents.
+Postgres and MinIO still have separate quotas, but all containers share the Mac's
+physical CPU, memory, and storage; these are not dedicated-host measurements.
 Block-I/O byte counts can miss writes that the
 kernel flushes after the simulator ends, so interpret I/O pressure together
 with the byte counts. No benchmark ports are published to the host, so a

@@ -680,10 +680,12 @@ class ClientTests(unittest.TestCase):
             Mock(**{"json.return_value": {"status": "succeeded"}}),
             Mock(**{"json.return_value": {"output_json": {"message": "hello"}}}),
         ]
-        with patch("mini_modal.time.sleep"):
-            result = JobHandle("job-1", self.client).get(poll_interval=0.01)
+        with patch("mini_modal.time.sleep") as sleep:
+            result = JobHandle("job-1", self.client).get()
 
         self.assertEqual(result, {"message": "hello"})
+        self.assertEqual(sleep.call_count, 2)
+        sleep.assert_any_call(0.25)
         self.assertEqual(get.call_args.args[0], "http://localhost:8080/v1/jobs/job-1/result")
 
     @patch("mini_modal.requests.get")

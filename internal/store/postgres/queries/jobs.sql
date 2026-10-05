@@ -59,7 +59,19 @@ FROM jobs AS j
 JOIN function_versions AS v ON v.id = j.function_version_id
 WHERE j.status = 'pending'
   AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
-ORDER BY j.priority DESC, j.id;
+ORDER BY j.priority DESC, j.id
+LIMIT sqlc.arg(row_limit)::bigint;
+
+-- name: ListPendingJobsAfter :many
+SELECT j.id, j.priority, v.gpu_type, v.gpus, v.cpus, v.memory_gb
+FROM jobs AS j
+JOIN function_versions AS v ON v.id = j.function_version_id
+WHERE j.status = 'pending'
+  AND j.next_attempt_at <= CAST(EXTRACT(EPOCH FROM clock_timestamp()) * 1000 AS BIGINT)
+  AND (j.priority < sqlc.arg(after_priority)::bigint
+       OR (j.priority = sqlc.arg(after_priority)::bigint AND j.id > sqlc.arg(after_id)::text))
+ORDER BY j.priority DESC, j.id
+LIMIT sqlc.arg(row_limit)::bigint;
 
 -- name: ListCapacityDemand :many
 SELECT j.id, j.priority, v.gpu_type, v.gpus, v.cpus, v.memory_gb

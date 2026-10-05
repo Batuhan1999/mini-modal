@@ -12,8 +12,8 @@ func NewFirstFitPolicy() *Policy {
 	return &Policy{}
 }
 
-// Schedule assigns higher-priority jobs first using a deterministic first-fit
-// policy. Jobs that do not currently fit remain pending.
+// Schedule uses deterministic first-fit placement. Jobs that cannot fit now
+// remain pending; jobs that cannot fit on any supplied node are unschedulable.
 func (p *Policy) Schedule(jobs []postgresdb.ListPendingJobsRow, nodes []domain.Node) ([]domain.Assignment, []postgresdb.ListPendingJobsRow, []postgresdb.ListPendingJobsRow) {
 
 	assignments := make([]domain.Assignment, 0, len(jobs))

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 620" role="img" aria-labelledby="title desc">
+  <title id="title">The 100,000-job queue exposed a serialized scheduler path</title>
+  <desc id="desc">One hundred thousand jobs were submitted in 9.77 seconds. At the fifteen-minute deadline, 52,444 remained pending and 46,548 had succeeded. The scheduler repeatedly reads pending jobs while holding a mutex shared with claims. The app averaged 1.16 of four CPU cores and peaked at 415 MiB of six GiB, so aggregate CPU and memory quotas were not reached. This is a schematic, not a sampled timeline.</desc>
+  <defs>
+    <pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#bfd1e3" stroke-width="1"/></pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#456b98" stroke-width="1.5"/></marker>
+    <style>
+      .bg{fill:#fbfaf7}.white{fill:#fff}.ink{fill:#273746}.muted{fill:#64717b}.orange{fill:#c66c36}.edge{stroke:#456b98;stroke-width:1.4}.lightedge{stroke:#d8dedf;stroke-width:1}.line{fill:none;stroke:#456b98;stroke-width:1.5;marker-end:url(#arrow)}.mono{font-family:Menlo,Consolas,monospace}.heading{font-size:23px;font-weight:700}.big{font-size:31px;font-weight:700}.label{font-size:17px;font-weight:700}.small{font-size:13px}.micro{font-size:11px;letter-spacing:1.3px}
+    </style>
+  </defs>
+  <rect class="bg" width="1160" height="620"/>
+  <text x="46" y="48" class="mono heading ink">THE QUEUE OUTGREW THE PASS</text>
+  <text x="46" y="75" class="mono small muted">100,000 hello-world jobs · one bounded 15-minute stress run · sixteen agents</text>
+  <line x1="46" y1="94" x2="1114" y2="94" class="lightedge"/>
+
+  <text x="46" y="131" class="mono micro orange">ADMISSION</text>
+  <rect x="46" y="153" width="225" height="251" class="white edge"/>
+  <text x="65" y="200" class="mono big ink">100,000</text>
+  <text x="65" y="230" class="mono small muted">jobs accepted</text>
+  <line x1="65" y1="256" x2="251" y2="256" class="lightedge"/>
+  <text x="65" y="297" class="mono label ink">9.77 s</text>
+  <text x="65" y="324" class="mono small muted">to submit them</text>
+  <text x="65" y="375" class="mono small muted">0 admission errors</text>
+
+  <path d="M271 280 H307" class="line"/>
+  <text x="308" y="131" class="mono micro orange">PERSISTED BACKLOG</text>
+  <rect x="308" y="153" width="247" height="251" fill="url(#hatch)" class="edge"/>
+  <text x="329" y="200" class="mono big ink">52,444</text>
+  <text x="329" y="230" class="mono small ink">still pending</text>
+  <line x1="329" y1="256" x2="534" y2="256" class="lightedge"/>
+  <text x="329" y="297" class="mono label ink">full read + sort</text>
+  <text x="329" y="325" class="mono small ink">on each scheduler pass</text>
+  <text x="329" y="375" class="mono small muted">236 ms post-run query</text>
+
+  <path d="M555 280 H591" class="line"/>
+  <text x="592" y="131" class="mono micro orange">SERIAL GATE</text>
+  <rect x="592" y="153" width="230" height="251" class="white edge"/>
+  <text x="613" y="199" class="mono label ink">Service.mu</text>
+  <text x="613" y="228" class="mono small muted">held by scheduling</text>
+  <line x1="613" y1="256" x2="801" y2="256" class="lightedge"/>
+  <text x="613" y="296" class="mono label ink">claims + results</text>
+  <text x="613" y="324" class="mono small muted">need it as well</text>
+  <text x="613" y="375" class="mono small muted">hypothesis, not isolation</text>
+
+  <path d="M822 280 H858" class="line"/>
+  <text x="859" y="131" class="mono micro orange">AFTER 15 MINUTES</text>
+  <rect x="859" y="153" width="255" height="251" class="white edge"/>
+  <text x="880" y="200" class="mono big ink">46,548</text>
+  <text x="880" y="230" class="mono small muted">jobs succeeded</text>
+  <line x1="880" y1="256" x2="1093" y2="256" class="lightedge"/>
+  <text x="880" y="297" class="mono label orange">51.1/s partial</text>
+  <text x="880" y="325" class="mono small muted">not a full-run rate</text>
+  <text x="880" y="375" class="mono small muted">deadline reached</text>
+
+  <text x="46" y="456" class="mono micro orange">PHYSICAL RESOURCE CHECK</text>
+  <line x1="46" y1="474" x2="1114" y2="474" class="lightedge"/>
+  <text x="46" y="509" class="mono label ink">Application</text>
+  <text x="205" y="509" class="mono small ink">CPU avg 1.16 / 4 cores</text>
+  <text x="480" y="509" class="mono small ink">RAM peak 415 MiB / 6 GiB</text>
+  <text x="46" y="544" class="mono label ink">PostgreSQL</text>
+  <text x="205" y="544" class="mono small ink">CPU avg 1.01 / 4 cores</text>
+  <text x="480" y="544" class="mono small ink">RAM peak 794 MiB / 4 GiB</text>
+  <line x1="46" y1="568" x2="1114" y2="568" class="lightedge"/>
+  <text x="46" y="593" class="mono small muted">Schematic. Results are from one timed-out run; aggregate CPU and memory quotas were not exhausted.</text>
+</svg>

@@ -9,7 +9,7 @@ import (
 const nodeHeartbeatTimeout = 5 * time.Second
 
 // RuntimeState contains only process-local node health information. Jobs,
-// nodes, and assignment leases live in SQLite.
+// nodes, and assignment leases live in PostgreSQL.
 type RuntimeState struct {
 	mu           sync.Mutex
 	nodeLastSeen map[string]time.Time

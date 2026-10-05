@@ -112,7 +112,7 @@ func main() {
 		*nodeID,
 		client,
 		selectedExecutor,
-		250*time.Millisecond,
+		agent.DefaultClaimInterval,
 	)
 	drainContext, drainCancel := context.WithCancel(ctx)
 	defer drainCancel()
