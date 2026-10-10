@@ -1,7 +1,5 @@
 # mini-modal (distributed job scheduler)
 
-![mini-modal as a machine: PostgreSQL, the control plane, S3, and node agents](docs/blog/assets/anatomy/architecture.png)
-
 A small, self-hosted take on [Modal](https://modal.com)'s function invocation workflow.
 You decorate a function with `@app.function()`, and at runtime this code will run on a separate machine.
 
@@ -30,11 +28,21 @@ if __name__ == "__main__":
     print(greet.remote("Grace"))  # spawn and wait in one call
 ```
 
-## Demo
+## Dashboard
 
 ![Dashboard during a burst of 24 calls: three nodes start, jobs run, one fails after a retry, idle nodes drain (1.5x speed)](docs/blog/assets/demo.gif)
 
 Real-time version: [demo.mp4](docs/blog/assets/demo.mp4)
+
+The control plane serves a small dashboard on port 8080. It polls the HTTP API every second, so everything on it comes straight from PostgreSQL and the in-memory heartbeats.
+
+- **Overview:** total jobs, active jobs (assigned, running, or stopping), waiting jobs (pending or blocked), and healthy nodes (heartbeat within the last 5 s).
+- **Resources:** used versus total CPU, memory, and GPUs across the healthy nodes.
+- **Functions:** the deployed functions and their versions, plus forms to upload source, deploy a version, and create a job by hand.
+- **Jobs:** every job with its state, the node it was placed on, its function version, how often it ran, and its lease. You can search by job or node ID and filter by state.
+- **Nodes:** each agent with its free CPU and memory and whether it is healthy.
+- **Activity:** the latest status changes the dashboard has seen.
+- **Job page:** click a job to see its logs per attempt, the return value, the full record, and the event timeline.
 
 ## Supported features
 
@@ -237,20 +245,6 @@ This service's job is to fulfill the target state that the capacity manager plan
 ### Node (data plane)
 
 The actual service that is responsible for taking the assigned jobs and running them. For the local case, I just spawn Docker containers, but in production they would be replaced with microVMs (with snapshots) to improve latency.
-
-### Dashboard
-
-![Dashboard during a burst of 24 calls: three nodes start, jobs run, one fails after a retry, idle nodes drain (1.5x speed)](docs/blog/assets/demo.gif)
-
-The control plane also serves a small dashboard on port 8080. It polls the HTTP API every second, so everything on it comes straight from PostgreSQL and the in-memory heartbeats.
-
-- **Overview:** total jobs, active jobs (assigned, running, or stopping), waiting jobs (pending or blocked), and healthy nodes (heartbeat within the last 5 s).
-- **Resources:** used versus total CPU, memory, and GPUs across the healthy nodes.
-- **Functions:** the deployed functions and their versions, plus forms to upload source, deploy a version, and create a job by hand.
-- **Jobs:** every job with its state, the node it was placed on, its function version, how often it ran, and its lease. You can search by job or node ID and filter by state.
-- **Nodes:** each agent with its free CPU and memory and whether it is healthy.
-- **Activity:** the latest status changes the dashboard has seen.
-- **Job page:** click a job to see its logs per attempt, the return value, the full record, and the event timeline.
 
 ## Benchmarks
 
