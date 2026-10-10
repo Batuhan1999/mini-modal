@@ -8,10 +8,6 @@ Goals:
 - Learn Go
 - Learn performance characteristics
 
-It runs on one machine and is not meant for real workloads. There is no
-authentication, only one control-plane process, and Docker is not a security
-boundary for untrusted code.
-
 ```python
 from mini_modal import App
 
@@ -339,9 +335,3 @@ The [submission snapshot](docs/benchmark-2026-10-03.md) and the [end-to-end repo
 - Measure before guessing. The first 100,000-job run stalled at 46,548 jobs after 15 minutes: every scheduler pass read all pending rows while holding a lock. Reading them in batches of 10,000 with an index let the next run finish all 100,000.
 - More workers are not always faster. On 4 CPUs, going past 16 agents did not increase throughput.
 - Benchmarks on a laptop are noisy. Running each scenario three times and comparing the means was needed to tell real changes from noise.
-
-**Go**
-- `context.Context` carries timeouts and cancellation through the whole call. A job timeout is a context deadline, and a cancel request reaches the running job through the lease renewal.
-- A channel with room for one message is enough to merge many wake-ups into a single scheduler pass without blocking the request.
-- sqlc keeps the queries as plain SQL and generates typed Go code for them.
-- gRPC client streaming made live logs from the agent to the control plane simple.
