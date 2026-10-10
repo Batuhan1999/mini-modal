@@ -220,11 +220,15 @@ So my idea was to use an AST and tree shaking to only upload the parts that are 
 
 This has the effect that unnecessary deploys are reduced. They are a big problem, because when you are developing the application, an additional 2 s of reload time hurts the DX drastically.
 
+Once the function is deployed, `spawn()` sends the call to the control plane over HTTP.
+
 ### Control plane
 
 A simple HTTP API that handles the lifecycle events of a function (deployment, submission, cancellation, status reports, etc.) plus function versioning.
 
 So the control plane will validate the job and put it into our shared DB with the status `pending`, so that it can be picked up by our scheduler.
+
+The request returns right here, so `spawn()` gives you a job handle without waiting for a node. A small wake-up signal tells the scheduler there is new work, and if that signal is missed, the scheduler's pass every second still finds the job.
 
 ### Scheduler
 
@@ -232,19 +236,27 @@ For this case, a simple first-fit placement scheduler. It takes the pending jobs
 
 ![First-fit scheduling pass](docs/blog/assets/scheduler.png)
 
+If no node has room, the job simply stays `pending`. These waiting jobs are what the capacity manager looks at next.
+
 ### Capacity manager
 
 The capacity manager's job is to check the current demand (the pending jobs), compare it with the free resources, and calculate the target state of resources. Because we want to have a small leeway, a next step would be to also keep a buffer of warm nodes so we can handle spikes.
 
 ![Capacity planning pass](docs/blog/assets/capacity.png)
 
+It only writes this target into `node_pools`. Starting the nodes is the provisioner's job.
+
 ### Provisioning
 
 This service's job is to fulfill the target state that the capacity manager planned. It starts the nodes in each node pool necessary to meet the target state. In this example, it just runs the agent binary as a child process. In a production system, this would be replaced with bare-metal servers.
 
+Each new agent registers with the control plane and starts sending heartbeats. From then on, the scheduler can place jobs on it.
+
 ### Node (data plane)
 
 The actual service that is responsible for taking the assigned jobs and running them. For the local case, I just spawn Docker containers, but in production they would be replaced with microVMs (with snapshots) to improve latency.
+
+It claims its job over gRPC, downloads the archive from S3, runs the function, streams the logs back, renews its lease every 5 seconds, and reports the result.
 
 ## Benchmarks
 
@@ -301,3 +313,35 @@ The [submission snapshot](docs/benchmark-2026-10-03.md) and the [end-to-end repo
   quotas, fair-share scheduling, or warm pools.
 - PostgreSQL is the only supported database. Older benchmark results used
   SQLite.
+- Execution is at least once. If a lease expires, the job can run again, so
+  functions should be safe to run twice.
+- Agents poll for work every 50 ms instead of getting assignments pushed to
+  them. That polling caps how fast one agent can start jobs.
+- Retries wait a fixed backoff. There is no exponential backoff or jitter.
+- Only Python functions with JSON arguments and results. Third-party libraries
+  must already be in the worker image.
+- The packager follows top-level functions, assignments, and imports. A class
+  used by the function is not included yet.
+- No cron schedules or job dependencies. A job runs as soon as there is room.
+- Jobs, logs, and events are never cleaned up, so the database keeps growing.
+- No authentication. Anyone who can reach the API can upload and run code.
+
+## Learnings
+
+**Distributed systems**
+- Accepting a job and running it are two different promises. Storing the job and returning right away made submission fast; moving scheduling out of the request alone raised admission throughput by about 55%.
+- The database is the queue. The wake-up signal is only a hint, so losing one never loses a job.
+- Workers can disappear at any time. A lease that is not renewed gives the job back, and the attempt number makes sure a late result from an old worker is rejected. That gives at-least-once, not exactly-once.
+- Desired state and actual state are separate. The capacity manager writes what we want, and the provisioner keeps working until it is true, the same idea as Kubernetes controllers.
+- Retries need idempotency. Sending the same job ID twice returns the same job instead of running it twice.
+
+**Performance**
+- Measure before guessing. The first 100,000-job run stalled at 46,548 jobs after 15 minutes: every scheduler pass read all pending rows while holding a lock. Reading them in batches of 10,000 with an index let the next run finish all 100,000.
+- More workers are not always faster. On 4 CPUs, going past 16 agents did not increase throughput.
+- Benchmarks on a laptop are noisy. Running each scenario three times and comparing the means was needed to tell real changes from noise.
+
+**Go**
+- `context.Context` carries timeouts and cancellation through the whole call. A job timeout is a context deadline, and a cancel request reaches the running job through the lease renewal.
+- A channel with room for one message is enough to merge many wake-ups into a single scheduler pass without blocking the request.
+- sqlc keeps the queries as plain SQL and generates typed Go code for them.
+- gRPC client streaming made live logs from the agent to the control plane simple.

@@ -80,3 +80,8 @@ Writing notes, not a draft. Keep one invocation visible through every section. T
 - For a platform that strips scripts or SVG animation, export a short screen recording and use the static SVG as the fallback.
 - Use explicit state labels (`pending`, `assigned`, `running`) and distinguish **desired** nodes from **observed** agents. No moving arrows without a state change to explain.
 - Reference structure: [Devanshu's sandbox design](https://medium.com/@devanshusharma658/agent-sandboxes-at-scale-a-distributed-systems-design-for-ai-driven-development-3765f4a9460c) moves from the user problem to HLD and component responsibilities; [PlanetScale's architecture of Neki](https://planetscale.com/blog/the-architecture-of-neki) keeps a stable diagram and highlights components; [massively parallel Postgres backups](https://planetscale.com/blog/massively-parallel-postgres-backups) reveals one lifecycle step at a time. Use the pacing, not their prose or illustrations.
+
+## Follow-one-call lines (moved from the README)
+
+- After the architecture diagram: the sections below follow one call, `greet.spawn("Ada")`, through these parts, starting with the data structures they all share.
+- After the node section: when the agent reports the result, the job becomes `succeeded` and `call.get()` returns `"Hello, Ada!"`. That is the whole path of one call; the benchmarks then measure how many calls this path can handle.
