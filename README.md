@@ -1,5 +1,7 @@
 # mini-modal (distributed job scheduler)
 
+![mini-modal as a machine: PostgreSQL, the control plane, S3, and node agents](docs/blog/assets/anatomy/architecture.png)
+
 A small, self-hosted take on [Modal](https://modal.com)'s function invocation workflow.
 You decorate a function with `@app.function()`, and at runtime this code will run on a separate machine.
 
@@ -27,6 +29,12 @@ if __name__ == "__main__":
     print(call.get())             # waits for the result
     print(greet.remote("Grace"))  # spawn and wait in one call
 ```
+
+## Demo
+
+![Dashboard during a burst of 24 calls: three nodes start, jobs run, one fails after a retry, idle nodes drain (1.5x speed)](docs/blog/assets/demo.gif)
+
+Real-time version: [demo.mp4](docs/blog/assets/demo.mp4)
 
 ## Supported features
 
@@ -65,9 +73,9 @@ if __name__ == "__main__":
 
 ![mini-modal architecture](docs/blog/assets/architecture.png)
 
-### Function structure
+### Data structures
 
-![Function, function version, and job](docs/blog/assets/data-model.png)
+![Data structures: functions, versions, jobs, node pools, and nodes](docs/blog/assets/data-model.png)
 
 - What's a function:
   ```go
@@ -118,6 +126,38 @@ if __name__ == "__main__":
   }
   ```
   This is an execution that will run on one of our agents.
+
+- What's a node_pool:
+  ```go
+  type NodePool struct {
+      ID                 string // "local-dev"
+      GpuType            string
+      GpusPerNode        int64
+      CpusPerNode        int64  // 8
+      MemoryGbPerNode    int64  // 16
+      MinNodes           int64  // 0
+      MaxNodes           int64  // 32
+      DesiredNodes       int64  // written by the capacity manager
+      IdleTimeoutSeconds int64  // 5
+      AutoscaleEnabled   bool
+  }
+  ```
+  This is a group of nodes that all look the same. It stores how big each node is (CPU, RAM, GPUs) and how many nodes we want. The capacity manager writes the desired count here, and the provisioner reads it to start or drain nodes.
+
+- What's a node:
+  ```go
+  // Heartbeats are tracked in control-plane memory, not in this table.
+  type Node struct {
+      ID            string // "node-<uuid>"
+      PoolID        string // "local-dev"
+      GpuType       string
+      TotalGpus     int64
+      TotalCpus     int64
+      TotalMemoryGb int64
+      ShouldDrain   bool   // set when scaling down
+  }
+  ```
+  This is one worker that runs our jobs. In our simple case, it's an agent process that registers with its pool and how much CPU, RAM, and GPUs it has. When we scale down, we set `ShouldDrain` so it stops taking new jobs and exits after the running ones finish.
 
 ### Python SDK
 
@@ -198,16 +238,62 @@ This service's job is to fulfill the target state that the capacity manager plan
 
 The actual service that is responsible for taking the assigned jobs and running them. For the local case, I just spawn Docker containers, but in production they would be replaced with microVMs (with snapshots) to improve latency.
 
+### Dashboard
+
+![Dashboard during a burst of 24 calls: three nodes start, jobs run, one fails after a retry, idle nodes drain (1.5x speed)](docs/blog/assets/demo.gif)
+
+The control plane also serves a small dashboard on port 8080. It polls the HTTP API every second, so everything on it comes straight from PostgreSQL and the in-memory heartbeats.
+
+- **Overview:** total jobs, active jobs (assigned, running, or stopping), waiting jobs (pending or blocked), and healthy nodes (heartbeat within the last 5 s).
+- **Resources:** used versus total CPU, memory, and GPUs across the healthy nodes.
+- **Functions:** the deployed functions and their versions, plus forms to upload source, deploy a version, and create a job by hand.
+- **Jobs:** every job with its state, the node it was placed on, its function version, how often it ran, and its lease. You can search by job or node ID and filter by state.
+- **Nodes:** each agent with its free CPU and memory and whether it is healthy.
+- **Activity:** the latest status changes the dashboard has seen.
+- **Job page:** click a job to see its logs per attempt, the return value, the full record, and the event timeline.
+
 ## Benchmarks
 
-In one run, with the control plane and agents limited to 4 CPUs and
-PostgreSQL in its own container, it completed 100,000 hello-world calls
-submitted at 250 per second. That run executed functions as host processes,
-not Docker containers, on a shared Mac. It is one data point, not a capacity
-claim. The [report](docs/benchmark-hello-process-2026-10-03.md) covers the
-setup, the runs that did not finish, and what changed between them. The
-[methodology](docs/benchmarking.md) explains how to reproduce it, and raw
-results are [indexed here](benchmarks/results/README.md).
+Because i wanted so also see the perfomance characteristics i created a benchmark to test see how much it could perform.
+
+### Setup
+
+| Part | Where it runs | Limit |
+| --- | --- | --- |
+| Control plane (+ 16 agents in end-to-end runs) | one container | 4 CPUs, 6 GiB |
+| PostgreSQL 15 | own container | 4 CPUs, 4 GiB |
+| Load generator | own container in end-to-end runs | 2 CPUs, 2 GiB |
+| MinIO | own container | |
+
+There are two kinds of runs:
+
+- **Submission:** 10,000 jobs sent over HTTP by 1 or 32 concurrent clients. Only the request is timed, until the job is stored as `pending`. No agents run.
+- **End to end:** 100,000 calls of a hello-world Python function at a fixed rate. Each call is stored, scheduled, claimed by an agent, downloads the archive, runs as a host process (not Docker), and reports a JSON result.
+
+Everything runs in Docker on one Mac. Submission numbers are the mean of three runs; each end-to-end rate is a single run.
+
+### Results
+
+**Submission (control plane only)**
+
+| HTTP clients | Jobs stored per second | p99 per request |
+| ---: | ---: | ---: |
+| 1 | 1,869 | 2.0 ms |
+| 32 | 11,384 | 9.5 ms |
+
+**End to end (hello-world function)**
+
+| Submitted/s | Completed/s | Queue empty after last submit | Job p99 | App CPU (of 4) | PostgreSQL CPU (of 4) |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 249.9 | 246.0 | 6.4 s | 61.4 s | 3.63 | 0.76 |
+| 274.9 | 242.2 | 49.1 s | 268.0 s | 3.64 | 0.80 |
+
+- **About 11,400 jobs stored per second** with 32 clients, and a burst of 100,000 jobs was accepted in 8.6 s.
+- **250 calls/s end to end** over 100,000 calls. The queue was empty 6.4 s after the last submission, and all 200,000 calls in both runs succeeded.
+- **The nodes are the limit, not the control plane.** Storing a job is about 45 times faster than running one. End-to-end throughput follows how fast the agents claim work: 8 agents polling every 50 ms can start at most 160 calls/s and reached 157/s. 16 agents reached about 250/s while sharing the same 4 CPUs with the control plane.
+- **PostgreSQL used under 1 of its 4 cores** in the end-to-end runs.
+
+The [submission snapshot](docs/benchmark-2026-10-03.md) and the [end-to-end report](docs/benchmark-hello-process-2026-10-03.md) have every run and the full setup, the [methodology](docs/benchmarking.md) explains how to reproduce them, and raw results are [indexed here](benchmarks/results/README.md).
 
 ## Limits
 

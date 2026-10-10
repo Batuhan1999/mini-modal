@@ -9,3 +9,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .mini-modal/
+
+# Local working copies for README edits
+/README.claude.md
+/README.anatomy.md
