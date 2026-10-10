@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 780" role="img" aria-labelledby="title desc">
+  <title id="title">What app.deploy() uploads for greet</title>
+  <desc id="desc">The SDK parses demo/app.py, starts at the greet function, and keeps only the definitions it reads: the GREETING constant and the title_case import. It drops the decorator, the app object, the unused report import, the unrelated function, and the main block. It then adds the local module demo/text_utils.py and the package marker, packs the files in a fixed order, and hashes the archive.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#345b74" stroke-width="1.6"/></marker>
+    <style>
+      .bg{fill:#f8f7f3}.ink{fill:#173143}.muted{fill:#687a83}.gone{fill:#a7b1b5;text-decoration:line-through}
+      .frame{fill:#fffdfa;stroke:#c5d1d2;stroke-width:1.5}.code{fill:#f2f5f5;stroke:#c5d1d2;stroke-width:1.2}
+      .keep{fill:#64834c}.num{fill:#345b74}.numtext{fill:#fff;font-size:15px;font-weight:700}
+      .line{fill:none;stroke:#345b74;stroke-width:2.2;marker-end:url(#arrow)}
+      .mono{font-family:Menlo,Consolas,monospace}.sans{font-family:Inter,"Helvetica Neue",Arial,sans-serif}
+      .file{font-size:20px;font-weight:700}.label{font-size:21px;font-weight:650}.src{font-size:18px}.small{font-size:16px}.step{font-size:17px}.tag{font-size:13px;letter-spacing:1.8px;font-weight:700}
+    </style>
+  </defs>
+  <rect class="bg" width="1280" height="780"/>
+
+  <!-- Source -->
+  <rect x="30" y="30" width="570" height="690" rx="10" class="frame"/>
+  <text x="54" y="64" class="mono tag muted">YOUR PROJECT</text>
+  <text x="54" y="98" class="mono file ink">demo/app.py</text>
+
+  <text x="74" y="140" class="mono src gone">from mini_modal import App</text>
+  <text x="74" y="166" class="mono src gone">from demo import report</text>
+  <rect x="54" y="174" width="5" height="22" class="keep"/>
+  <text x="74" y="192" class="mono src ink">from demo.text_utils import title_case</text>
+
+  <text x="74" y="244" class="mono src gone">app = App("demo")</text>
+  <rect x="54" y="252" width="5" height="22" class="keep"/>
+  <text x="74" y="270" class="mono src ink">GREETING = "Hello"</text>
+
+  <text x="74" y="322" class="mono src gone">@app.function(cpus=1, memory_gb=1)</text>
+  <rect x="54" y="330" width="5" height="48" class="keep"/>
+  <text x="74" y="348" class="mono src ink">def greet(name: str) -&gt; str:</text>
+  <text x="117" y="374" class="mono src ink">return f"{GREETING}, {title_case(name)}!"</text>
+
+  <text x="74" y="426" class="mono src gone">def print_weekly_report():</text>
+  <text x="117" y="452" class="mono src gone">print(report.build())</text>
+
+  <text x="74" y="504" class="mono src gone">if __name__ == "__main__":</text>
+  <text x="117" y="530" class="mono src gone">app.deploy()</text>
+  <text x="117" y="556" class="mono src gone">print(greet.remote("ada lovelace"))</text>
+
+  <line x1="54" y1="590" x2="576" y2="590" stroke="#c5d1d2" stroke-width="1"/>
+  <rect x="54" y="610" width="5" height="22" class="keep"/>
+  <text x="74" y="628" class="mono src ink">demo/text_utils.py</text>
+  <text x="300" y="628" class="sans small muted">imported by greet</text>
+  <text x="74" y="660" class="mono src gone">demo/report.py</text>
+  <text x="300" y="660" class="sans small muted">not used by greet</text>
+  <rect x="54" y="674" width="5" height="22" class="keep"/>
+  <text x="74" y="692" class="mono src ink">demo/__init__.py</text>
+  <text x="300" y="692" class="sans small muted">package marker</text>
+
+  <!-- Transformation -->
+  <path d="M604 300 H654" class="line"/>
+  <text x="611" y="288" class="mono tag muted">AST</text>
+
+  <!-- Archive -->
+  <rect x="660" y="30" width="590" height="690" rx="10" class="frame"/>
+  <text x="684" y="64" class="mono tag muted">WHAT GETS UPLOADED</text>
+  <text x="684" y="98" class="sans label ink">archive for demo.greet</text>
+
+  <text x="684" y="140" class="mono src ink">demo/__init__.py</text>
+  <text x="930" y="140" class="sans small muted">empty</text>
+  <text x="684" y="168" class="mono src ink">demo/greet.py</text>
+  <text x="930" y="168" class="sans small muted">reduced from app.py</text>
+  <text x="684" y="196" class="mono src ink">demo/text_utils.py</text>
+  <text x="930" y="196" class="sans small muted">copied as is</text>
+
+  <rect x="684" y="220" width="542" height="196" rx="6" class="code"/>
+  <text x="704" y="248" class="mono small muted">demo/greet.py</text>
+  <text x="704" y="284" class="mono src ink">from demo.text_utils import title_case</text>
+  <text x="704" y="310" class="mono src ink">GREETING = 'Hello'</text>
+  <text x="704" y="362" class="mono src ink">def greet(name: str) -&gt; str:</text>
+  <text x="747" y="388" class="mono src ink">return f'{GREETING}, {title_case(name)}!'</text>
+
+  <text x="684" y="458" class="mono src ink">sha256 4c966ee2…d683d5</text>
+
+  <line x1="684" y1="490" x2="1226" y2="490" stroke="#c5d1d2" stroke-width="1"/>
+  <text x="684" y="524" class="mono tag muted">HOW</text>
+  <circle cx="697" cy="560" r="13" class="num"/><text x="697" y="565" text-anchor="middle" class="sans numtext">1</text>
+  <text x="722" y="566" class="sans step ink">Parse app.py into an AST</text>
+  <circle cx="697" cy="600" r="13" class="num"/><text x="697" y="605" text-anchor="middle" class="sans numtext">2</text>
+  <text x="722" y="606" class="sans step ink">Start at greet, keep what it reads: GREETING, title_case</text>
+  <circle cx="697" cy="640" r="13" class="num"/><text x="697" y="645" text-anchor="middle" class="sans numtext">3</text>
+  <text x="722" y="646" class="sans step ink">Add the local files those imports point to</text>
+  <circle cx="697" cy="680" r="13" class="num"/><text x="697" y="685" text-anchor="middle" class="sans numtext">4</text>
+  <text x="722" y="686" class="sans step ink">Tar in a fixed order with zero timestamps, then hash</text>
+
+  <!-- Legend -->
+  <rect x="30" y="744" width="5" height="22" class="keep"/>
+  <text x="46" y="761" class="sans small muted">kept</text>
+  <text x="110" y="761" class="sans small gone">dropped</text>
+</svg>

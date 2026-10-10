@@ -1,112 +1,223 @@
-# mini-modal
+# mini-modal (distributed job scheduler)
 
-A small function platform built to learn what sits between `submit()` and a
-running container. The control plane is Go; function code is Python. Jobs and
-function versions live in PostgreSQL, archives live in an S3-compatible store,
-and node agents talk to the control plane over gRPC.
+A small, self-hosted take on [Modal](https://modal.com)'s function invocation workflow.
+You decorate a function with `@app.function()`, and at runtime this code will run on a separate machine.
 
-This is a working prototype, not a hosted service or a secure multi-tenant
-sandbox. It has no authentication, a single control-plane process, and a local
-provisioner that starts agent **processes**, not VMs.
+Goals:
+- Implement distributed systems techniques
+- Learn Go
+- Learn performance characteristics
 
-## What happens to a function call?
+It runs on one machine and is not meant for real workloads. There is no
+authentication, only one control-plane process, and Docker is not a security
+boundary for untrusted code.
 
-1. The Python SDK packages the function and its reachable local imports. A
-   content hash lets unchanged deployments reuse an existing version.
-2. An invocation creates a job referencing that immutable version. The HTTP
-   request returns after the job is stored; it does not wait for execution.
-3. The scheduler assigns work to a healthy node with enough free resources.
-   The capacity manager adjusts each pool's desired node count; the local
-   provisioner starts or drains agents to follow it.
-4. An agent claims its assignment over gRPC, downloads the archive, and runs
-   the function in Docker. It streams logs and renews its lease while running.
-5. The agent reports a result, failure, or cancellation. A lost lease can
-   cause another attempt, so callers must not assume exactly-once execution.
+```python
+from mini_modal import App
 
-The [high-level design](docs/architecture/README.md) has a diagram and links
-to the low-level designs. The [Python SDK guide](sdk/python/README.md) shows
-`@app.function`, `spawn()`, and `remote()`.
-The [story outline](docs/blog/story-outline.md) follows one invocation through
-submission, scheduling, capacity, provisioning, execution, and recovery. Its
-diagrams include editable Excalidraw scenes and a browser walkthrough.
+app = App("demo")
 
-## Run locally
+@app.function(cpus=1, memory_gb=1)
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
 
-You need Go 1.27 and Docker with Compose. Copy the development configuration,
-start PostgreSQL and the object store, then build the worker image and start
-the control plane:
-
-```sh
-cp .env.example .env
-docker compose -f compose.dev.yml up -d --wait postgres
-make objectstore-up
-docker build -t mini-modal-python:dev sdk/python
-go tool air
+if __name__ == "__main__":
+    app.deploy()
+    call = greet.spawn("Ada")     # returns as soon as the job is stored
+    print(call.get())             # waits for the result
+    print(greet.remote("Grace"))  # spawn and wait in one call
 ```
 
-Air builds both Go binaries and restarts the control plane on source changes.
-The dashboard is at [localhost:8080](http://localhost:8080). It can upload a
-Python file, deploy a function version, invoke it, and show its jobs, events,
-logs, and result. Agents appear only when the capacity manager requests them.
-The gRPC listener is on `localhost:9090`.
+## Supported features
 
-To run without Air, build the agent first and then start the control plane:
+**Deploying functions**
+- Uploading an artifact
+- Tree-shaken artifacts and skipping unchanged deploys
+- Immutable function versions
 
-```sh
-go build -o ./tmp/agent ./cmd/agent
-go run ./cmd/controlplane
+**Jobs**
+- Idempotent job submission
+- Job priorities
+- Job timeouts
+- Cancellation of a job
+
+**Scheduling and capacity**
+- First-fit scheduling
+- Capacity management and provisioning on backlog
+- Node registration and heartbeats
+- Graceful node draining
+
+**Execution**
+- Docker execution with CPU and memory limits
+- Live log streaming from the node, stored per attempt
+
+**Failure handling**
+- Leases and fencing tokens
+- Retrying with a fixed backoff
+
+**Observability and tooling**
+- Job lifecycle event history
+- Prometheus metrics and a Grafana dashboard
+- Web dashboard for deploying, invoking, and inspecting jobs
+- Load simulator and benchmark harness
+
+## The Plan
+
+![mini-modal architecture](docs/blog/assets/architecture.png)
+
+### Function structure
+
+![Function, function version, and job](docs/blog/assets/data-model.png)
+
+- What's a function:
+  ```go
+  // internal/store/postgres/sqlc/models.go
+  type Function struct {
+      ID        string // "demo.greet"
+      CreatedAt int64
+  }
+  ```
+  This is the unique identifier for every decorated function you have. In our simple case, it's the app name plus the function name, like `demo.greet`.
+
+- What's a function_version:
+  ```go
+  type FunctionVersion struct {
+      ID                  string
+      FunctionID          string // "demo.greet"
+      ArtifactKey         string // ".../artifacts/<sha256>.tar.gz" in S3
+      Image               string // "mini-modal-python:dev"
+      GpuType             string
+      Gpus                int64
+      Cpus                int64
+      MemoryGb            int64
+      MaxAttempts         int64
+      RetryBackoffSeconds int64
+      CreatedAt           int64
+      Entrypoint          string // "demo.greet:greet"
+      TimeoutSeconds      int64
+  }
+  ```
+  This allows us to save multiple versions of a function if something changes. It also stores the requirements of the invocation, like how much RAM, CPU, or GPUs it needs.
+
+- What's a job:
+  ```go
+  type Job struct {
+      ID                string
+      Priority          int64
+      Status            string          // pending, assigned, running, succeeded, ...
+      NodeID            string          // set by the scheduler
+      Attempt           int64           // +1 on every assignment
+      LeaseExpiresAt    int64           // the agent must claim or renew before this
+      UpdatedAt         int64
+      NextAttemptAt     int64           // retry backoff
+      LastError         string
+      ExecutionAttempts int64           // +1 on every claim
+      FunctionVersionID string          // which version to run
+      InputJson         json.RawMessage // {"args": ["Ada"], "kwargs": {}}
+      CreatedAt         int64
+  }
+  ```
+  This is an execution that will run on one of our agents.
+
+### Python SDK
+
+Just a small SDK that allows us to upload the decorated function. Then you can call the function with `.spawn()` and `.get()`.
+It basically mimics Modal's SDK, but with a little twist. What Modal does is package every file where you have a decorated function and deploy it, even if the code doesn't have anything to do with the decorated function.
+
+Example:
+
+```python
+# demo/app.py, deployed with: modal deploy -m demo.app
+import modal
+
+from demo import report
+from demo.text_utils import title_case
+
+app = modal.App("demo")
+
+GREETING = "Hello"
+
+
+@app.function()
+def greet(name: str) -> str:
+    return f"{GREETING}, {title_case(name)}!"
+
+
+def print_weekly_report():
+    print(report.build())
+
+
+@app.local_entrypoint()
+def main():
+    print(greet.remote("ada lovelace"))
 ```
 
-`.env` is ignored by Git. The example credentials are for local development
-only. PostgreSQL and object-store data live in Docker volumes; stopping their
-containers does not delete those volumes. The worker image must be available
-to the Docker daemon used by an agent.
+What ends up in the container:
 
-## Check the system
-
-```sh
-go test ./...
-go vet ./...
-PYTHONPATH=sdk/python python3 -m unittest discover -s sdk/python/tests
+```text
+demo/              the whole package, because greet is defined in it
+├── __init__.py
+├── app.py         all of it, including print_weekly_report and main
+├── report.py      greet never uses this
+└── text_utils.py
 ```
 
-For PostgreSQL-backed Go tests, set `MINI_MODAL_TEST_DATABASE_URL` to a test
-PostgreSQL URL. Those tests create isolated schemas; without the variable they
-are skipped. The Python command also needs the SDK dependency installed
-(`python3 -m pip install -e sdk/python`).
+The problem that arises here is that `.deploy()` is triggered even if you change anything not related to your function, even function invocations, because the SDK hashes the contents of the artifact.
 
-The [benchmark methodology](docs/benchmarking.md) and [end-to-end report](docs/benchmark-hello-process-2026-10-03.md)
-record a bounded-container hello-world run, including incomplete runs and
-resource traces. The numbers describe this setup, not a production capacity
-claim. Raw results are [indexed here](benchmarks/results/README.md).
+So my idea was to use an AST and tree shaking to only upload the parts that are necessary for the invocation. Because of dynamic imports, we still need a way to include some modules ourselves (`include_modules`).
 
-## Where the code lives
+![What app.deploy() uploads for greet](docs/blog/assets/packaging.png)
 
-| Path | Role |
-| --- | --- |
-| `cmd/controlplane`, `internal/controlplane` | HTTP/gRPC process and durable job lifecycle |
-| `internal/scheduler` | Priority-ordered first-fit placement |
-| `internal/capacity`, `internal/provisioner` | Desired node counts and local agent processes |
-| `cmd/agent`, `internal/agent`, `internal/executor` | Claim, lease renewal, log upload, execution |
-| `internal/store/postgres`, `internal/artifact` | PostgreSQL state and S3 archives |
-| `sdk/python` | Function packaging, deployment cache, invocation client |
-| `cmd/simulator`, `scripts`, `benchmarks/results` | Workload generation and measurements |
+![How app.deploy() decides whether to upload](docs/blog/assets/deploy-cache.png)
 
-## Deliberate limits
+This has the effect that unnecessary deploys are reduced. They are a big problem, because when you are developing the application, an additional 2 s of reload time hurts the DX drastically.
 
-- One control-plane process owns in-memory node heartbeat state. Multiple
-  replicas would need shared health and coordination.
-- Local provisioning launches processes on the control-plane host. It is a
-  stand-in for a machine or VM provisioner, not one.
-- Docker execution is Python-specific and does not provide a microVM security
-  boundary. GPU requests participate in placement, but the Docker executor
-  does not yet provision real GPUs.
-- Scheduling and capacity planning scan current PostgreSQL rows. Large queues,
-  fairness, quotas, and warm pools remain open design work.
-- Historical SQLite benchmark results remain available, but PostgreSQL is the
-  only maintained persistence implementation.
+### Control plane
 
-The [architecture review](docs/architecture/README.md#known-gaps) separates
-these limits from implemented behaviour. The
-[learning roadmap](docs/learning-roadmap.md) records the references that
-informed the project.
+A simple HTTP API that handles the lifecycle events of a function (deployment, submission, cancellation, status reports, etc.) plus function versioning.
+
+So the control plane will validate the job and put it into our shared DB with the status `pending`, so that it can be picked up by our scheduler.
+
+### Scheduler
+
+For this case, a simple first-fit placement scheduler. It takes the pending jobs, checks the currently available nodes, and tries to place each job on one of them.
+
+![First-fit scheduling pass](docs/blog/assets/scheduler.png)
+
+### Capacity manager
+
+The capacity manager's job is to check the current demand (the pending jobs), compare it with the free resources, and calculate the target state of resources. Because we want to have a small leeway, a next step would be to also keep a buffer of warm nodes so we can handle spikes.
+
+![Capacity planning pass](docs/blog/assets/capacity.png)
+
+### Provisioning
+
+This service's job is to fulfill the target state that the capacity manager planned. It starts the nodes in each node pool necessary to meet the target state. In this example, it just runs the agent binary as a child process. In a production system, this would be replaced with bare-metal servers.
+
+### Node (data plane)
+
+The actual service that is responsible for taking the assigned jobs and running them. For the local case, I just spawn Docker containers, but in production they would be replaced with microVMs (with snapshots) to improve latency.
+
+## Benchmarks
+
+In one run, with the control plane and agents limited to 4 CPUs and
+PostgreSQL in its own container, it completed 100,000 hello-world calls
+submitted at 250 per second. That run executed functions as host processes,
+not Docker containers, on a shared Mac. It is one data point, not a capacity
+claim. The [report](docs/benchmark-hello-process-2026-10-03.md) covers the
+setup, the runs that did not finish, and what changed between them. The
+[methodology](docs/benchmarking.md) explains how to reproduce it, and raw
+results are [indexed here](benchmarks/results/README.md).
+
+## Limits
+
+- One control-plane process keeps node heartbeats in memory. Running several
+  replicas would need shared health state and coordination.
+- The provisioner starts agent processes on the same machine. It stands in for
+  a VM provisioner.
+- Functions run in plain Docker containers, not microVMs. GPU requests affect
+  placement, but no real GPUs are attached.
+- Scheduling and capacity planning scan PostgreSQL rows directly. There are no
+  quotas, fair-share scheduling, or warm pools.
+- PostgreSQL is the only supported database. Older benchmark results used
+  SQLite.

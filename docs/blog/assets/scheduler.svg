@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 590" role="img" aria-labelledby="title desc">
+  <title id="title">First-fit scheduling pass</title>
+  <desc id="desc">Two 8-CPU nodes: node-a has 2 CPUs free, node-b has 7. Jobs are tried in priority order on the first node with room. Job 1 needs 4 CPUs and lands on node-b. Job 2 needs 2 and lands on node-a. Job 3 needs 4 but neither node has room, so it stays pending. Job 4 needs 16, more than any node has, so it is marked unschedulable.</desc>
+  <defs><style>
+    .bg{fill:#f8f7f3}.ink{fill:#173143}.muted{fill:#687a83}.ok{fill:#4f6f3a}.no{fill:#b4533a}
+    .card{fill:#e7eff1;stroke:#345b74;stroke-width:1.5}
+    .busy{fill:#a9bbc4}.placed{fill:#345b74}.free{fill:#fffdfa;stroke:#c5d1d2;stroke-width:1.2}
+    .chosen{fill:none;stroke:#64834c;stroke-width:2.5}
+    .mono{font-family:Menlo,Consolas,monospace}.sans{font-family:Inter,"Helvetica Neue",Arial,sans-serif}
+    .job{font-size:19px;font-weight:700}.label{font-size:19px;font-weight:650}.small{font-size:16px}.note{font-size:15px}.tag{font-size:13px;letter-spacing:1.8px;font-weight:700}
+  </style></defs>
+  <rect class="bg" width="1240" height="590"/>
+  <text x="40" y="50" class="mono tag muted">PENDING JOBS, BY PRIORITY</text>
+  <text x="360" y="50" class="mono tag muted">NODE-A · 8 CPU</text>
+  <text x="700" y="50" class="mono tag muted">NODE-B · 8 CPU</text>
+  <text x="1010" y="50" class="mono tag muted">RESULT</text>
+  <text x="40" y="112" class="sans small muted">before the pass</text>
+  <rect x="360" y="88" width="30" height="28" rx="3" class="busy"/>
+  <rect x="394" y="88" width="30" height="28" rx="3" class="busy"/>
+  <rect x="428" y="88" width="30" height="28" rx="3" class="busy"/>
+  <rect x="462" y="88" width="30" height="28" rx="3" class="busy"/>
+  <rect x="496" y="88" width="30" height="28" rx="3" class="busy"/>
+  <rect x="530" y="88" width="30" height="28" rx="3" class="busy"/>
+  <rect x="564" y="88" width="30" height="28" rx="3" class="free"/>
+  <rect x="598" y="88" width="30" height="28" rx="3" class="free"/>
+  <rect x="700" y="88" width="30" height="28" rx="3" class="busy"/>
+  <rect x="734" y="88" width="30" height="28" rx="3" class="free"/>
+  <rect x="768" y="88" width="30" height="28" rx="3" class="free"/>
+  <rect x="802" y="88" width="30" height="28" rx="3" class="free"/>
+  <rect x="836" y="88" width="30" height="28" rx="3" class="free"/>
+  <rect x="870" y="88" width="30" height="28" rx="3" class="free"/>
+  <rect x="904" y="88" width="30" height="28" rx="3" class="free"/>
+  <rect x="938" y="88" width="30" height="28" rx="3" class="free"/>
+  <text x="360" y="142" class="sans note muted">2 free</text>
+  <text x="700" y="142" class="sans note muted">7 free</text>
+  <rect x="40" y="174" width="260" height="66" rx="8" class="card"/>
+  <text x="60" y="202" class="mono job ink">job 1</text>
+  <text x="60" y="226" class="sans small muted">needs 4 CPU</text>
+  <rect x="360" y="180" width="30" height="28" rx="3" class="busy"/>
+  <rect x="394" y="180" width="30" height="28" rx="3" class="busy"/>
+  <rect x="428" y="180" width="30" height="28" rx="3" class="busy"/>
+  <rect x="462" y="180" width="30" height="28" rx="3" class="busy"/>
+  <rect x="496" y="180" width="30" height="28" rx="3" class="busy"/>
+  <rect x="530" y="180" width="30" height="28" rx="3" class="busy"/>
+  <rect x="564" y="180" width="30" height="28" rx="3" class="free"/>
+  <rect x="598" y="180" width="30" height="28" rx="3" class="free"/>
+  <rect x="700" y="180" width="30" height="28" rx="3" class="busy"/>
+  <rect x="734" y="180" width="30" height="28" rx="3" class="placed"/>
+  <rect x="768" y="180" width="30" height="28" rx="3" class="placed"/>
+  <rect x="802" y="180" width="30" height="28" rx="3" class="placed"/>
+  <rect x="836" y="180" width="30" height="28" rx="3" class="placed"/>
+  <rect x="870" y="180" width="30" height="28" rx="3" class="free"/>
+  <rect x="904" y="180" width="30" height="28" rx="3" class="free"/>
+  <rect x="938" y="180" width="30" height="28" rx="3" class="free"/>
+  <rect x="695" y="175" width="278" height="38" rx="6" class="chosen"/>
+  <text x="360" y="234" class="sans note no">✗ only 2 free</text>
+  <text x="700" y="234" class="sans note ok">✓ fits, 3 left</text>
+  <text x="1010" y="204" class="sans label ink">assigned to node-b</text>
+  <rect x="40" y="266" width="260" height="66" rx="8" class="card"/>
+  <text x="60" y="294" class="mono job ink">job 2</text>
+  <text x="60" y="318" class="sans small muted">needs 2 CPU</text>
+  <rect x="360" y="272" width="30" height="28" rx="3" class="busy"/>
+  <rect x="394" y="272" width="30" height="28" rx="3" class="busy"/>
+  <rect x="428" y="272" width="30" height="28" rx="3" class="busy"/>
+  <rect x="462" y="272" width="30" height="28" rx="3" class="busy"/>
+  <rect x="496" y="272" width="30" height="28" rx="3" class="busy"/>
+  <rect x="530" y="272" width="30" height="28" rx="3" class="busy"/>
+  <rect x="564" y="272" width="30" height="28" rx="3" class="placed"/>
+  <rect x="598" y="272" width="30" height="28" rx="3" class="placed"/>
+  <rect x="355" y="267" width="278" height="38" rx="6" class="chosen"/>
+  <rect x="700" y="272" width="30" height="28" rx="3" class="busy"/>
+  <rect x="734" y="272" width="30" height="28" rx="3" class="placed"/>
+  <rect x="768" y="272" width="30" height="28" rx="3" class="placed"/>
+  <rect x="802" y="272" width="30" height="28" rx="3" class="placed"/>
+  <rect x="836" y="272" width="30" height="28" rx="3" class="placed"/>
+  <rect x="870" y="272" width="30" height="28" rx="3" class="free"/>
+  <rect x="904" y="272" width="30" height="28" rx="3" class="free"/>
+  <rect x="938" y="272" width="30" height="28" rx="3" class="free"/>
+  <text x="360" y="326" class="sans note ok">✓ fits, 0 left</text>
+  <text x="700" y="326" class="sans note muted">not checked</text>
+  <text x="1010" y="296" class="sans label ink">assigned to node-a</text>
+  <rect x="40" y="358" width="260" height="66" rx="8" class="card"/>
+  <text x="60" y="386" class="mono job ink">job 3</text>
+  <text x="60" y="410" class="sans small muted">needs 4 CPU</text>
+  <rect x="360" y="364" width="30" height="28" rx="3" class="busy"/>
+  <rect x="394" y="364" width="30" height="28" rx="3" class="busy"/>
+  <rect x="428" y="364" width="30" height="28" rx="3" class="busy"/>
+  <rect x="462" y="364" width="30" height="28" rx="3" class="busy"/>
+  <rect x="496" y="364" width="30" height="28" rx="3" class="busy"/>
+  <rect x="530" y="364" width="30" height="28" rx="3" class="busy"/>
+  <rect x="564" y="364" width="30" height="28" rx="3" class="placed"/>
+  <rect x="598" y="364" width="30" height="28" rx="3" class="placed"/>
+  <rect x="700" y="364" width="30" height="28" rx="3" class="busy"/>
+  <rect x="734" y="364" width="30" height="28" rx="3" class="placed"/>
+  <rect x="768" y="364" width="30" height="28" rx="3" class="placed"/>
+  <rect x="802" y="364" width="30" height="28" rx="3" class="placed"/>
+  <rect x="836" y="364" width="30" height="28" rx="3" class="placed"/>
+  <rect x="870" y="364" width="30" height="28" rx="3" class="free"/>
+  <rect x="904" y="364" width="30" height="28" rx="3" class="free"/>
+  <rect x="938" y="364" width="30" height="28" rx="3" class="free"/>
+  <text x="360" y="418" class="sans note no">✗ 0 free</text>
+  <text x="700" y="418" class="sans note no">✗ only 3 free</text>
+  <text x="1010" y="388" class="sans label ink">stays pending</text>
+  <text x="1010" y="412" class="sans small muted">no room right now</text>
+  <rect x="40" y="450" width="260" height="66" rx="8" class="card"/>
+  <text x="60" y="478" class="mono job ink">job 4</text>
+  <text x="60" y="502" class="sans small muted">needs 16 CPU</text>
+  <rect x="360" y="456" width="30" height="28" rx="3" class="busy"/>
+  <rect x="394" y="456" width="30" height="28" rx="3" class="busy"/>
+  <rect x="428" y="456" width="30" height="28" rx="3" class="busy"/>
+  <rect x="462" y="456" width="30" height="28" rx="3" class="busy"/>
+  <rect x="496" y="456" width="30" height="28" rx="3" class="busy"/>
+  <rect x="530" y="456" width="30" height="28" rx="3" class="busy"/>
+  <rect x="564" y="456" width="30" height="28" rx="3" class="placed"/>
+  <rect x="598" y="456" width="30" height="28" rx="3" class="placed"/>
+  <rect x="700" y="456" width="30" height="28" rx="3" class="busy"/>
+  <rect x="734" y="456" width="30" height="28" rx="3" class="placed"/>
+  <rect x="768" y="456" width="30" height="28" rx="3" class="placed"/>
+  <rect x="802" y="456" width="30" height="28" rx="3" class="placed"/>
+  <rect x="836" y="456" width="30" height="28" rx="3" class="placed"/>
+  <rect x="870" y="456" width="30" height="28" rx="3" class="free"/>
+  <rect x="904" y="456" width="30" height="28" rx="3" class="free"/>
+  <rect x="938" y="456" width="30" height="28" rx="3" class="free"/>
+  <text x="360" y="510" class="sans note no">✗ never fits</text>
+  <text x="700" y="510" class="sans note no">✗ never fits</text>
+  <text x="1010" y="480" class="sans label ink">unschedulable</text>
+  <text x="1010" y="504" class="sans small muted">bigger than any node</text>
+  <rect x="40" y="548" width="20" height="20" rx="3" class="busy"/><text x="68" y="564" class="sans small muted">already assigned or running</text>
+  <rect x="320" y="548" width="20" height="20" rx="3" class="placed"/><text x="348" y="564" class="sans small muted">placed in this pass</text>
+  <rect x="530" y="548" width="20" height="20" rx="3" class="free"/><text x="558" y="564" class="sans small muted">free</text>
+  <text x="640" y="564" class="sans small muted">· memory and GPUs are checked the same way</text>
+</svg>

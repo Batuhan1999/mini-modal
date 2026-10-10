@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">Function, function version, and job</title>
+  <desc id="desc">One function, demo.greet, has two versions. Each deploy with changed code or settings adds a version that records the archive, entrypoint, and resources. Each spawn adds a job that points at one version and carries the input. Version 1 has two jobs, version 2 has one.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f8f7f3}.ink{fill:#173143}.muted{fill:#687a83}
+      .blue{fill:#e7eff1;stroke:#345b74;stroke-width:1.5}.amber{fill:#fff0d8;stroke:#bf7a3b;stroke-width:1.5}.green{fill:#e7efdc;stroke:#64834c;stroke-width:1.5}
+      .link{fill:none;stroke:#345b74;stroke-width:2}
+      .mono{font-family:Menlo,Consolas,monospace}.sans{font-family:Inter,"Helvetica Neue",Arial,sans-serif}
+      .label{font-size:21px;font-weight:650}.code{font-size:20px;font-weight:700}.small{font-size:16px}.edge{font-size:15px;font-weight:700}.tag{font-size:13px;letter-spacing:1.8px;font-weight:700}
+      .status-ok{fill:#64834c}.status-run{fill:#345b74}.status-wait{fill:#bf7a3b}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="540"/>
+
+  <text x="40" y="56" class="mono tag muted">FUNCTION</text>
+  <text x="420" y="56" class="mono tag muted">FUNCTION VERSION</text>
+  <text x="880" y="56" class="mono tag muted">JOB</text>
+
+  <!-- Function -->
+  <rect x="40" y="200" width="270" height="110" rx="8" class="blue"/>
+  <text x="62" y="244" class="mono code ink">demo.greet</text>
+  <text x="62" y="274" class="sans small muted">app name + function name</text>
+
+  <!-- Function to versions -->
+  <path d="M310 255 H386 V160 H418" class="link"/>
+  <path d="M386 255 V372 H418" class="link"/>
+  <text x="320" y="244" class="mono edge muted">deploy</text>
+
+  <!-- Versions -->
+  <rect x="420" y="90" width="360" height="140" rx="8" class="amber"/>
+  <text x="442" y="128" class="sans label ink">version 1</text>
+  <text x="442" y="160" class="mono small ink">artifact 4c966ee2….tar.gz</text>
+  <text x="442" y="186" class="mono small ink">entrypoint demo.greet:greet</text>
+  <text x="442" y="212" class="mono small muted">1 CPU · 1 GB · 300 s · 3 tries</text>
+
+  <rect x="420" y="302" width="360" height="140" rx="8" class="amber"/>
+  <text x="442" y="340" class="sans label ink">version 2</text>
+  <text x="442" y="372" class="mono small ink">artifact 6aed5d03….tar.gz</text>
+  <text x="442" y="398" class="mono small ink">entrypoint demo.greet:greet</text>
+  <text x="442" y="424" class="mono small muted">new code, same settings</text>
+
+  <!-- Versions to jobs -->
+  <path d="M780 160 H852 V125 H878" class="link"/>
+  <path d="M852 160 V235 H878" class="link"/>
+  <path d="M780 372 H878" class="link"/>
+  <text x="790" y="150" class="mono edge muted">spawn</text>
+
+  <!-- Jobs -->
+  <rect x="880" y="80" width="280" height="90" rx="8" class="green"/>
+  <text x="902" y="116" class="mono code ink">greet("Ada")</text>
+  <circle cx="908" cy="144" r="6" class="status-ok"/>
+  <text x="922" y="150" class="mono small muted">succeeded</text>
+
+  <rect x="880" y="190" width="280" height="90" rx="8" class="green"/>
+  <text x="902" y="226" class="mono code ink">greet("Grace")</text>
+  <circle cx="908" cy="254" r="6" class="status-run"/>
+  <text x="922" y="260" class="mono small muted">running on node-b</text>
+
+  <rect x="880" y="327" width="280" height="90" rx="8" class="green"/>
+  <text x="902" y="363" class="mono code ink">greet("Linus")</text>
+  <circle cx="908" cy="391" r="6" class="status-wait"/>
+  <text x="922" y="397" class="mono small muted">pending</text>
+
+  <text x="880" y="460" class="mono small muted">each job also has</text>
+  <text x="880" y="484" class="mono small muted">events · logs · result</text>
+</svg>

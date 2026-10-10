@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 650" role="img" aria-labelledby="title desc">
+  <title id="title">Capacity planning pass</title>
+  <desc id="desc">The capacity manager reads one healthy 8-CPU node with 6 CPUs busy and three pending jobs that each need 4 CPUs. None fits in the 2 free CPUs, so it plans two new 8-CPU nodes from the pool: one for jobs 1 and 2, one for job 3. It writes desired_nodes = 3 to PostgreSQL. The provisioner sees one running agent and starts two more. Idle nodes stay counted for 5 seconds; after that desired_nodes drops and the provisioner drains them.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#345b74" stroke-width="1.6"/></marker>
+    <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#fff0d8"/><line x1="0" y1="0" x2="0" y2="8" stroke="#f3dcb8" stroke-width="2"/></pattern>
+    <style>
+    .bg{fill:#f8f7f3}.ink{fill:#173143}.muted{fill:#687a83}.white{fill:#fff}
+    .card{fill:#e7eff1;stroke:#345b74;stroke-width:1.5}.store{fill:url(#hatch);stroke:#bf7a3b;stroke-width:1.5}
+    .agent{fill:#e7efdc;stroke:#64834c;stroke-width:1.5}.agent-new{fill:#f4f8ee;stroke:#64834c;stroke-width:1.5;stroke-dasharray:6 5}
+    .busy{fill:#a9bbc4}.placed{fill:#345b74}.free{fill:#fffdfa;stroke:#c5d1d2;stroke-width:1.2}
+    .virtual{fill:none;stroke:#345b74;stroke-width:1.6;stroke-dasharray:6 5}
+    .line{fill:none;stroke:#345b74;stroke-width:2;marker-end:url(#arrow)}.rule{stroke:#c5d1d2;stroke-width:1}
+    .mono{font-family:Menlo,Consolas,monospace}.sans{font-family:Inter,"Helvetica Neue",Arial,sans-serif}
+    .label{font-size:20px;font-weight:650}.code{font-size:19px;font-weight:700}.small{font-size:16px}.tag{font-size:13px;letter-spacing:1.8px;font-weight:700}.chip{font-size:15px;font-weight:700}
+    </style>
+  </defs>
+  <rect class="bg" width="1240" height="650"/>
+  <text x="40" y="50" class="mono tag muted">READ FROM POSTGRESQL</text>
+  <text x="400" y="50" class="mono tag muted">PLAN</text>
+  <text x="780" y="50" class="mono tag muted">WRITE</text>
+  <text x="1000" y="50" class="mono tag muted">PROVISIONER</text>
+  <text x="40" y="88" class="sans small muted">healthy nodes</text>
+  <rect x="40" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="74" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="108" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="142" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="176" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="210" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="244" y="102" width="30" height="28" rx="3" class="free"/>
+  <rect x="278" y="102" width="30" height="28" rx="3" class="free"/>
+  <text x="40" y="156" class="mono small ink">node-a: 6 of 8 CPU busy</text>
+  <text x="40" y="206" class="sans small muted">waiting jobs (pending)</text>
+  <rect x="40" y="220" width="268" height="40" rx="6" class="card"/>
+  <text x="58" y="246" class="mono small ink">job 1</text>
+  <text x="290" y="246" text-anchor="end" class="sans small muted">needs 4 CPU</text>
+  <rect x="40" y="272" width="268" height="40" rx="6" class="card"/>
+  <text x="58" y="298" class="mono small ink">job 2</text>
+  <text x="290" y="298" text-anchor="end" class="sans small muted">needs 4 CPU</text>
+  <rect x="40" y="324" width="268" height="40" rx="6" class="card"/>
+  <text x="58" y="350" class="mono small ink">job 3</text>
+  <text x="290" y="350" text-anchor="end" class="sans small muted">needs 4 CPU</text>
+  <path d="M326 250 H382" class="line"/>
+  <text x="406" y="88" class="sans small muted">existing node: 2 free, too small</text>
+  <rect x="406" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="440" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="474" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="508" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="542" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="576" y="102" width="30" height="28" rx="3" class="busy"/>
+  <rect x="610" y="102" width="30" height="28" rx="3" class="free"/>
+  <rect x="644" y="102" width="30" height="28" rx="3" class="free"/>
+  <text x="406" y="152" class="mono small ink">node-a · busy, keep</text>
+  <text x="406" y="194" class="sans small muted">add a node from the pool (8 CPU)</text>
+  <rect x="406" y="208" width="30" height="28" rx="3" class="placed"/>
+  <rect x="440" y="208" width="30" height="28" rx="3" class="placed"/>
+  <rect x="474" y="208" width="30" height="28" rx="3" class="placed"/>
+  <rect x="508" y="208" width="30" height="28" rx="3" class="placed"/>
+  <rect x="542" y="208" width="30" height="28" rx="3" class="placed"/>
+  <rect x="576" y="208" width="30" height="28" rx="3" class="placed"/>
+  <rect x="610" y="208" width="30" height="28" rx="3" class="placed"/>
+  <rect x="644" y="208" width="30" height="28" rx="3" class="placed"/>
+  <rect x="400" y="202" width="280" height="40" rx="6" class="virtual"/>
+  <rect x="406" y="208" width="132" height="28" rx="3" class="placed"/>
+  <text x="472.0" y="227" text-anchor="middle" class="mono chip white">job 1</text>
+  <rect x="542" y="208" width="132" height="28" rx="3" class="placed"/>
+  <text x="608.0" y="227" text-anchor="middle" class="mono chip white">job 2</text>
+  <text x="406" y="268" class="mono small ink">new node 1</text>
+  <text x="406" y="310" class="sans small muted">and another</text>
+  <rect x="406" y="324" width="30" height="28" rx="3" class="placed"/>
+  <rect x="440" y="324" width="30" height="28" rx="3" class="placed"/>
+  <rect x="474" y="324" width="30" height="28" rx="3" class="placed"/>
+  <rect x="508" y="324" width="30" height="28" rx="3" class="placed"/>
+  <rect x="542" y="324" width="30" height="28" rx="3" class="free"/>
+  <rect x="576" y="324" width="30" height="28" rx="3" class="free"/>
+  <rect x="610" y="324" width="30" height="28" rx="3" class="free"/>
+  <rect x="644" y="324" width="30" height="28" rx="3" class="free"/>
+  <rect x="400" y="318" width="280" height="40" rx="6" class="virtual"/>
+  <rect x="406" y="324" width="132" height="28" rx="3" class="placed"/>
+  <text x="472.0" y="343" text-anchor="middle" class="mono chip white">job 3</text>
+  <text x="406" y="384" class="mono small ink">new node 2</text>
+  <path d="M694 250 H756" class="line"/>
+  <rect x="760" y="190" width="200" height="120" rx="8" class="store"/>
+  <text x="780" y="222" class="mono tag muted">NODE_POOLS</text>
+  <text x="780" y="256" class="mono code ink">desired = 3</text>
+  <text x="780" y="284" class="sans small muted">1 kept + 2 new</text>
+  <text x="760" y="336" class="sans small muted">clamped to min 0, max 32</text>
+  <path d="M962 250 H996" class="line"/>
+  <rect x="1000" y="190" width="210" height="120" rx="8" class="card"/>
+  <text x="1020" y="226" class="sans label ink">running 1</text>
+  <text x="1020" y="254" class="sans small muted">wants 3</text>
+  <text x="1020" y="284" class="mono small ink">start 2 agents</text>
+  <path d="M1105 312 V356" class="line"/>
+  <rect x="1000" y="360" width="210" height="38" rx="6" class="agent"/>
+  <text x="1018" y="385" class="mono small ink">node-a</text>
+  <rect x="1000" y="406" width="210" height="38" rx="6" class="agent-new"/>
+  <text x="1018" y="431" class="mono small ink">new agent</text>
+  <rect x="1000" y="452" width="210" height="38" rx="6" class="agent-new"/>
+  <text x="1018" y="477" class="mono small ink">new agent</text>
+  <line x1="40" y1="520" x2="1210" y2="520" class="rule"/>
+  <text x="40" y="554" class="mono tag muted">SCALE DOWN</text>
+  <rect x="200" y="536" width="225" height="74" rx="8" class="card"/>
+  <text x="216" y="566" class="sans small ink" font-weight="650">node is busy</text>
+  <text x="216" y="592" class="sans small muted">counted</text>
+  <path d="M427 573 H451" class="line"/>
+  <rect x="455" y="536" width="225" height="74" rx="8" class="card"/>
+  <text x="471" y="566" class="sans small ink" font-weight="650">idle under 5 s</text>
+  <text x="471" y="592" class="sans small muted">still counted</text>
+  <path d="M682 573 H706" class="line"/>
+  <rect x="710" y="536" width="225" height="74" rx="8" class="card"/>
+  <text x="726" y="566" class="sans small ink" font-weight="650">idle 5 s or more</text>
+  <text x="726" y="592" class="sans small muted">desired drops</text>
+  <path d="M937 573 H961" class="line"/>
+  <rect x="965" y="536" width="225" height="74" rx="8" class="card"/>
+  <text x="981" y="566" class="sans small ink" font-weight="650">provisioner drains it</text>
+  <text x="981" y="592" class="sans small muted">no new claims, then exit</text>
+</svg>

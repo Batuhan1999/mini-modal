@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 500" role="img" aria-labelledby="title desc">
+  <title id="title">How app.deploy() decides whether to upload</title>
+  <desc id="desc">The SDK fingerprints the archive hash, entrypoint, and settings. If the local cache has that fingerprint, it uses the cached version without any request. Otherwise it asks the control plane whether an archive with the same hash exists. If it does, the upload is skipped; if not, the archive is uploaded. In both cases the SDK then creates or reuses a version and saves the fingerprint locally.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#345b74" stroke-width="1.6"/></marker>
+    <style>
+      .bg{fill:#f8f7f3}.ink{fill:#173143}.muted{fill:#687a83}
+      .blue{fill:#e7eff1;stroke:#345b74;stroke-width:1.5}.frame{fill:#fffdfa;stroke:#c5d1d2;stroke-width:1.5}.green{fill:#e7efdc;stroke:#64834c;stroke-width:1.5}.amber{fill:#fff0d8;stroke:#bf7a3b;stroke-width:1.5}
+      .line{fill:none;stroke:#345b74;stroke-width:2;marker-end:url(#arrow)}
+      .mono{font-family:Menlo,Consolas,monospace}.sans{font-family:Inter,"Helvetica Neue",Arial,sans-serif}
+      .label{font-size:21px;font-weight:650}.small{font-size:16px}.edge{font-size:15px;font-weight:700}.tag{font-size:13px;letter-spacing:1.8px;font-weight:700}
+    </style>
+  </defs>
+  <rect class="bg" width="1280" height="500"/>
+
+  <rect x="30" y="40" width="270" height="120" rx="8" class="blue"/>
+  <text x="52" y="72" class="mono tag muted">FINGERPRINT</text>
+  <text x="52" y="104" class="sans label ink">archive sha256</text>
+  <text x="52" y="132" class="mono small muted">+ entrypoint</text>
+  <text x="52" y="152" class="mono small muted">+ settings</text>
+
+  <path d="M302 100 H346" class="line"/>
+
+  <rect x="350" y="40" width="320" height="120" rx="8" class="frame"/>
+  <text x="372" y="72" class="mono tag muted">1 · LOCAL CACHE</text>
+  <text x="372" y="104" class="sans label ink">Seen this before?</text>
+  <text x="372" y="132" class="mono small muted">.mini-modal/deployments/</text>
+
+  <path d="M510 162 V236" class="line"/>
+  <text x="522" y="206" class="mono edge muted">yes</text>
+  <rect x="350" y="240" width="320" height="100" rx="8" class="green"/>
+  <text x="372" y="282" class="sans label ink">Use cached version</text>
+  <text x="372" y="310" class="sans small muted">no request to the control plane</text>
+
+  <path d="M672 100 H726" class="line"/>
+  <text x="684" y="90" class="mono edge muted">no</text>
+
+  <rect x="730" y="40" width="320" height="120" rx="8" class="frame"/>
+  <text x="752" y="72" class="mono tag muted">2 · CONTROL PLANE</text>
+  <text x="752" y="104" class="sans label ink">Has this sha256?</text>
+  <text x="752" y="132" class="sans small muted">checks existing versions</text>
+
+  <path d="M890 162 V236" class="line"/>
+  <text x="902" y="206" class="mono edge muted">yes</text>
+  <rect x="730" y="240" width="320" height="100" rx="8" class="green"/>
+  <text x="752" y="282" class="sans label ink">Skip the upload</text>
+  <text x="752" y="310" class="sans small muted">reuse the stored archive</text>
+
+  <path d="M1052 100 H1160 V236" class="line"/>
+  <text x="1064" y="90" class="mono edge muted">no</text>
+  <rect x="1070" y="240" width="180" height="100" rx="8" class="amber"/>
+  <text x="1090" y="282" class="sans label ink">Upload</text>
+  <text x="1090" y="310" class="sans small muted">new archive</text>
+
+  <path d="M890 342 V396" class="line"/>
+  <path d="M1160 342 V396" class="line"/>
+  <rect x="730" y="400" width="520" height="80" rx="8" class="blue"/>
+  <text x="752" y="434" class="sans label ink">Create or reuse the version</text>
+  <text x="752" y="460" class="sans small muted">then save the fingerprint in the local cache</text>
+</svg>
